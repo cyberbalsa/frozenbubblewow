@@ -4,7 +4,7 @@ Play the original 100 Frozen Bubble levels in WoW Forever, challenge a friend, o
 
 ![Project artwork](art/curseforge-icon.png)
 
-**Alpha software.** The Lua simulation, protocol, UI loading, and packaging have automated tests. Live Forever client testing is still required, particularly for addon-message restrictions and channel reach.
+WoW Forever controls which players can exchange addon messages. If someone is missing from matchmaking, try a direct challenge using their character and realm name.
 
 ## Install and play
 
@@ -95,7 +95,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.49` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

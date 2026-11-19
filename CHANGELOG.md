@@ -1,3 +1,10 @@
+# 0.1.0
+
+- Play all 100 original campaign boards in WoW Forever with the original music, artwork, and animated penguins. The campaign saves your progress between sessions.
+- Play a friend on one keyboard, find an online duel, or host an arena for up to five players. The two-minute training mode lets you practice against incoming bubbles.
+- Share highscores and trade player-made level sets through the FrozenBubbleForever channel. The editor lets you paint a board and playtest it before sharing.
+- Type `/fb` to play. In addon settings you can enable colorblind shapes, adjust audio, and choose when the game invites you to play.
+
 # 0.1.0-alpha.49
 
 - Fixed the “Font not set” error when opening Multiplayer. Lobby and arena room rows now apply their font before displaying their labels.
