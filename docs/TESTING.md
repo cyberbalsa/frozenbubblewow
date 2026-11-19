@@ -1,0 +1,14 @@
+# Live WoW Forever test checklist
+
+Automated tests cannot prove that Blizzard will deliver messages or that every texture/UI API behaves the same as the simulated frame harness. Test the alpha on the actual client.
+
+1. Restart the client after installing. Enable Frozen Bubble Forever. Run `/fb debug errors` and `/fb`.
+2. Play level 1 with mouse and keyboard. Check wall bounces, match-three groups, detached clusters, next-bubble preview, nine-shot ceiling drops, and 10.5-second auto-fire. Resize UI scale and verify mouse aim matches the pointer.
+3. Pause solo, hide/show, start combat, then resume after combat. Ensure movement keys pass through outside the board and no keys remain held when the pointer leaves it.
+4. Clear a level and continue. Log out and back in; confirm unlocks, scores, custom levels, and debug history persist. A mid-level checkpoint restart is practice.
+5. Enable sound/music and verify that effects play once and music stops when hidden or disabled.
+6. On two accounts, join FrozenBubbleForever. Check whether delivery becomes verified or manual. In manual mode, click Announce queue on both clients. Also test a direct Player-Realm challenge.
+7. Confirm the challenge must be accepted unless both players queued. Check identical starting boards, live opponent previews, falling-cluster attacks, single result recording, forfeit, timeout, and combat cancellation. Repeat with packet loss simulated in unit tests and real latency in-client.
+8. Share a best score and refresh on the other client. Verify sender attribution and separation from personal records. Try different Forever internal servers to measure actual channel reach; record the server names and builds.
+9. Create a connected level, save, test, publish, browse from the other client, download, and play. Confirm offline requests expire, corrupt codes fail, and republishing requires a click.
+10. Use `/fb debug`, then log out or `/reload` to flush `FrozenBubbleDB.debugLog`. Report errors with the client build, UI scale, relevant log entries, and which of the above steps failed.

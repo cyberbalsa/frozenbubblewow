@@ -1,0 +1,261 @@
+-- Native Lua adaptation of Frozen Bubble mechanics. No WoW API dependencies.
+local _, FB = ...
+local E = {}
+FB.Engine = E
+E.__index = E
+E.W, E.H, E.R, E.STEP, E.ROWS = 256, 400, 16, 28, 13
+E.LAUNCH_Y, E.LIMIT = 362, 350
+-- Upstream runs at 20 ms: 10 px/frame, gravity 0.5 px/frame/frame.
+E.SPEED, E.GRAVITY = 500, 1250
+E.MAX_ANGLE = math.pi/2 - 0.1
+
+function E.Columns(row) return row % 2 == 1 and 8 or 7 end
+function E.Position(row, col, ceiling)
+    return 16 + (col - 1) * 32 + (row % 2 == 0 and 16 or 0),
+        16 + (row - 1) * E.STEP + (ceiling or 0)
+end
+function E.Key(row, col) return (row - 1) * 8 + col end
+function E.Cell(key) return math.floor((key - 1) / 8) + 1, (key - 1) % 8 + 1 end
+function E.Valid(row, col) return row >= 1 and row <= E.ROWS and col >= 1 and col <= E.Columns(row) end
+function E.Neighbors(key)
+    local r, c = E.Cell(key)
+    local side = r % 2 == 0 and 1 or -1
+    local cells = {{r,c-1},{r,c+1},{r-1,c},{r-1,c+side},{r+1,c},{r+1,c+side}}
+    local out = {}
+    for _, p in ipairs(cells) do if E.Valid(p[1], p[2]) then out[#out+1] = E.Key(p[1],p[2]) end end
+    return out
+end
+function E:Random(n)
+    self.rng = (self.rng * 16807) % 2147483647
+    return self.rng % n + 1
+end
+function E:Color()
+    local colors, found = {}, {}
+    for key = 1, E.ROWS * 8 do
+        local color = self.grid[key]
+        if color then found[color] = true end
+    end
+    for color = 1, 8 do if found[color] then colors[#colors+1] = color end end
+    if #colors == 0 then return self:Random(8) end
+    return colors[self:Random(#colors)]
+end
+function E.New(level, seed, mode)
+    local self = setmetatable({grid={}, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
+        score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
+        attack=0, effects={}, angle=0, accumulator=0}, E)
+    self.hurryWarn = mode=="versus" and 5 or 8
+    self.hurryMax = mode=="versus" and 7.5 or 10.5
+    self.rootPeriod = mode=="versus" and 12 or 9
+    if level then
+        for r, row in ipairs(level) do
+            for c = 1, #row do
+                local color = tonumber(row:sub(c,c))
+                if color and color >= 1 and color <= 8 and E.Valid(r,c) then self.grid[E.Key(r,c)] = color end
+            end
+        end
+    else
+        for r = 1, 5 do for c = 1, E.Columns(r) do self.grid[E.Key(r,c)] = self:Random(6) end end
+    end
+    self.current, self.next = self:Color(), self:Color()
+    return self
+end
+function E:Count()
+    local n=0; for _ in pairs(self.grid) do n=n+1 end; return n
+end
+function E:Group(start, sameColor)
+    local visited, queue = {[start]=true}, {start}
+    local color = self.grid[start]
+    local index=1
+    while queue[index] do
+        for _, key in ipairs(E.Neighbors(queue[index])) do
+            if not visited[key] and self.grid[key] and (not sameColor or self.grid[key] == color) then
+                visited[key]=true; queue[#queue+1]=key
+            end
+        end
+        index=index+1
+    end
+    return queue
+end
+function E:Remove(key, kind)
+    local row,col=E.Cell(key)
+    local x,y=E.Position(row,col,self.ceiling)
+    -- Cosmetic randomness is separate from the deterministic ammunition generator.
+    local variation=(key*7919+self.shots*101)%1000/1000
+    self.effects[#self.effects+1]={x=x,y=y,color=self.grid[key],kind=kind,age=0,
+        vx=kind=="pop" and (variation*3-1.5)*50 or 0,
+        vy=kind=="pop" and -(2+(key*31%100)/100*4)*50 or 0,delay=0}
+    self.grid[key]=nil
+end
+function E:Resolve(key)
+    local group=self:Group(key,true)
+    local popped, dropped=0,0
+    if #group >= 3 then
+        for _, k in ipairs(group) do self:Remove(k,"pop"); popped=popped+1 end
+        local attached={}
+        for col=1,8 do
+            local root=E.Key(1,col)
+            if self.grid[root] and not attached[root] then
+                for _, k in ipairs(self:Group(root,false)) do attached[k]=true end
+            end
+        end
+        local falling={}
+        for k=1,E.ROWS*8 do if self.grid[k] and not attached[k] then falling[#falling+1]=k end end
+        -- Original cascade order: bottom-to-top, right-to-left; five ticks per row,
+        -- then one extra tick for each bubble on that row.
+        table.sort(falling,function(a,b) return a>b end)
+        local bottom=falling[1] and E.Cell(falling[1]) or 1
+        local lastRow,shift=nil,0
+        for _,k in ipairs(falling) do
+            local row=E.Cell(k)
+            if row~=lastRow then shift=0; lastRow=row end
+            self:Remove(k,"fall"); dropped=dropped+1
+            self.effects[#self.effects].delay=((bottom-row)*5+shift)*0.02
+            shift=shift+1
+        end
+    end
+    self.score=self.score+popped*10+dropped*20
+    -- Falling clusters become attacks; cancel queued garbage before sending it.
+    local attack=math.min(12,math.max(0,popped+dropped-3))
+    local canceled=math.min(self.pending,attack)
+    self.pending=self.pending-canceled
+    self.attack=self.attack+attack-canceled
+    self.lastPop,self.lastDrop=popped,dropped
+    return popped,dropped
+end
+function E:CheckEnd()
+    if not next(self.grid) then
+        if self.mode == "endless" then
+            self.ceiling=0
+            for r=1,5 do for c=1,E.Columns(r) do self.grid[E.Key(r,c)]=self:Random(8) end end
+            self.score=self.score+500
+        else self.status="won"; return end
+    end
+    for key in pairs(self.grid) do
+        local r,c=E.Cell(key); local _,y=E.Position(r,c,self.ceiling)
+        if y+E.R >= E.LIMIT then self.status="lost"; return end
+    end
+end
+function E:AddGarbage(count)
+    self.pending=math.min(48,self.pending+count)
+end
+function E:ApplyGarbage()
+    local count=math.min(7,self.pending)
+    self.pending=self.pending-count
+    for _=1,count do
+        -- Attach at the lowest free slot in a random column, never in a sealed hole.
+        local options={}
+        for c=1,8 do
+            local candidate
+            for r=1,E.ROWS do
+                if E.Valid(r,c) then
+                    local key=E.Key(r,c)
+                    if not self.grid[key] then
+                        local supported=r==1
+                        for _, n in ipairs(E.Neighbors(key)) do if self.grid[n] then supported=true end end
+                        if supported then candidate=key end
+                    end
+                end
+            end
+            if candidate then options[#options+1]=candidate end
+        end
+        if #options==0 then self.status="lost"; return end
+        self.grid[options[self:Random(#options)]]=self:Random(8)
+    end
+end
+function E:Attach(x,y,hit)
+    local candidates={}
+    if hit then candidates=E.Neighbors(hit) else for c=1,8 do candidates[#candidates+1]=E.Key(1,c) end end
+    local row = math.max(1, math.floor((y-self.ceiling-16+14)/28)+1)
+    local shift = row%2==0 and 16 or 0
+    local col = math.floor((x-shift)/32)+1
+    local snapped = E.Valid(row,col) and E.Key(row,col)
+    local best, distance
+    for _, key in ipairs(candidates) do
+        if not self.grid[key] then
+            if key==snapped then best=key; break end
+            local r,c=E.Cell(key); local cx,cy=E.Position(r,c,self.ceiling)
+            local d=(x-cx)^2+(y-cy)^2
+            if not distance or d<distance then best,distance=key,d end
+        end
+    end
+    if not best then self.status="lost"; self.projectile=nil; return end
+    self.grid[best]=self.projectile.color
+    self.projectile=nil
+    self:Resolve(best)
+    if self.lastPop==0 then self.stick={key=best,age=0} end
+    self:CheckEnd()
+    if self.status=="playing" then
+        if self.mode=="versus" then self:ApplyGarbage() end
+        if self.shots%self.rootPeriod==0 then self.ceiling=self.ceiling+E.STEP; self.lowered=true end
+        self:CheckEnd()
+    end
+    self.current=self.next
+    -- Do not offer an extinct color after a clear.
+    local exists=false
+    for _, color in pairs(self.grid) do if color==self.current then exists=true end end
+    if not exists then self.current=self:Color() end
+    self.next=self:Color()
+    self.changed=true
+end
+function E:Shoot(angle)
+    if self.status~="playing" or self.projectile or self.paused then return false end
+    self.angle=FB.Clamp(angle or self.angle,-E.MAX_ANGLE,E.MAX_ANGLE)
+    self.projectile={x=128,y=E.LAUNCH_Y,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
+    self.shots=self.shots+1; self.idle=0
+    return true
+end
+function E:Step(dt)
+    if self.status~="playing" or self.paused then return end
+    self.elapsed=self.elapsed+dt
+    self.idle=self.idle+dt
+    if not self.projectile then
+        if self.idle+1e-9>=self.hurryMax then self:Shoot(self.angle) end
+        return
+    end
+    local p=self.projectile
+    local previousX,previousY=p.x,p.y
+    p.x,p.y=p.x+p.vx*dt,p.y+p.vy*dt
+    if p.x<E.R then p.x=2*E.R-p.x; p.vx=-p.vx; self.bounced=true end
+    if p.x>E.W-E.R then p.x=2*(E.W-E.R)-p.x; p.vx=-p.vx; self.bounced=true end
+    if p.y<=E.R+self.ceiling then self:Attach(p.x,p.y); return end
+    local hit,nearest
+    for key=1,E.ROWS*8 do
+        if self.grid[key] then
+            local r,c=E.Cell(key); local x,y=E.Position(r,c,self.ceiling)
+            local d=(p.x-x)^2+(p.y-y)^2
+            if d<(32*0.82)^2 and (not nearest or d<nearest) then hit,nearest=key,d end
+        end
+    end
+    if hit then self:Attach((previousX+p.x)/2,(previousY+p.y)/2,hit) end
+end
+function E:Update(dt)
+    -- Fixed simulation steps keep bounces and attachment independent of render FPS.
+    self.accumulator=self.accumulator+math.min(dt,0.25)
+    while self.accumulator+1e-9>=0.02 do self:Step(0.02); self.accumulator=self.accumulator-0.02 end
+    if not self.paused then
+        for i=#self.effects,1,-1 do
+            local fx=self.effects[i]; fx.age=fx.age+dt
+            local flight=math.max(0,fx.age-fx.delay)
+            -- y = y0 + v0*t + g*t*(t-0.02)/2 exactly interpolates upstream's
+            -- position-before-velocity Euler updates at each original 20 ms tick.
+            fx.drawX=fx.x+fx.vx*flight
+            fx.drawY=fx.y+fx.vy*flight+E.GRAVITY*flight*math.max(0,flight-0.02)/2
+            if fx.drawY>440 then table.remove(self.effects,i) end
+        end
+        if self.stick then self.stick.age=self.stick.age+dt; if self.stick.age>=0.28 then self.stick=nil end end
+    end
+end
+function E:Pack()
+    local out={}
+    for r=1,E.ROWS do for c=1,E.Columns(r) do out[#out+1]=tostring(self.grid[E.Key(r,c)] or 0) end end
+    return table.concat(out)
+end
+function E.Unpack(data)
+    if type(data)~="string" or #data~=98 or data:find("[^0-8]") then return nil end
+    local grid,index={},1
+    for r=1,E.ROWS do for c=1,E.Columns(r) do
+        local color=tonumber(data:sub(index,index)); index=index+1
+        if color>0 then grid[E.Key(r,c)]=color end
+    end end
+    return grid
+end

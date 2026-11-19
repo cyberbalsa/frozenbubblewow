@@ -1,0 +1,96 @@
+name: Test, package, and release
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        lua: ['5.1', '5.4']
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Install Lua
+        run: sudo apt-get update -qq && sudo apt-get install -y lua${{ matrix.lua }}
+      - name: Check Lua syntax
+        run: find FrozenBubble tests -name '*.lua' -print0 | xargs -0 -n1 luac${{ matrix.lua }} -p
+      - name: Test gameplay, network, sharing, scores, and UI
+        run: lua${{ matrix.lua }} tests/run.lua
+      - name: Test package layout, assets, and reproducibility
+        run: python3 tests/package_test.py
+
+  package:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Build addon ZIP and checksum
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          if [ "$REF_TYPE" = tag ]; then
+            python3 tools/package.py "$REF_NAME"
+          else
+            python3 tools/package.py
+          fi
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: FrozenBubbleForever
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 14
+
+  github-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FrozenBubbleForever
+          path: dist
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" dist/*.zip dist/*.sha256 --clobber
+          elif [[ "$RELEASE_TAG" == *-* ]]; then
+            gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --prerelease --title "Frozen Bubble Forever $RELEASE_TAG" --notes-file CHANGELOG.md
+          else
+            gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --title "Frozen Bubble Forever $RELEASE_TAG" --notes-file CHANGELOG.md
+          fi
+
+  curseforge-release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: github-release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: FrozenBubbleForever
+          path: dist
+      - name: Upload tested addon to CurseForge
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
+          CF_GAME_VERSION_ID: ${{ vars.CF_GAME_VERSION_ID }}
+        run: python3 tools/curseforge_upload.py dist/*.zip
