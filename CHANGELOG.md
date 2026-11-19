@@ -1,3 +1,10 @@
+# 0.1.0-alpha.7
+
+- Choose chain reactions in the multiplayer lobby before joining the queue or challenging a friend. Direct invitations show the rules. Standard and chain games have separate queues.
+- The left board now shows the opponent’s shot traveling, bouncing, and breaking groups. Return flights, rising penalties, the hurry sign, and the shooter penguin animate during the round.
+- When a round ends, the winner’s bubbles fly off and the loser’s bubbles freeze from the bottom right. The winner’s name appears on the original network victory panel. Back to lobby returns to matchmaking.
+- Closing the result panel keeps the round result retrying if the first message was lost.
+
 # 0.1.0-alpha.6
 
 - Random levels and multiplayer training now ask whether to enable chain reactions. A falling bubble can fly back up to complete a match and set off another drop. The launcher waits until the last returning bubble lands.

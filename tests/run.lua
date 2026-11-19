@@ -188,6 +188,18 @@ test("different frame rates produce the same chain outcome",function()
         eq(g.tick,144); eq(g.status,"won"); eq(g.score,130)
     end
 end)
+test("end of round freezes or ejects cells bottom first on even ticks and supports a late draw",function()
+    local g=E.New({"313.....","12....."},9,"versus")
+    g.status="won"; g:Update(0.02)
+    eq(g.endIndex,0); g:Update(0.02); eq(g.endIndex,1); assert(g.endCells[10])
+    eq(g.effects[1].color,2); eq(g.effects[1].kind,"pop")
+    local original=g:Pack()
+    for i=1,260 do g:Update(0.02) end
+    eq(g.endIndex,5); eq(#g.effects,0); eq(g:Pack(),original)
+    g.status="draw"; g:Update(0.04)
+    eq(g.endIndex,1); assert(g.endCells[10] and not g.endCells[9]); eq(#g.effects,0)
+    g:Update(0.04); assert(g.endCells[9])
+end)
 test("random play preserves board invariants across all levels",function()
     for i,level in ipairs(FB.Levels) do
         local g=E.New(level,999+i)
@@ -223,9 +235,9 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","Network","Community","MediaInfo","Animation"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Community","MediaInfo","Animation"}) do loadModule(module,fb,env) end
     fb.db={}; fb.Scores.Init(fb.db); fb.Debug.Init()
-    fb.StartVersus=function(seed) fb.game=fb.Engine.New(nil,seed,"versus") end
+    fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
     if fullUI then return fb,env,loadModule end
     return fb,env
@@ -305,6 +317,82 @@ test("match result retry records one win and loss",function()
     eq(a.db.losses,1); eq(b.db.wins,1)
     eq(a.Net.match.phase,"done"); eq(b.Net.match.phase,"done")
     tick(3); eq(a.db.losses,1); eq(b.db.wins,1)
+end)
+test("chain matchmaking separates rules, retries offers and replays a two-stage attack",function()
+    local host,guest=client("Dora"),client("Enzo")
+    host.db.versusChains=true
+    host.Net.SetQueue(true); guest.Net.SetQueue(true); tick(10)
+    assert(host.Net.queue and guest.Net.queue and not host.Net.match and not guest.Net.match)
+    guest.Net.SetQueue(false); guest.db.versusChains=true
+    drops={CHAINOFFER=true,READY=true}
+    guest.Net.SetQueue(true); tick(12)
+    eq(host.Net.match.phase,"playing"); eq(guest.Net.match.phase,"playing")
+    assert(host.game.chainReaction and guest.game.chainReaction and guest.Net.match.remote.chainReaction)
+    local board=host.Engine.New({"11..2233","2..3..."},9,"versus",true)
+    board.onShoot=host.Net.Fire; host.game=board; board.current=1
+    assert(board:Shoot(-0.50))
+    local seenFlight,seenReturn,seenSecond,highest=nil,nil,nil,0
+    for frame=1,245 do
+        clock=clock+0.02
+        board:Update(0.02)
+        if board.changed then
+            host.Net.State(); board.changed=false
+            if board.attack==2 then drops.STATE=true end
+        end
+        host.Net.Update(0.02); guest.Net.Update(0.02); deliver()
+        local view=guest.Net.match.remote
+        if view.projectile and view.projectile.y<350 then seenFlight=true end
+        if view.chains[1] and view.chains[1].target==4 then seenReturn=true end
+        if view.chains[1] and view.chains[1].target==6 then seenSecond=true end
+        highest=math.max(highest,guest.game.pending)
+    end
+    assert(seenFlight and seenReturn and seenSecond)
+    eq(board.lockedShots,1); eq(board.score,130); eq(board.attack,2)
+    eq(guest.game.pending,2); eq(highest,2); eq(guest.Net.match.remote:Pack(),board:Pack())
+    host.Net.State(); tick(1); eq(guest.game.pending,2)
+    host.Net.Leave(); guest.Net.Leave(); tick(1)
+end)
+test("manual chain challenge identifies rules and standard offers still use the old wire format",function()
+    local host,guest=client("Faye"),client("Gray")
+    host.db.versusChains=true
+    host.Net.Challenge("Gray-TestRealm"); tick(2)
+    eq(guest.Net.match.phase,"invite"); assert(guest.Net.notice:find("with chain reactions",1,true))
+    guest.Net.Accept(); tick(4); assert(guest.game.chainReaction)
+    host.Net.Finish("lost","Forfeited",true); tick(3)
+    host.Net.Leave(); guest.Net.Leave()
+    host.db.versusChains=false; host.Net.Challenge("Gray-TestRealm"); tick(2)
+    eq(guest.Net.match.phase,"invite"); assert(not guest.Net.match.chainReaction)
+    guest.Net.Accept(); tick(4); assert(not guest.game.chainReaction)
+    local m=guest.Net.match; local packed=host.game:Pack()
+    guest.Net.Receive(FB.PREFIX,"1|STATE|"..m.id.."|999|1|0|0|0|"..packed,"WHISPER","Faye-TestRealm")
+    eq(m.remoteShots,1); eq(m.remote:Pack(),packed)
+    host.Net.Leave(); guest.Net.Leave(); tick(1)
+end)
+test("remote rising penalties round-trip all seven lanes; malformed frames are ignored",function()
+    for offset=0,1 do
+        local g=E.New({},1,"versus"); g.offset=offset
+        for col=1,7 do g.rising[col]={row=col+1,col=col,color=8-col,y=380+col} end
+        local wire=a.PeerView.PackRising(g); eq(#wire,28)
+        local restored=a.PeerView.UnpackRising(wire,offset)
+        for i,b in ipairs(restored) do
+            eq(b.col,i); eq(b.row,i+1); eq(b.color,8-i); eq(b.y,380+i); eq(b.x,E.Position(13,i,0,offset))
+        end
+    end
+    for _,wire in ipairs({"abc", "----","0000", "0?00",string.rep("0",32)}) do
+        assert(not a.PeerView.UnpackRising(wire,0))
+    end
+end)
+test("lost end packets and a simultaneous loss settle after leaving the result screen",function()
+    local h,j=client("Heidi"),client("June")
+    h.Net.Challenge("June-TestRealm"); tick(2); j.Net.Accept(); tick(4)
+    drops.END=true
+    h.Net.Finish("lost","Round over",true); h.Net.Leave()
+    j.Net.Finish("lost","Round over",true); j.Net.Leave()
+    h.game=h.Engine.New({},1,"custom"); j.game=j.Engine.New({},1,"custom")
+    tick(5)
+    eq(h.db.losses,0); eq(j.db.losses,0); eq(h.db.wins,0); eq(j.db.wins,0)
+    eq(h.game.status,"playing"); eq(j.game.status,"playing")
+    tick(21); assert(not next(h.Net.results) and not next(j.Net.results))
 end)
 test("unanswered direct challenge expires",function()
     local c=client("Cora"); c.Net.Challenge("Absent-TestRealm"); tick(22); eq(c.Net.match,nil)
@@ -481,6 +569,25 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.game.tick=21; fb.game:ApplyGarbage(); fb.UI:Update(0.02)
         assert(board.rising[7].shown); eq(board.penalties[1].fbAsset,"penalty-one"); assert(not board.penalties[3].shown)
         fb.Net.match=nil
+    end)
+    test("versus winner panel waits for the round animation and identifies the winning player",function()
+        for _,result in ipairs({"lost","won"}) do
+            fb.StartVersus(9,true)
+            local other=fb.Engine.New({"11......"},9,"versus",true)
+            fb.Net.match={id="7-1",peer="Bob-TestRealm",remote=other,phase="playing"}
+            fb.Net.Finish(result,"Round finished",false)
+            fb.game:Update(0.02); other:Update(0.02); fb.UI:Update(0.02)
+            eq(fb.UI.result.shown,false)
+            for _=1,250 do fb.game:Update(0.02); other:Update(0.02) end
+            fb.UI:Update(0.02); assert(fb.UI.result.shown)
+            eq(fb.UI.resultArt.fbAsset,result=="won" and "net-win-local" or "net-win-remote")
+            eq(fb.UI.resultBadge.fbAsset,result=="won" and "net-lose-remote" or "net-lose-local")
+            eq(fb.UI.winnerName.text,result=="won" and fb.PlayerName() or "Bob-TestRealm")
+            if result=="lost" then eq(fb.UI.board.current.fbAsset,"frozen"); assert(not fb.UI.board.nextRim.shown) end
+            fb.UI.retryButton.scripts.OnClick(); eq(fb.UI.screen,"lobby"); eq(fb.Net.match,nil)
+        end
+        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),2)
+        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),1)
     end)
     test("editor strokes interpolate across cells, undo together, and survive testing",function()
         fb.UI:StartEditor(nil,true); fb.UI:SelectEditorColor(7)

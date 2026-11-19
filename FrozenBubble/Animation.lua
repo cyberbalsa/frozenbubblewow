@@ -39,7 +39,7 @@ function A.Penguin(texture,game,player,dt)
     if not texture.fbState then state("normal") end
     if game then
         if game.status=="won" then state("win")
-        elseif game.status=="lost" then
+        elseif game.status=="lost" or game.status=="draw" then
             if texture.fbState~="lose" and texture.fbState~="lose_to" then state("lose_to") end
         elseif not game.paused then
             local direction=game.turning and (game.turning<0 and "left" or game.turning>0 and "right")

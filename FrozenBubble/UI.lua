@@ -141,12 +141,15 @@ function U:Build()
     self.result=CreateFrame("Frame",nil,self.gameLayer); self.result:SetSize(526.4,320)
     self.result:SetPoint("TOPLEFT",238.4,-304); self.result:SetFrameLevel(self.layers.panel)
     self.resultArt=A.Image(self.result,"win-panel",0,0,526.4,254.4)
+    self.resultBadge=A.Image(self.result,"net-lose-remote",318.4,118.4,64,49.6,"OVERLAY"); self.resultBadge:Hide()
+    self.winnerName=text(self.result,"",177.6,176,20,316.8); self.winnerName:SetJustifyH("CENTER"); self.winnerName:Hide()
     self.resultDetail=text(self.result,"",0,250,18,526.4,{0.2,0.1,0.2}); self.resultDetail:SetJustifyH("CENTER")
     self.trainingResult=text(self.result,"",32,58,23,462); self.trainingResult:SetJustifyH("CENTER")
     self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
         if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
         elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
+        elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
     end)
     self.result:Hide()
@@ -297,6 +300,7 @@ end
 function U:PlaceBoard(board,x,y,scale)
     board:SetScale(scale); board:ClearAllPoints(); board:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",x/scale,-y/scale)
     local versus=self.screen=="opponent"
+    board.hurry:ClearAllPoints(); board.hurry:SetPoint("TOPLEFT",10,versus and -225 or -221)
     local progressX=versus and board==self.board and -9 or 257
     for i,dot in ipairs(board.progress) do
         dot:ClearAllPoints(); dot:SetPoint("TOPLEFT",progressX,(versus and 12 or 16)-(i-1)*(FB.MediaInfo["progress-green"].h+1))
@@ -431,6 +435,7 @@ function U:Panel(name)
     self.remotePenguin:SetShown(name=="opponent")
     self.footer:SetShown(name~="opponent" and name~="editor")
     self.pauseControl:SetShown(name~="opponent" and name~="editor")
+    self.result:ClearAllPoints(); self.result:SetPoint("TOPLEFT",name=="opponent" and 244.8 or 238.4,-304)
     self.menuControl:ClearAllPoints()
     self.menuControl:SetPoint("TOPLEFT",name=="opponent" and 467 or 16,-728)
     self.penguin:ClearAllPoints()
@@ -463,12 +468,16 @@ end
 function U:BuildLobby()
     local p=self.panels.lobby
     text(p,"MULTIPLAYER",0,0,16,350)
-    button(p,"Join community channel",0,32,205,function() FB.Community.Join() end)
+    button(p,"Join community channel",0,32,180,function() FB.Community.Join() end)
+    self.versusRules=button(p,"Chain reactions off",188,32,154,function()
+        if FB.Net.queue or FB.Net.match then return end
+        FB.db.versusChains=not FB.db.versusChains; self:RefreshLobby()
+    end)
     self.channelStatus=text(p,"",0,66,12,350,muted)
     button(p,"Find match / stop",0,115,165,function() FB.Net.SetQueue(not FB.Net.queue) end)
     button(p,"Announce queue",177,115,165,function()
         if not FB.Net.queue then FB.Net.SetQueue(true) end
-        if FB.Net.queue then FB.Community.Manual("QUEUE",1) end
+        if FB.Net.queue then FB.Community.Manual("QUEUE",FB.Net.QueueCode()) end
     end)
     self.target=input(p,6,158,206,"")
     button(p,"Challenge",223,156,120,function() FB.Net.Challenge(self.target:GetText()) end)
@@ -482,11 +491,15 @@ function U:ShowLobby() self.frame:Show(); self:Panel("lobby"); self:RefreshLobby
 function U:RefreshLobby()
     if not self.lobbyNotice then return end
     self.lobbyNotice:SetText(FB.Net.notice or "Queue to match another player, or enter Player-Realm to challenge a friend.")
+    local chains=FB.db.versusChains
+    if FB.Net.match then chains=FB.Net.match.chainReaction end
+    self.versusRules:SetText(chains and "Chain reactions on" or "Chain reactions off")
+    self.versusRules:SetEnabled(not FB.Net.queue and not FB.Net.match)
     self.accept:SetEnabled(FB.Net.match and FB.Net.match.phase=="invite" or false)
     local labels={offline="Not joined",joining="Joining…",checking="Checking delivery…",ready="Addon channel delivery verified",manual="Addon channel blocked: use click-to-announce",unavailable="Channel unavailable: retry Join"}
     self.channelStatus:SetText("FrozenBubbleForever\n"..(labels[FB.Community.state] or FB.Community.state))
     local peers={}
-    for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name end end
+    for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name..(peer.chainReaction and " (chain)" or "") end end
     table.sort(peers)
     self.peerText:SetText("Queued players seen: "..#peers.."\n"..table.concat(peers,"\n",1,math.min(5,#peers)).."\n\nChannel reach depends on your server / ruleset. Both players need this addon.")
 end
@@ -720,24 +733,23 @@ end
 function U:RenderBoard(board,game,remote)
     local phase=game and game.rootPeriod and game.lockedShots%game.rootPeriod or 0
     local sweep
-    if game and game.rootPeriod and phase>=game.rootPeriod-2 then
+    if game and (not game.status or game.status=="playing") and game.rootPeriod and phase>=game.rootPeriod-2 then
         sweep=math.floor((game.elapsed or 0)*50)%(phase==game.rootPeriod-1 and 31 or 61)
     end
-    local frozen={}
-    if game and game.status=="lost" and game.attachedOrder then
-        for i=1,math.min(#game.attachedOrder,math.floor((self.endAge or 0)*25)) do frozen[game.attachedOrder[i]]=true end
-    end
+    local ended=game and game.endCells
+    local winner=game and game.status=="won"
     local overlays=0
     for key=1,104 do
         local color=game and game.grid[key]
+        if winner and ended and ended[key] then color=nil end
         if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
-            local effect=frozen[key] and "frozen" or sweep==c-1 and "prelight"
+            local effect=ended and ended[key] and "frozen" or sweep==c-1 and "prelight"
             if effect then
                 overlays=overlays+1
                 local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
                 board.boardOverlays[overlays]=overlay
                 local info=FB.MediaInfo[effect]
-                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y)
+                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y-(effect=="frozen" and 7 or 0))
                 overlay:SetSize(info.w,info.h); FB.Animation.Frame(overlay,effect,1)
             end
         else board.bubbles[key]:Hide() end
@@ -801,7 +813,7 @@ function U:RenderBoard(board,game,remote)
             FB.Animation.Frame(dot,i==phase+1 and "progress-red" or "progress-green",1)
         else dot:Hide() end
     end
-    if not game or self.editing or game.status and game.status~="playing" or not game.current then return end
+    if not game or self.editing or not game.current then return end
     if game.stick then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
@@ -812,14 +824,24 @@ function U:RenderBoard(board,game,remote)
     local versus=game.mode=="versus"
     local launchY=versus and 366 or E.LAUNCH_Y
     board.shooter:ClearAllPoints(); board.shooter:SetPoint("CENTER",board,"TOPLEFT",128,-launchY)
-    place(board.current,board,128,launchY,game.current)
-    place(board.next,board,128,versus and 416 or 412,game.next,32)
-    board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,versus and -397 or -393)
-    board.nextRim:Show()
-    local warning=not remote and game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
+    local nextY=versus and 416 or 412
+    if game.status=="lost" or game.status=="draw" then
+        local info=FB.MediaInfo.frozen
+        for i,t in ipairs({board.current,board.next}) do
+            t:ClearAllPoints(); t:SetPoint("CENTER",board,"TOPLEFT",128,-(i==1 and launchY+7 or nextY+8))
+            t:SetSize(info.w,info.h); FB.Animation.Frame(t,"frozen",1)
+        end
+    else
+        place(board.current,board,128,launchY,game.current)
+        place(board.next,board,128,nextY,game.next)
+        board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,versus and -397 or -393)
+        board.nextRim:Show()
+    end
+    local warning=game.status=="playing" and (not remote or game.timed) and game.idle and game.hurryWarn and game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
     if warning and not board.wasWarning then FB.Sound("hurry") end
     board.wasWarning=warning
-    board.hurry:SetShown(warning)
+    if warning then FB.Animation.Frame(board.hurry,remote and "hurry-remote" or "hurry",1) end
+    board.hurry:SetShown(warning or false)
     board.shooter:Show(); board.shooter:SetRotation(-game.angle)
     -- The original game aims with the rotating cannon, without a dotted guide.
 end
@@ -849,7 +871,6 @@ function U:Update(dt)
     if not self.frame or not self.frame:IsShown() then return end
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game
-    self.endAge=game and game.status~="playing" and ((self.endAge or 0)+dt) or 0
     if game and not self.editing and not game.paused and game.status=="playing" then
         local oldAngle=game.angle
         if self.keys.LEFT or self.keys.A then game.angle=FB.Clamp(game.angle-dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
@@ -869,10 +890,25 @@ function U:Update(dt)
     local canAdvance=not self.editing and game and game.status=="won" and game.mode=="campaign" and FB.level<100
     self.nextButton:SetShown(canAdvance or false)
     local ended=not self.editing and game and game.status~="playing"
-    self.result:SetShown(ended or false)
+    local match=FB.Net.match
+    local versus=game and game.mode=="versus"
+    local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and match and match.remote)
+    local ready=ended
+    if ended and not FB.db.reducedMotion then
+        if winner then ready=winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
+        elseif game.status=="lost" or game.status=="draw" then ready=game.endOrder and game.endIndex>=#game.endOrder end
+    end
+    self.result:SetShown(ready or false)
+    self.winnerName:SetShown(winner and true or false)
+    self.resultBadge:SetShown(winner and true or false)
+    if winner then
+        self.winnerName:SetText(winner==game and FB.PlayerName() or match.peer)
+        FB.Animation.Frame(self.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
+    end
     local finished=ended and game.status=="finished"
     self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
     if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
+    self.retryButton:SetText(versus and "Back to lobby" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
     self.pauseArt:Hide()
     local training=game and game.mode=="training" and not self.editing
@@ -894,16 +930,17 @@ function U:Update(dt)
             FB.Animation.Frame(self.pauseArt,"pause",math.floor((GetTime()%1.4)*25)+1)
             self.overlaySub:SetText("Press P or click Pause to resume.")
         elseif game.status~="playing" then
-            FB.Animation.Frame(self.resultArt,game.status=="finished" and "panel" or game.status=="won" and "win-panel" or "lose-panel",1)
+            local art=winner and (winner==game and "net-win-local" or "net-win-remote")
+                or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
+            self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
+            FB.Animation.Frame(self.resultArt,art,1)
             self.resultDetail:SetText(training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
-    local match=FB.Net.match
     if self.screen=="opponent" then
         local remote=match and match.remote
         if remote then
-            remote.status=match.result=="lost" and "won" or match.result=="won" and "lost" or "playing"
             FB.Animation.Penguin(self.remotePenguin,remote,"p2",FB.db.reducedMotion and 0 or dt)
         end
         self.remotePenguin:SetShown(remote~=nil)

@@ -17,3 +17,5 @@ Automated tests cannot prove that Blizzard will deliver messages or that every t
 12. Set the idle delay to 60 seconds. Walk before it expires, then queue several crafts while standing still. Check that a single invitation appears after the new interval and Later dismisses it for that idle period. Try the same batch with crafting invitations disabled. Check a taxi ride, landing, and combat with a prompt showing.
 13. Drag a line across the editor, undo it, and repeat with right-drag. Test an unsaved draft and return with Edit level. Check the title, colors and grid at two UI scales.
 14. During a solo game, let the window fade and return to it. Listen for the same place in the track. After several ceiling drops, inspect the piston shafts from the screen edge down to the compressor.
+
+14. Queue with chain reactions selected on one client and standard rules on the other. Then select chains on both and play a round. Follow a shot from launch on the left board, watch a return flight hit another group, and check penalties after each clear. At the end, compare the freeze order, winning penguin, and winner’s name on both clients.

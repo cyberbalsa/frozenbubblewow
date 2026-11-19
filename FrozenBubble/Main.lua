@@ -69,9 +69,9 @@ function FB.PlayCustom(id)
     local item=FB.db.custom[id]
     if item then FB.StartCustom(item.data,id) end
 end
-function FB.StartVersus(matchSeed)
+function FB.StartVersus(matchSeed,chainReaction)
     FB.Debug.Log("GAME","versus",matchSeed)
-    FB.game=FB.Engine.New(nil,matchSeed,"versus"); FB.run=nil
+    FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction); FB.run=nil
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("opponent"); FB.Music()
 end
 function FB.TogglePause()
@@ -174,17 +174,13 @@ events:SetScript("OnUpdate",function(_,dt)
         FB.game:Update(dt)
         local game=FB.game
         if game.changed then
-            FB.Sound((game.lastPop or 0)>0 and "destroy_group" or "stick"); game.changed=false
             game.boardChanged=true
         end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false
         end
-        if game.autoLaunched then FB.Sound("launch"); game.autoLaunched=false end
-        if game.malusSound then FB.Sound("malus"); game.malusSound=false end
-        if game.bounced then FB.Sound("rebound"); game.bounced=false end
-        if game.lowered then FB.Sound(game.penaltyRules and "newroot" or "newroot_solo"); game.lowered=false end
+        FB.BoardSounds(game)
         finishSolo()
     end
     FB.Community.Update(); FB.Net.Update(dt); FB.UI:Update(dt)

@@ -45,7 +45,7 @@ function E.New(level, seed, mode, chainReaction)
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
     self.chains={}
-    self.chainReaction=chainReaction==true and (mode=="random" or mode=="training")
+    self.chainReaction=chainReaction==true and (mode=="random" or mode=="training" or mode=="versus")
     self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
     self.penaltyRules=mode=="versus" or mode=="training"
     self.hurryWarn = self.penaltyRules and 5 or 8
@@ -82,14 +82,17 @@ function E:Group(start, sameColor)
     end
     return queue
 end
-function E:Remove(key, kind)
+function E:Effect(key,kind)
     local row,col=E.Cell(key)
     local x,y=E.Position(row,col,self.ceiling,self.offset)
     -- Cosmetic randomness is separate from the deterministic ammunition generator.
     local variation=(key*7919+self.shots*101)%1000/1000
-    self.effects[#self.effects+1]={x=x,y=y,color=self.grid[key],kind=kind,age=0,
+    return {x=x,y=y,color=self.grid[key],kind=kind,age=0,
         vx=kind=="pop" and (variation*3-1.5)*50 or 0,
         vy=kind=="pop" and -(2+(key*31%100)/100*4)*50 or 0,delay=0}
+end
+function E:Remove(key,kind)
+    self.effects[#self.effects+1]=self:Effect(key,kind)
     self.grid[key]=nil
     for i,k in ipairs(self.attachedOrder) do if k==key then table.remove(self.attachedOrder,i); break end end
 end
@@ -253,14 +256,41 @@ function E:Shoot(angle)
     self.current=self.next
     self.next=self:Color()
     self.shots=self.shots+1; self.idle=0
+    if self.onShoot then self.onShoot(self) end
     return true
 end
 function E:TrainingTimeLeft()
     -- The original shows 2:00 on the first frame and 0:00 for its final second.
     return math.max(0,120.99-self.tick*0.02)
 end
+-- At full graphics upstream ejects or freezes one attached bubble on every
+-- even frame. Keep the final board intact for a late simultaneous-loss draw.
+function E:StepEnding()
+    if self.endingStatus~=self.status then
+        if self.endingStatus then self.effects={} end
+        self.endingStatus,self.endIndex,self.endCells,self.endTick=self.status,0,{},self.tick
+        self.projectile,self.stick,self.chains,self.rising=nil,nil,{},{}
+        -- cleanup_player_bubbles sorts bottom row first, right to left.
+        self.endOrder={}
+        for key in pairs(self.grid) do self.endOrder[#self.endOrder+1]=key end
+        table.sort(self.endOrder,function(a,b) return a>b end)
+    end
+    self.endTick=self.endTick+1
+    if self.endTick%2~=0 or self.endIndex>=#self.endOrder then return end
+    local freeze=self.status=="lost" or self.status=="draw"
+    if not freeze and not (self.status=="won" and self.mode=="versus") then return end
+    self.endIndex=self.endIndex+1
+    local key=self.endOrder[self.endIndex]
+    self.endCells[key]=true
+    if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.frozenSound=true end
+    if not freeze and self.grid[key] then self.effects[#self.effects+1]=self:Effect(key,"pop") end
+end
 function E:Step(dt)
-    if self.status~="playing" or self.paused then return end
+    if self.paused then return end
+    if self.status~="playing" then
+        if self.status=="won" or self.status=="lost" or self.status=="draw" then self:StepEnding() end
+        return
+    end
     self.tick=self.tick+1
     self.elapsed=self.elapsed+dt
     if self.mode=="training" then
@@ -306,7 +336,7 @@ function E:Update(dt)
             -- position-before-velocity Euler updates at each original 20 ms tick.
             fx.drawX=fx.x+fx.vx*flight
             fx.drawY=fx.y+fx.vy*flight+E.GRAVITY*flight*math.max(0,flight-0.02)/2
-            if fx.drawY>440 then table.remove(self.effects,i) end
+            if fx.drawY>(self.mode=="versus" and 446 or 442) then table.remove(self.effects,i) end
         end
         if self.stick then self.stick.age=self.stick.age+dt; if self.stick.age>=0.28 then self.stick=nil end end
     end

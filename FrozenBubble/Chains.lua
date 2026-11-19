@@ -109,9 +109,10 @@ function E:MoveChains()
     for _,chain in ipairs(self.chains) do
         if chain.wait>0 then chain.wait=chain.wait-1
         else
-            -- Upstream uses sprite top-left y > 380. Our solo board starts
-            -- at screen y=44 and uses the center of each 32-pixel bubble.
-            if chain.y>352 or chain.speedX then
+            -- Screen y=380 as a sprite top-left maps to board center y=356
+            -- in split screen (board top 40), or 352 in solo (board top 44).
+            local turnY=self.mode=="versus" and 356 or 352
+            if chain.y>turnY or chain.speedX then
                 local r,c=E.Cell(chain.target)
                 local x,y=E.Position(r,c,self.ceiling,self.offset)
                 local acceleration=1.5
