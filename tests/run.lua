@@ -1879,6 +1879,55 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.game.angle,fb.Engine.MAX_ANGLE); eq(ui.penguin.fbState,"right")
         ui.keys.RIGHT=nil; fb.StartCampaign(1)
     end)
+    test("settled cells keep their anchors across renders and update on snaps, drops and symbol changes",function()
+        local ui=fb.UI
+        local board=ui.makeArenaBoard(ui.gameLayer,0,0)
+        local g=fb.Engine.New({"112.....","2......"},12,"campaign")
+        local moves,hides=0,0
+        local cannonFrames,cannonMoves=0,0
+        board.shooter.SetTexCoord=function() cannonFrames=cannonFrames+1 end
+        board.shooter.SetPoint=function() cannonMoves=cannonMoves+1 end
+        for _,cell in ipairs(board.bubbles) do
+            cell.SetPoint=function(t,_,_,_,x,y) moves=moves+1; t.fbX,t.fbY=x,y end
+            cell.Hide=function(t) hides=hides+1; methods.Hide(t) end
+        end
+        ui:RenderBoard(board,g); eq(moves,4)
+        for _=1,50 do ui:RenderBoard(board,g) end
+        eq(moves,4); eq(hides,0)
+        eq(cannonFrames,1); eq(cannonMoves,1)
+        g.angle=math.pi/4; ui:RenderBoard(board,g)
+        eq(cannonFrames,2); eq(cannonMoves,1); eq(board.shooter.fbFrame,51)
+        g.grid[3]=nil; g.grid[4]=3; ui:RenderBoard(board,g)
+        eq(moves,5); eq(hides,1); assert(not board.bubbles[3].shown and board.bubbles[4].shown)
+        g.ceiling=28; ui:RenderBoard(board,g); eq(moves,9); eq(board.bubbles[1].fbY,-44)
+        g.offset=1; ui:RenderBoard(board,g); eq(board.bubbles[1].fbX,32)
+        local symbols=fb.db.colorblind
+        fb.Options.Set("colorblind",true); ui:RenderBoard(board,g); eq(board.bubbles[1].fbAsset,"bubble-symbol1")
+        board.fbMiniSeat=1; ui:RenderBoard(board,g); eq(board.bubbles[1].fbAsset,"mini-bubble-symbol1")
+        g.status="lost"; g.endCells={[1]=true}; ui:RenderBoard(board,g)
+        local overlay=board.boardOverlays[1]; eq(overlay.fbAsset,"mini-frozen")
+        local anchors=0; overlay.SetPoint=function() anchors=anchors+1 end
+        ui:RenderBoard(board,g); eq(anchors,0)
+        g.endCells=nil; ui:RenderBoard(board,g); assert(not overlay.shown)
+        g.endCells={[1]=true}; ui:RenderBoard(board,g); assert(overlay.shown); eq(anchors,1)
+        ui:RenderBoard(board,nil); assert(not board.bubbles[1].shown and not overlay.shown)
+        fb.Options.Set("colorblind",symbols); board:Hide()
+    end)
+    test("sticking flashes pause at low graphics and keep the desktop cadence on a second impact",function()
+        local g=fb.Engine.New({"1......."},12,"campaign")
+        g.shots=1; g.projectile={color=2}; g:Attach(48,16); g:Step(0.02)
+        eq(g.stick.key,2); eq(g.stick.ticks,1)
+        g.lowGraphics=true
+        for i=1,15 do g:Step(0.02) end
+        eq(g.stick.ticks,1)
+        fb.UI:RenderBoard(fb.UI.board,g); assert(not fb.UI.board.stick.shown)
+        g.lowGraphics=false; g.shots=2; g.projectile={color=3}; g:Attach(80,16); eq(g.stick.key,3)
+        for tick=1,13 do
+            g:Step(0.02); fb.UI:RenderBoard(fb.UI.board,g)
+            eq(fb.UI.board.stick.fbFrame,math.floor(tick/2)+1)
+        end
+        g:Step(0.02); eq(g.stick,nil)
+    end)
     test("sticky frames hold twice and debris passes in front of the cannon at original sprite sizes",function()
         local ui,board=fb.UI,fb.UI.board
         local game=fb.Engine.New({"1......."},5,"versus")
@@ -2048,6 +2097,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(ui.board.fxLayer:GetFrameLevel()<ui.retryButton:GetFrameLevel())
         local overlays=ui.board.boardOverlays
         local positions={}
+        ui:RenderBoard(ui.board,nil)
         for i=1,3 do
             overlays[i].SetPoint=function(_,_,_,_,x,y) positions[i]={x,y} end
         end
@@ -2802,6 +2852,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         -- The desktop uses a different cannon pedestal on the bottom row.
         for i,board in ipairs(ui.miniBoards) do
             local barrelX,barrelY,rimY
+            ui:RenderBoard(board,nil,true)
             board.shooter.SetPoint=function(_,_,_,_,x,y) barrelX,barrelY=x,y end
             board.nextRim.SetPoint=function(_,_,_,y) rimY=y end
             local opponent=m.opponents[i].remote

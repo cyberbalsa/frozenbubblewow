@@ -266,6 +266,10 @@ function E:AdvanceRoot()
     if self.penaltyRules then self.nextRow=nil end
     self.sound(self.penaltyRules and "newroot" or "newroot_solo")
 end
+function E:StartStickEffect(key)
+    -- stick_bubble resets the image index but keeps the two-frame slowdown.
+    self.stick={key=key,ticks=self.stick and self.stick.ticks%2 or 0}
+end
 function E:Attach(x,y,hit)
     local candidates={}
     if hit then candidates=E.Neighbors(hit,self.offset) else for c=1,E.Columns(1,self.offset) do candidates[#candidates+1]=E.Key(1,c) end end
@@ -289,7 +293,7 @@ function E:Attach(x,y,hit)
     self.grid[best]=self.projectile.color
     self.projectile=nil
     self:Resolve(best)
-    if self.lastPop==0 then self.stick={key=best,ticks=0} end
+    if self.lastPop==0 then self:StartStickEffect(best) end
     local rootDue=self.shots%self.rootPeriod==0
     if self.desktopRandom and self.mode~="endless" then
         -- stick_bubble lowers the ceiling before verify_if_end judges the board.
@@ -443,7 +447,7 @@ function E:Step(dt,input,frameParity)
         end
     end
     if self.recordTrack then FB.Recordings.EndTick(self) end
-    if self.stick then
+    if self.stick and not self.lowGraphics then
         self.stick.ticks=self.stick.ticks+1
         if self.stick.ticks>14 then self.stick=nil end
     end

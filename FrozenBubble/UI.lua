@@ -61,7 +61,9 @@ local function makeBoard(parent,x,y)
     -- The original background already contains the playfield. Do not cover it.
     b.bubbles={}; b.fx={}; b.boardOverlays={}
     b.fxLayer=CreateFrame("Frame",nil,b); b.fxLayer:SetAllPoints(b); b.fxLayer:EnableMouse(false)
-    for key=1,104 do b.bubbles[key]=bubble(b) end
+    for key=1,104 do
+        b.bubbles[key]=bubble(b); b.bubbles[key]:Hide()
+    end
     b.rising={}; b.penalties={}
     for i=1,7 do
         b.rising[i]=bubble(b.fxLayer); b.rising[i]:SetDrawLayer("OVERLAY",2); b.rising[i]:Hide()
@@ -1044,29 +1046,47 @@ function U:RenderBoard(board,game,remote)
     end
     local ended=game and game.endCells
     local winner=game and game.status=="won"
+    local ceiling,offset=game and game.ceiling or 0,game and game.offset or 0
+    -- SDL paints settled bubbles onto its background and reuses them across frames.
+    local redraw=board.fbGridGame~=game or board.fbGridCeiling~=ceiling or board.fbGridOffset~=offset
+        or board.fbGridSymbols~=FB.db.colorblind or board.fbGridMini~=mini
+    board.fbGridGame,board.fbGridCeiling,board.fbGridOffset=game,ceiling,offset
+    board.fbGridSymbols,board.fbGridMini=FB.db.colorblind,mini
+    local previousOverlays=board.fbOverlayCount or 0
     local overlays=0
     -- SDL paints frozen bubbles from bottom right to top left. The icicles
     -- overlap the row below, so allocate pooled overlays in that draw order.
     for key=104,1,-1 do
         local color=game and game.grid[key]
         if winner and (game.lowGraphics or not low) and ended and ended[key] then color=nil end
-        if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
+        local cell=board.bubbles[key]
+        if color then
+            local r,c=E.Cell(key)
+            if redraw or cell.fbCellColor~=color then
+                local x,y=E.Position(r,c,ceiling,offset)
+                place(cell,board,x,y,color); cell.fbCellColor=color
+            end
             local effect=not winner and ended and ended[key] and "frozen" or sweep==c-1 and (not low or r==1 and game.ceiling==0) and "prelight"
             if effect then
                 overlays=overlays+1
                 local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
                 board.boardOverlays[overlays]=overlay
                 if mini then effect="mini-"..effect end
-                if ended and ended[key] then placeFrozen(overlay,board,x,y)
-                else
-                    local info=FB.MediaInfo[effect]
-                    overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y)
-                    overlay:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(overlay,effect,1)
+                if redraw or overlays>previousOverlays or overlay.fbCell~=key or overlay.fbAsset~=effect then
+                    local x,y=E.Position(r,c,ceiling,offset)
+                    if ended and ended[key] then placeFrozen(overlay,board,x,y)
+                    else
+                        local info=FB.MediaInfo[effect]
+                        overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y)
+                        overlay:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(overlay,effect,1)
+                    end
+                    overlay.fbCell=key
                 end
             end
-        else board.bubbles[key]:Hide() end
+        elseif cell.fbCellColor then cell:Hide(); cell.fbCellColor=nil end
     end
-    for i=overlays+1,#board.boardOverlays do board.boardOverlays[i]:Hide() end
+    for i=overlays+1,previousOverlays do board.boardOverlays[i]:Hide() end
+    board.fbOverlayCount=overlays
     board.roof:ClearAllPoints(); board.roof:SetPoint("TOPLEFT",0,-(game and game.ceiling or 0))
     local pistonCount=0
     if game and not remote and not self.editing and game.mode~="versus" then
@@ -1133,22 +1153,25 @@ function U:RenderBoard(board,game,remote)
         else t:Hide() end
     end
     for i=count+1,#board.fx do board.fx[i]:Hide() end
-    board.projectile:Hide(); board.current:Hide(); board.next:Hide(); board.shooter:Hide()
-    board.stick:Hide()
-    board.nextRim:Hide(); board.hurry:Hide()
-    for i,dot in ipairs(board.progress) do
-        if game and game.rootPeriod and i<=game.rootPeriod and not self.editing then
-            FB.Animation.Frame(dot,i==phase+1 and "progress-red" or "progress-green",1)
-        else dot:Hide() end
+    local progressCount=game and not self.editing and game.rootPeriod or 0
+    if board.fbProgressCount~=progressCount or board.fbProgressPhase~=phase then
+        for i,dot in ipairs(board.progress) do
+            if i<=progressCount then FB.Animation.Frame(dot,i==phase+1 and "progress-red" or "progress-green",1)
+            else dot:Hide() end
+        end
+        board.fbProgressCount,board.fbProgressPhase=progressCount,phase
     end
-    if not game or self.editing or not game.current then return end
-    if game.stick and not low then
+    if not game or self.editing or not game.current then
+        board.projectile:Hide(); board.current:Hide(); board.next:Hide(); board.shooter:Hide()
+        board.stick:Hide(); board.nextRim:Hide(); board.hurry:Hide(); return
+    end
+    if game.stick and not low and not game.lowGraphics then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
         FB.Animation.Frame(board.stick,mini and "mini-stick" or "stick",math.floor(math.max(0,game.stick.ticks-1)/2)+1)
-    end
+    else board.stick:Hide() end
     if game.projectile then place(board.projectile,board,game.projectile.x,game.projectile.y,game.projectile.color)
-    end
+    else board.projectile:Hide() end
     local versus=game.mode=="versus"
     local launchY=game.launchY or (versus and 366 or E.LAUNCH_Y)
     local angle=game.angle or 0
@@ -1164,17 +1187,27 @@ function U:RenderBoard(board,game,remote)
         x=128+barrel.left*factor
         y=launchY+(mini and mini>2 and 2 or 0)+barrel.top*factor
     end
-    board.shooter:ClearAllPoints(); board.shooter:SetPoint("TOPLEFT",board,"TOPLEFT",x,-y)
-    board.shooter:SetSize(barrel.w*factor,barrel.h*factor)
-    FB.Animation.Frame(board.shooter,asset,low and 1 or math.floor(100-angle*200/math.pi+0.5)+1)
+    local shooter=board.shooter
+    local frame=low and 1 or math.floor(100-angle*200/math.pi+0.5)+1
+    local newBarrel=shooter.fbAsset~=asset or not shooter:IsShown()
+    if newBarrel or shooter.fbX~=x or shooter.fbY~=y then
+        shooter:ClearAllPoints(); shooter:SetPoint("TOPLEFT",board,"TOPLEFT",x,-y)
+        shooter:SetSize(barrel.w*factor,barrel.h*factor)
+        shooter.fbX,shooter.fbY=x,y
+    end
+    if newBarrel or shooter.fbFrame~=frame then
+        FB.Animation.Frame(shooter,asset,frame)
+    end
     local nextY=board.fbNextY or (versus and 416 or 412)
     local typing=not remote and self.screen=="opponent" and FB.MatchChat.input:IsShown()
     if game.status=="lost" or game.status=="draw" then
         placeFrozen(board.current,board,128,launchY)
         if not typing then placeFrozen(board.next,board,128,nextY,true) end
+        board.nextRim:Hide()
     else
         place(board.current,board,128,launchY,game.current)
     end
+    if typing then board.next:Hide(); board.nextRim:Hide() end
     if not typing and game.status~="lost" and game.status~="draw" then
         place(board.next,board,128,nextY,game.next)
         board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,-(nextY-(mini and 20 or 19)))

@@ -143,7 +143,7 @@ function E:MoveChains()
                 if self.grid[neighbor] then
                     self.grid[slot]=chain.color; self.attachedOrder[#self.attachedOrder+1]=slot
                     self:Resolve(slot)
-                    if self.lastPop==0 then self.stick={key=slot,ticks=0} end
+                    if self.lastPop==0 then self:StartStickEffect(slot) end
                     break
                 end
             end

@@ -1,3 +1,8 @@
+# 0.1.0-alpha.47
+
+- Settled bubbles and frozen overlays keep their positions between frames. The cannon changes sprites when its aim crosses one of the original rotation steps. This cuts repeated UI updates on solo boards and in five-player arenas.
+- The sticking flash now holds its frame at Low graphics and resumes at Medium or Full. A second impact during the flash keeps the original two-frame rhythm.
+
 # 0.1.0-alpha.46
 
 - Restored the desktop training score card and its one-second input delay. Press a key or left-click to continue. Escape or a right-click leaves without saving the run.
