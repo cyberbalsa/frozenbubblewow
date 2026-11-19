@@ -55,7 +55,7 @@ local function makeBoard(parent,x,y)
     local b=CreateFrame("Frame",nil,parent)
     b:SetSize(256,400); b:SetPoint("TOPLEFT",x,-y)
     -- The original background already contains the playfield. Do not cover it.
-    b.bubbles={}; b.fx={}
+    b.bubbles={}; b.fx={}; b.boardOverlays={}
     for key=1,104 do b.bubbles[key]=bubble(b) end
     for i=1,100 do b.fx[i]=bubble(b); b.fx[i]:Hide() end
     b.rising={}; b.penalties={}
@@ -128,20 +128,25 @@ function U:Build()
     self.result:SetPoint("TOPLEFT",238.4,-304); self.result:SetFrameLevel(self.layers.panel)
     self.resultArt=A.Image(self.result,"win-panel",0,0,526.4,254.4)
     self.resultDetail=text(self.result,"",0,250,18,526.4,{0.2,0.1,0.2}); self.resultDetail:SetJustifyH("CENTER")
+    self.trainingResult=text(self.result,"",32,58,23,462); self.trainingResult:SetJustifyH("CENTER")
     self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
-        if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level) else self:ShowMenu() end
+        if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
+        elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode)
+        else self:ShowMenu() end
     end)
     self.result:Hide()
     self.hud=text(self.gameLayer,"",30,113,23,245,{1,0.93,0.58})
     self.footer=text(self.gameLayer,"",20,235,14,225,{0.16,0.1,0.22})
     self.penguin=A.Image(self.gameLayer,"anime-shooter-p1",646.4,672,128,96)
     self.remotePenguin=A.Image(self.gameLayer,"anime-shooter-p2",-8,672,128,96); self.remotePenguin:Hide()
+    self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
+    self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","settings"}) do
+    for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="opponent" then
+        if name~="opponent" and name~="solo" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
@@ -225,6 +230,7 @@ end
 function U:SetCombatInput(blocked)
     if self.combatInput==blocked then return end
     self.combatInput=blocked
+    self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     if blocked then
         self.mouseRestore={}
         local function disable(frame)
@@ -286,6 +292,7 @@ function U:ShowMenu()
     self.keys={}; self.board:EnableKeyboard(false)
     if FB.game and FB.game.mode~="versus" then FB.game.paused=true end
     for _,panel in pairs(self.panels) do panel:Hide() end
+    self.panels.solo:EnableKeyboard(false)
     self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; FB.Music()
 end
 function U:ShowGame()
@@ -295,14 +302,59 @@ function U:ShowGame()
 end
 function U:BuildSolo()
     local p=self.panels.solo
-    text(p,"1 PLAYER GAME",0,0,24,350)
-    button(p,"Play all 100 levels",0,58,340,function() FB.StartCampaign(1) end)
-    button(p,"Continue campaign",0,102,340,function() FB.ContinueCampaign() end)
-    text(p,"Start at an unlocked level (practice)",0,160,13,350)
-    self.level=input(p,6,195,80,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
-    button(p,"Play level",102,193,240,function() FB.StartCampaign(tonumber(self.level:GetText()) or 1) end)
-    button(p,"Endless game",0,254,340,function() FB.StartSolo("endless") end)
-    text(p,"Match three bubbles. Drop the clusters hanging underneath. Clear the board before the ice comes down.",0,318,16,350)
+    p:ClearAllPoints(); p:SetScale(1.6); p:SetSize(341,280); p:SetPoint("CENTER",self.frame,"CENTER")
+    FB.Animation.Image(p,"solo-panel",0,0,nil,nil,"BACKGROUND")
+    local title=text(p,"Start 1-player game menu",0,16,14,341); title:SetJustifyH("CENTER")
+    self.soloEntries={}
+    local actions={
+        {"play_all_levels",function() FB.StartCampaign(1) end},
+        {"pick_start_level",function() self:Panel("pick") end},
+        {"play_random_levels",function() FB.StartSolo("random") end},
+        {"multiplayer_training",function() FB.StartSolo("training") end},
+    }
+    for index,choice in ipairs(actions) do
+        local row=CreateFrame("Button",nil,p)
+        row:SetSize(298,37); row:SetPoint("TOPLEFT",21,-90-(index-1)*41)
+        local base=FB.Animation.Image(row,"solo-off",0,0,nil,nil,"BACKGROUND")
+        local effect="glow-"..choice[1]
+        local glow=FB.Animation.Image(row,effect,0,0); glow:Hide()
+        FB.Animation.Image(row,"solo-"..choice[1],0,0,nil,nil,"OVERLAY")
+        local activate=function()
+            if not InCombatLockdown() then FB.Sound("menu_selected"); choice[2]() end
+        end
+        self.soloEntries[index]={base=base,glow=glow,effect=effect,activate=activate}
+        row:SetScript("OnEnter",function() self:SelectSolo(index) end)
+        row:SetScript("OnClick",activate)
+    end
+    button(p,"Continue",20,284,100,function() FB.ContinueCampaign() end)
+    button(p,"Endless",120,284,100,function() FB.StartSolo("endless") end)
+    button(p,"Back",220,284,100,function() self:ShowMenu() end)
+    p:SetPropagateKeyboardInput(true)
+    p:SetScript("OnKeyDown",function(panel,key)
+        if InCombatLockdown() then return end
+        local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        local used=active and (key=="UP" or key=="DOWN" or key=="ENTER" or key=="NUMPADENTER" or key=="ESCAPE")
+        panel:SetPropagateKeyboardInput(not used)
+        if used then
+            if key=="ESCAPE" then self:ShowMenu()
+            elseif key=="UP" then self:SelectSolo((self.soloIndex-2)%4+1)
+            elseif key=="DOWN" then self:SelectSolo(self.soloIndex%4+1)
+            else self.soloEntries[self.soloIndex].activate() end
+        end
+    end)
+    local pick=self.panels.pick
+    text(pick,"Pick a starting level",0,24,22,340)
+    text(pick,"Start at an unlocked level (practice)",0,94,14,340)
+    self.level=input(pick,0,139,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
+    button(pick,"Play level",100,137,220,function() FB.StartCampaign(tonumber(self.level:GetText()) or 1) end)
+end
+function U:SelectSolo(index,silent)
+    self.soloIndex=index; self.soloTime=0
+    for i,row in ipairs(self.soloEntries) do
+        FB.Animation.Frame(row.base,i==index and "solo-over" or "solo-off",1)
+        row.glow:SetShown(i==index and not FB.db.reducedMotion)
+    end
+    if not silent then FB.Sound("menu_change") end
 end
 function U:BuildSettings()
     local p=self.panels.settings
@@ -325,6 +377,8 @@ function U:Options()
 end
 function U:Panel(name)
     self.screen=name
+    self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
+    if name=="solo" then self:SelectSolo(1,true) end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
@@ -396,7 +450,13 @@ function U:BuildScores()
     local p=self.panels.scores
     text(p,"HIGHSCORES",0,0,16,350)
     self.scoreMode="campaign"; self.shared=false
-    button(p,"Campaign / endless",0,34,160,function() self.scoreMode=self.scoreMode=="campaign" and "endless" or "campaign"; self:RefreshScores() end)
+    self.scoreIndex=1
+    self.scoreSelector=button(p,"Campaign",0,34,160,function()
+        self.scoreIndex=self.scoreIndex%#FB.Scores.modes+1
+        self.scoreMode=FB.Scores.modes[self.scoreIndex]
+        self.scoreSelector:SetText((self.scoreMode:gsub("^%l",string.upper)))
+        self:RefreshScores()
+    end)
     button(p,"Personal / shared",174,34,168,function() self.shared=not self.shared; self:RefreshScores() end)
     button(p,"Refresh shared",0,72,160,function()
         FB.Net.RequestScores()
@@ -417,7 +477,7 @@ function U:RefreshScores()
     local rows=FB.Scores.Rows(self.shared,self.scoreMode)
     local lines={(self.shared and "Community" or "Personal").." · "..self.scoreMode,""}
     for i=1,math.min(8,#rows) do
-        local row=rows[i]; lines[#lines+1]=i..". "..row.name.."\n    "..row.score.." pts  ·  Level "..row.level
+        local row=rows[i]; lines[#lines+1]=i..". "..row.name.."\n    "..row.score.." pts"..(row.mode=="campaign" and ("  ·  Level "..row.level) or "")
     end
     if #rows==0 then lines[#lines+1]="No completed runs yet." end
     self.scoreText:SetText(table.concat(lines,"\n"))
@@ -527,15 +587,24 @@ function U:RenderBoard(board,game,remote)
     if game and game.status=="lost" and game.attachedOrder then
         for i=1,math.min(#game.attachedOrder,math.floor((self.endAge or 0)*25)) do frozen[game.attachedOrder[i]]=true end
     end
+    local overlays=0
     for key=1,104 do
         local color=game and game.grid[key]
         if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
-            if sweep==c-1 then FB.Animation.Frame(board.bubbles[key],"prelight",1) end
-            if frozen[key] then FB.Animation.Frame(board.bubbles[key],"frozen",1) end
+            local effect=frozen[key] and "frozen" or sweep==c-1 and "prelight"
+            if effect then
+                overlays=overlays+1
+                local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
+                board.boardOverlays[overlays]=overlay
+                local info=FB.MediaInfo[effect]
+                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y)
+                overlay:SetSize(info.w,info.h); FB.Animation.Frame(overlay,effect,1)
+            end
         else board.bubbles[key]:Hide() end
     end
+    for i=overlays+1,#board.boardOverlays do board.boardOverlays[i]:Hide() end
     board.roof:ClearAllPoints(); board.roof:SetPoint("TOPLEFT",0,-(game and game.ceiling or 0))
-    if game and not remote and not self.editing and game.mode~="versus" then
+    if game and not remote and not self.editing and not game.penaltyRules then
         local height=math.min(51,44+game.ceiling)
         board.compressor:ClearAllPoints(); board.compressor:SetPoint("TOPLEFT",2,height-game.ceiling)
         board.compressor:SetHeight(height)
@@ -547,7 +616,7 @@ function U:RenderBoard(board,game,remote)
         local bubble=game and game.rising and game.rising[i]
         if bubble then place(texture,board,bubble.x,bubble.y,bubble.color) else texture:Hide() end
     end
-    local pending=game and game.mode=="versus" and game.pending or 0
+    local pending=game and (game.mode=="versus" or game.mode=="training") and game.pending or 0
     local height,used=0,0
     while pending>0 and height<350 do
         local grouped=pending>=7
@@ -599,6 +668,11 @@ function U:RenderBoard(board,game,remote)
 end
 function U:AnimateMenu(dt)
     if not self.menu:IsShown() then return end
+    if self.screen=="solo" and not FB.db.reducedMotion then
+        self.soloTime=self.soloTime+dt
+        local row=self.soloEntries[self.soloIndex]
+        FB.Animation.Frame(row.glow,row.effect,math.floor(self.soloTime*50)%70+1)
+    end
     self.menuTime=(self.menuTime or 0)+dt
     local tick=math.floor(self.menuTime*25)
     if not FB.db.reducedMotion then
@@ -639,8 +713,17 @@ function U:Update(dt)
     self.nextButton:SetShown(canAdvance or false)
     local ended=not self.editing and game and game.status~="playing"
     self.result:SetShown(ended or false)
+    local finished=ended and game.status=="finished"
+    self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
+    if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
     self.retryButton:SetShown(ended and not canAdvance or false)
     self.pauseArt:Hide()
+    local training=game and game.mode=="training" and not self.editing
+    self.trainingClock:SetShown(training or false); self.trainingTime:SetShown(training or false)
+    if training then
+        local seconds=math.floor(game:TrainingTimeLeft())
+        self.trainingTime:SetText(string.format("%d'%02d\"",math.floor(seconds/60),seconds%60))
+    end
     if self.editing then
         self.hud:SetText("Editor  ·  Color "..self.editorColor)
         self.footer:SetText("Paint your layout, then Save, Test, or Publish.")
@@ -648,13 +731,14 @@ function U:Update(dt)
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
         self.hud:SetText(game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
-        self.footer:SetText(game.status=="playing" and ("Ceiling in "..(game.rootPeriod-game.shots%game.rootPeriod).." shots\nIncoming bubbles: "..game.pending) or "")
+        self.footer:SetShown(not training and game.mode~="versus")
+        self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
         if game.paused then
             FB.Animation.Frame(self.pauseArt,"pause",math.floor((GetTime()%1.4)*25)+1)
             self.overlaySub:SetText("Press P or click Pause to resume.")
         elseif game.status~="playing" then
-            FB.Animation.Frame(self.resultArt,game.status=="won" and "win-panel" or "lose-panel",1)
-            self.resultDetail:SetText(game.mode=="versus" and (FB.Net.notice or "") or
+            FB.Animation.Frame(self.resultArt,game.status=="finished" and "panel" or game.status=="won" and "win-panel" or "lose-panel",1)
+            self.resultDetail:SetText(training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end

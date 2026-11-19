@@ -45,9 +45,10 @@ function E.New(level, seed, mode)
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
     self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
-    self.hurryWarn = mode=="versus" and 5 or 8
-    self.hurryMax = mode=="versus" and 7.5 or 10.5
-    self.rootPeriod = mode=="versus" and 12 or 9
+    self.penaltyRules=mode=="versus" or mode=="training"
+    self.hurryWarn = self.penaltyRules and 5 or 8
+    self.hurryMax = self.penaltyRules and 7.5 or 10.5
+    self.rootPeriod = self.penaltyRules and 12 or 9
     if level then
         for r, row in ipairs(level) do
             for c = 1, #row do
@@ -117,10 +118,10 @@ function E:Resolve(key)
             shift=shift+1
         end
     end
-    self.score=self.score+popped*10+dropped*20
-    if self.mode=="versus" then
-        self.attack=self.attack+math.max(0,popped+dropped-3)
-    end
+    local penalty=math.max(0,popped+dropped-3)
+    if self.mode=="training" then self.score=self.score+penalty
+    else self.score=self.score+popped*10+dropped*20 end
+    if self.mode=="versus" then self.attack=self.attack+penalty end
     self.lastPop,self.lastDrop=popped,dropped
     return popped,dropped
 end
@@ -130,7 +131,7 @@ function E:CheckEnd()
             self.ceiling=0
             for r=1,5 do for c=1,E.Columns(r) do self.grid[E.Key(r,c)]=self:Random(8) end end
             self.score=self.score+500
-        elseif self.mode~="versus" then self.status="won"; return end
+        elseif not self.penaltyRules then self.status="won"; return end
     end
     for key in pairs(self.grid) do
         local r,c=E.Cell(key); local _,y=E.Position(r,c,self.ceiling,self.offset)
@@ -188,7 +189,7 @@ function E:MoveGarbage()
     end
 end
 function E:AdvanceRoot()
-    if self.mode~="versus" then
+    if not self.penaltyRules then
         self.ceiling=self.ceiling+E.STEP
     else
         -- Shift the grid indices while preserving every existing bubble's x coordinate.
@@ -232,7 +233,7 @@ function E:Attach(x,y,hit)
     if self.status=="playing" then
         if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
         self:CheckEnd()
-        if hit and self.mode=="versus" and self.status=="playing" then self:ApplyGarbage() end
+        if hit and self.penaltyRules and self.status=="playing" then self:ApplyGarbage() end
     end
     self.changed=true
 end
@@ -245,14 +246,22 @@ function E:Shoot(angle)
     self.shots=self.shots+1; self.idle=0
     return true
 end
+function E:TrainingTimeLeft()
+    -- The original shows 2:00 on the first frame and 0:00 for its final second.
+    return math.max(0,120.99-self.tick*0.02)
+end
 function E:Step(dt)
     if self.status~="playing" or self.paused then return end
     self.tick=self.tick+1
     self.elapsed=self.elapsed+dt
+    if self.mode=="training" then
+        if self:TrainingTimeLeft()==0 then self.status="finished"; self.projectile=nil; return end
+        if self.pending==0 and #self.rising==0 and self:Random(1500)==1 then self:AddGarbage(self:Random(6)) end
+    end
     self.idle=self.idle+dt
     if #self.rising>0 then self:MoveGarbage(); return end
     if not self.projectile then
-        if self.idle+1e-9>=self.hurryMax then self:Shoot(self.angle) end
+        if self.idle+1e-9>=self.hurryMax then self.autoLaunched=self:Shoot(self.angle) end
         return
     end
     local p=self.projectile

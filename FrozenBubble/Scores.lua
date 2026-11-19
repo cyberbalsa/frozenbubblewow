@@ -1,5 +1,6 @@
 local _, FB = ...
 local S = {}; FB.Scores = S
+S.modes={"campaign","endless","training"}
 function S.Init(db)
     db.schema=1
     db.scores=db.scores or {}; db.peers=db.peers or {}; db.custom=db.custom or {}
@@ -15,14 +16,20 @@ function S.Record(mode, score, level, seconds)
     rows[#rows+1]={name=FB.PlayerName(),mode=mode,score=math.floor(score),level=level or 1,
         seconds=math.floor(seconds),date=time()}
     table.sort(rows,function(a,b) return a.score>b.score end)
-    while #rows>30 do table.remove(rows) end
+    local count=0
+    for i,row in ipairs(rows) do
+        if row.mode==mode then
+            count=count+1
+            if count>30 then table.remove(rows,i); break end
+        end
+    end
 end
 function S.Best(mode)
     for _,row in ipairs(FB.db.scores) do if row.mode==mode then return row end end
 end
 function S.Receive(sender, fields)
     local mode=fields[3]
-    if mode~="campaign" and mode~="endless" then return end
+    if mode~="campaign" and mode~="endless" and mode~="training" then return end
     local score=FB.Integer(fields[4],0,100000000)
     local level=FB.Integer(fields[5],1,100)
     local seconds=FB.Integer(fields[6],0,10000000)

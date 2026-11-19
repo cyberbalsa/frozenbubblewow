@@ -136,6 +136,19 @@ test("versus new rows alternate widths and retain original world coordinates",fu
     game:AdvanceRoot()
     eq(game.offset,0); eq(game.grid[24],original); eq(#game:Pack(),98)
 end)
+test("training uses solo ammunition, versus timing, and points for outgoing penalties",function()
+    local g=E.New({"111.....","2......","3......."},7,"training")
+    eq(g.rootPeriod,12); eq(g.hurryMax,7.5); eq(g.launchY,E.LAUNCH_Y)
+    local p,d=g:Resolve(1)
+    eq(p,3); eq(d,2); eq(g.score,2); eq(g.attack,0)
+    g:CheckEnd(); eq(g.status,"playing")
+    g.Random=function(_,limit) return limit==1500 and 1 or limit end
+    g:Step(0.02); eq(g.pending,6)
+    g:Step(0.02); eq(g.pending,6)
+    g:AdvanceRoot(); eq(g.ceiling,0); eq(g.offset,1)
+    g.tick=6049; g.paused=true; g:Step(0.02); eq(g.tick,6049)
+    g.paused=false; g:Step(0.02); eq(g.status,"finished"); assert(not g:Shoot())
+end)
 test("random play preserves board invariants across all levels",function()
     for i,level in ipairs(FB.Levels) do
         local g=E.New(level,999+i)
@@ -330,6 +343,21 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     env.SlashCmdList.FROZENBUBBLE(""); fb.StartCampaign(1)
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent"}) do fb.UI:Panel(name); fb.UI:Update(1) end
+    test("solo menu launches timed training, records it once, and retries",function()
+        fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)
+        fb.UI:SelectSolo(4); fb.UI:Update(0.10)
+        eq(fb.UI.soloEntries[4].glow.fbFrame,6)
+        fb.UI.soloEntries[4].activate()
+        eq(fb.game.mode,"training"); fb.UI:Update(0.02)
+        eq(fb.UI.trainingTime.text,"2'00\""); assert(fb.UI.trainingClock.shown)
+        fb.game.tick=6049; fb.game.score=14
+        for _=1,3 do eventFrame.scripts.OnUpdate(eventFrame,0.02) end
+        eq(fb.game.status,"finished"); eq(#fb.Scores.Rows(false,"training"),1)
+        eq(fb.Scores.Best("training").score,14); assert(fb.UI.trainingResult.shown)
+        fb.UI.retryButton.scripts.OnClick(); eq(fb.game.tick,0); eq(fb.game.status,"playing")
+        fb.UI:Panel("solo"); fb.UI.soloEntries[3].activate(); eq(fb.game.mode,"random")
+        fb.UI:Panel("solo"); fb.UI.soloEntries[2].activate(); eq(fb.UI.screen,"pick")
+    end)
     test("versus draws the penalty stack, rising bubbles and both shooter penguins",function()
         fb.StartVersus(123)
         fb.Net.match={peer="Bob",remote={grid={},offset=0,shots=0,score=0,lockedShots=0,ceiling=0,

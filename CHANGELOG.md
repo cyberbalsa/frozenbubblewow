@@ -1,3 +1,9 @@
+# 0.1.0-alpha.4
+
+- All eight bubble colors have smooth, color-matched rims. The old GIFs had a jagged black outline at large UI scales. Ceiling warnings and freeze effects now draw over the bubble artwork.
+- The solo menu uses the original wooden panel, lettering, and animated selection glow. Pick a campaign start, play a random board, or practice in multiplayer training.
+- Training uses the original two-minute clock, incoming penalties, and attack-based scoring. Completed sessions have their own personal and community rankings. This release includes the standard training rules. Chain reactions are still in development.
+
 # 0.1.0-alpha.3
 
 - Upscaled the menu and both game backgrounds, the menu logo, and the wooden buttons with Upscayl. All five use the original artwork at twice the resolution.

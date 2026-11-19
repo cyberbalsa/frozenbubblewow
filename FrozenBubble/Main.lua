@@ -81,7 +81,7 @@ end
 local function finishSolo()
     local game=FB.game
     if not game or game.mode=="versus" or game.status=="playing" or game.recorded then return end
-    game.recorded=true; FB.Sound(game.status=="won" and "applause" or "lose")
+    game.recorded=true; FB.Sound(game.status=="finished" and "cancel" or game.status=="won" and "applause" or "lose")
     if game.mode=="campaign" then
         FB.run.score=FB.run.score+game.score; game.score=0
         FB.run.seconds=FB.run.seconds+game.elapsed
@@ -92,7 +92,9 @@ local function finishSolo()
             if FB.run.eligible then FB.Scores.Record("campaign",FB.run.score,FB.level,FB.run.seconds) end
             FB.db.checkpoint=nil
         end
-    elseif game.mode=="endless" then FB.Scores.Record("endless",game.score,1,game.elapsed) end
+    elseif game.mode=="endless" or game.mode=="training" and game.status=="finished" then
+        FB.Scores.Record(game.mode,game.score,1,game.elapsed)
+    end
 end
 local events=CreateFrame("Frame")
 events:RegisterEvent("ADDON_LOADED")
@@ -165,9 +167,10 @@ events:SetScript("OnUpdate",function(_,dt)
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false
         end
+        if game.autoLaunched then FB.Sound("launch"); game.autoLaunched=false end
         if game.malusSound then FB.Sound("malus"); game.malusSound=false end
         if game.bounced then FB.Sound("rebound"); game.bounced=false end
-        if game.lowered then FB.Sound(game.mode=="versus" and "newroot" or "newroot_solo"); game.lowered=false end
+        if game.lowered then FB.Sound(game.penaltyRules and "newroot" or "newroot_solo"); game.lowered=false end
         finishSolo()
     end
     FB.Community.Update(); FB.Net.Update(dt); FB.UI:Update(dt)

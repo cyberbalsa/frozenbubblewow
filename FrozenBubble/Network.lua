@@ -139,7 +139,7 @@ function N.Receive(prefix,message,channel,sender)
     if kind=="SCOREQ" and (channel=="CHANNEL" or channel=="GUILD" or channel=="PARTY" or channel=="RAID" or channel=="INSTANCE_CHAT") then
         if now()-(N.lastScoreReply[sender] or -100)<30 then return end
         N.lastScoreReply[sender]=now()
-        for _,mode in ipairs({"campaign","endless"}) do
+        for _,mode in ipairs(FB.Scores.modes) do
             local row=FB.Scores.Best(mode)
             if row then N.Send("SCORE","WHISPER",sender,mode,row.score,row.level,row.seconds) end
         end
