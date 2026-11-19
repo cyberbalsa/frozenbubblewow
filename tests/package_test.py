@@ -46,6 +46,38 @@ class Packaging(unittest.TestCase):
             for sound in re.findall(r'FB.Sound\("([a-z_]+)"\)', lua.read_text()):
                 self.assertTrue((ROOT / f"FrozenBubble/Media/{sound}.ogg").is_file(), sound)
 
+    def test_board_reveal_masks_load_as_one_bit_bc1(self):
+        reveals = ROOT / "FrozenBubble/Media/Reveals"
+        specs = (ROOT / "FrozenBubble/RevealData.lua").read_text()
+        names = set()
+        for key, steps, capacity in re.findall(r'\["([^"]+)"\]=\{w=\d+,h=\d+,steps=(\d+),cols=\d+,capacity=(\d+)', specs):
+            for page in range(1, (int(steps) - 1) // int(capacity) + 2):
+                names.add(f"{key}-{page}.blp")
+        self.assertTrue({"bars-1.blp","circle-in-4.blp","arena-light-4.blp","mini-bubble-symbol8-dark-1.blp"} <= names)
+        for key in ("compressor","progress-red","bubble-symbol1","mini-rim"):
+            self.assertTrue((reveals / (key+"-cut.blp")).is_file())
+        self.assertEqual(names, {p.name for p in reveals.glob("*.blp") if not p.name.endswith("-cut.blp")})
+        for path in reveals.glob("*.blp"):
+            with path.open("rb") as f:
+                header = f.read(148)
+            magic, version, encoding, depth, alpha, mip, w, h = struct.unpack_from("<4sI4B2I", header)
+            self.assertEqual((magic, version, encoding, depth, alpha, mip), (b"BLP2", 1, 2, 1, 0, 0))
+            self.assertEqual((w & (w-1), h & (h-1)), (0,0))
+            self.assertEqual((struct.unpack_from("<I",header,20)[0],struct.unpack_from("<I",header,84)[0]), (1172,w*h//2))
+            self.assertEqual(path.stat().st_size,1172+w*h//2)
+
+        # The desktop reveals twelve rows at a time in alternating 40px bars.
+        # Decode every texel of every compacted frame without an image library.
+        data = (reveals / "bars-1.blp").read_bytes()
+        width = struct.unpack_from("<I", data,12)[0]
+        for step in range(40):
+            for y in range(40):
+                for col in range(16):
+                    x = step*16+col
+                    offset = 1172 + 8*((y//4)*(width//4)+x//4)
+                    palette = (data[offset+4+y%4] >> (2*(x%4))) & 3
+                    self.assertEqual(palette==0, (y if col%2==0 else 39-y)<=step)
+
     def test_bubble_edges_have_partial_coverage(self):
         names = [f"bubble{prefix}{color}" for prefix in ("", "-symbol") for color in range(1, 9)]
         for name in names:

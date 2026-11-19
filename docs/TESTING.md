@@ -24,3 +24,5 @@ Automated tests cannot prove that Blizzard will deliver messages or that every t
 
 
 For an arena test, host a room and join it from two to four other characters. Check that each character sees their own board in the center, that F1–F4 target the opponent in the corresponding corner, and that F10 resumes split penalties. Leave one board full and verify that its player can watch the survivors. Check room chat, guest departure, combat, and a rematch to the chosen victory limit.
+
+Start a campaign, advance from a result panel, and retry a multiplayer round with board transitions enabled. Check that the previous screen shows through each reveal, the first click skips without firing, colorblind symbols stay visible, and combat restores WoW input. Check immediate starts with Low graphics, Reduce motion, and the transition setting switched off individually.

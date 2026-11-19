@@ -48,3 +48,7 @@ python3 tools/demos/pack.py "$upstream" "$traces"
 The desktop engine iterates Perl hash keys when ejecting a group. Individual pop trajectories can vary between captures of the same recording.
 
 An optional `--reference` argument to the capture command writes desktop screenshots at frames 1, 500 and 950. Use a separate output directory for these.
+
+## Board transitions
+
+Run `python3 tools/import_transitions.py /path/to/frozen-bubble` to regenerate the masks. The importer compiles the five effect routines from the pinned `CStuff.xs`. An offline frame sink records the first step that draws each pixel. The circular, plasma, noise, and brightness patterns retain the original 640×480 grid. Constant rows and columns in the geometric patterns are stored once. The importer also generates brightness masks for individual pieces of board artwork so custom layouts and colorblind bubbles can use the same reveal.

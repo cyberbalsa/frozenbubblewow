@@ -96,6 +96,7 @@ function U:Build()
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart",function() if not self.fullWindow then f:StartMoving() end end); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
+        FB.Transitions.Interrupt()
         FB.Demos.idle=0
         if FB.Demos.scene then self:ShowMenu() end
         self.keys={}; self.board:EnableKeyboard(false)
@@ -356,6 +357,7 @@ end
 function U:SetCombatInput(blocked)
     if self.combatInput==blocked then return end
     self.combatInput=blocked
+    if blocked then FB.Transitions.Interrupt() end
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
@@ -394,13 +396,14 @@ function U:UpdateVisibility(dt)
     if math.abs(self.alpha-target)<0.005 then self.alpha=target end
     self.frame:SetAlpha(self.alpha)
     self.frame:SetFrameStrata(inactive and "LOW" or "HIGH")
-    if FB.LocalVersus.match and self.screen=="opponent" and not combat then
+    if FB.LocalVersus.match and self.screen=="opponent" and not combat and not FB.Transitions.target then
         local capture=self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
         self.board:EnableKeyboard(capture)
         if not capture then self.keys={} end
     end
     if inactive~=self.inactive then
         self.inactive=inactive
+        if inactive then FB.Transitions.Interrupt() end
         self.keys={}; self.board:EnableKeyboard(false)
         if canPauseGame() then
             if inactive and not FB.game.paused then FB.game.paused=true; self.focusPausedGame=FB.game
@@ -444,6 +447,7 @@ function U:WindowControls(arena)
     self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or 976,-4)
 end
 function U:ShowMenu()
+    FB.Transitions.Cancel()
     self:WindowControls(false)
     FB.Demos.Close()
     self.editing=false; self.stroke=nil
@@ -603,6 +607,7 @@ function U:Options()
     if self.musicValue then self.musicValue:SetText(math.floor((FB.db.musicVolume or 0.8)*100+0.5).."%") end
 end
 function U:Panel(name)
+    FB.Transitions.Cancel()
     local wasDemo=FB.Demos.scene
     FB.Demos.Close()
     if name=="editor" and not self.editGame then self:StartEditor(); return end
@@ -1126,7 +1131,7 @@ function U:AnimateMenu(dt)
     end
 end
 function U:Update(dt)
-    if not self.frame or not self.frame:IsShown() then return end
+    if FB.Transitions.target or not self.frame or not self.frame:IsShown() then return end
     FB.Demos.Update(dt)
     if FB.Demos.scene then return end
     FB.MatchChat.Refresh()

@@ -13,7 +13,7 @@ function L.Start(chains, previous)
     L.match={right=right,left=left,wins=previous and previous.wins or {0,0},elapsed=0}
     FB.game=right; FB.run=nil
     FB.UI.keys={}; FB.UI.focusPausedGame=nil
-    FB.UI.frame:Show(); FB.UI:Panel("opponent"); FB.Music()
+    FB.UI.frame:Show(); FB.Transitions.Open("opponent"); FB.Music()
 end
 
 function L.Rematch()

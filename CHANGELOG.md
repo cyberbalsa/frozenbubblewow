@@ -1,3 +1,9 @@
+# 0.1.0-alpha.17
+
+- New boards open with the original 50 Hz blinds, alternating bars, diagonal squares, circles, plasma, scattered pixels, and brightness effects. They play over the preceding menu or result screen in solo play, shared keyboard games, network rounds, and the four title demos.
+- Click or press a key over the game to finish a board reveal. An input during a demo opening takes you back to the title. Local clocks start once the board is visible. Online opponents keep playing through the reveal.
+- Turn off **Animate the start of a round** under Settings → AddOns → Frozen Bubble Forever to enter immediately. Low graphics and Reduce motion also skip the effect.
+
 # 0.1.0-alpha.16
 
 - Popped bubbles, falling clusters, and attachment flashes follow the desktop game's 50 Hz clock. Falling bubbles pass in front of the cannon. A shot caught in midair at the end of a versus round bursts where it was flying.

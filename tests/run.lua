@@ -754,10 +754,12 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
+    -- Existing interaction tests enter the playable board immediately.
+    assert(fb.Options.controls.boardTransitions.get()); fb.Options.Set("boardTransitions",false)
     test("native settings and minimap launcher share saved preferences",function()
         eq(fb.Options.category:GetID(),"Frozen Bubble Forever")
         local setting=fb.Options.controls.minimap
@@ -768,6 +770,90 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(fb.UI.frame.shown)
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(not fb.UI.frame.shown)
         fb.Options.controls.musicVolume.set(0.65); eq(fb.db.musicVolume,0.65)
+    end)
+    test("desktop board reveals hold local clocks, cover the previous panel, and respect input and motion settings",function()
+        local ui,t=fb.UI,fb.Transitions
+        local random=env.math.random
+        local function pick(...)
+            local rolls={...}
+            env.math.random=function(n)
+                local roll=table.remove(rolls,1)
+                assert(roll and roll>=1 and roll<=n)
+                return roll
+            end
+        end
+        fb.Options.Set("boardTransitions",true)
+        for _,case in ipairs({
+            {"horizontal",1,1},{"vertical",2,2},{"bars",7},{"squares",8},
+            {"circle-out",6,1},{"circle-in",6,2},{"plasma",3,1,4},{"points",4,2},
+            {"solo-dark",5,3,2},{"solo-light",3,3,1}
+        }) do
+            ui:Panel("solo"); pick(env.unpack(case,2))
+            fb.StartCampaign(1)
+            eq(t.effect,case[1]); eq(t.step,0); eq(t.target,"game")
+            assert(ui.panels.solo:IsShown() and t.frame:IsShown())
+            local g=fb.game; fb.Fire(); eq(g.shots,0)
+            eventFrame.scripts.OnUpdate(nil,0.10)
+            eq(t.step,5); eq(g.tick,0); eq(g.elapsed,0)
+            if t.effect=="plasma" then assert(t.flipX and t.flipY) end
+            if t.suffix then
+                assert(t.patchCount>1 and not t.sprites[1]:IsShown() and #t.boxes>1)
+                eq(t.sprites[2].fbReveal,"compressor"..t.suffix)
+                for i=1,t.patchCount do assert(#t.patches[i].fbCuts<=2) end
+            end
+            local steps=fb.RevealData[t.effect].steps
+            for i=6,steps do eventFrame.scripts.OnUpdate(nil,0.02) end
+            eq(t.target,nil); eq(ui.screen,"game"); eq(g.tick,0)
+            assert(not t.frame:IsShown() and not ui.panels.solo:IsShown())
+            eventFrame.scripts.OnUpdate(nil,0.02); eq(g.tick,1)
+        end
+        pick(7); fb.StartCampaign(1)
+        t.frame.scripts.OnMouseDown(); eq(ui.screen,"game"); eq(t.target,nil); eq(fb.game.shots,0)
+        pick(7); fb.StartCampaign(1); ui.frame:Hide()
+        assert(not t.target and fb.game.paused)
+        ui.frame:Show(); ui:ShowGame(); assert(not fb.game.paused and not t.target)
+        pick(7); fb.StartSolo("training"); fb.Options.Set("reducedMotion",true)
+        assert(not t.target); fb.StartCampaign(1); assert(not t.target)
+        fb.Options.Set("reducedMotion",false); fb.Options.Set("graphicsLevel",1)
+        fb.StartCampaign(1); assert(not t.target)
+        fb.Options.Set("graphicsLevel",3); pick(7); fb.StartCampaign(1)
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
+        assert(not t.target and fb.game.paused)
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED")
+        pick(7); fb.StartCampaign(1); ui:ShowMenu(); assert(not t.target)
+        env.math.random=random; fb.Options.Set("boardTransitions",false)
+        ui.frame:Hide()
+    end)
+    test("all four recording openings use the captured board and can be dismissed from the title",function()
+        local ui,t=fb.UI,fb.Transitions
+        local random=env.math.random; env.math.random=function() return 8 end
+        fb.Options.Set("boardTransitions",true); ui.frame:Show()
+        for i,scene in ipairs(fb.DemoData.scenes) do
+            ui:ShowMenu(); fb.Demos.Start(i)
+            eq(t.demo,i); eq(t.sprites[1].fbAsset,scene.background)
+            assert(t.used>30 and not fb.Demos.scene)
+            eq(t.Advance(0.7),0); eq(fb.Demos.scene,scene); eq(fb.Demos.frame,1)
+        end
+        ui:ShowMenu(); fb.Demos.Start(4); t.frame.scripts.OnMouseDown()
+        assert(not t.target and not fb.Demos.scene); eq(ui.screen,"menu")
+        fb.Options.Set("boardTransitions",false); env.math.random=random; ui.frame:Hide()
+    end)
+    test("local and network rounds open on the right boards and keep online play running",function()
+        local ui,t=fb.UI,fb.Transitions
+        fb.Options.Set("boardTransitions",true)
+        local random=env.math.random; env.math.random=function() return 7 end
+        fb.LocalVersus.Start(false)
+        eq(t.sprites[1].fbAsset,"versus-background")
+        local m=fb.LocalVersus.match; eventFrame.scripts.OnUpdate(nil,0.1)
+        eq(m.right.tick,0); eq(m.left.tick,0)
+        t.Finish(); eventFrame.scripts.OnUpdate(nil,0.02); eq(m.right.tick,1); eq(m.left.tick,1)
+        fb.LocalVersus.match=nil
+        local remote=fb.Engine.New(nil,9,"versus")
+        fb.Net.match={phase="playing",remote=remote,seq=0,lastState=env.GetTime(),peer="Peer-TestRealm",lastSeen=env.GetTime(),id="a"}
+        fb.StartVersus(9,false); eq(t.target,"opponent")
+        eventFrame.scripts.OnUpdate(nil,0.1); eq(fb.game.tick,5)
+        t.Finish(); fb.Net.match=nil; ui:ShowMenu()
+        fb.Options.Set("boardTransitions",false); env.math.random=random; ui.frame:Hide()
     end)
     test("main menu keyboard, 50 Hz cursors, blinks and scrolling credits follow focus",function()
         local ui=fb.UI
@@ -1170,7 +1256,20 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local host=fb.PlayerName()
         for _,peer in ipairs({guest1,guest2,guest3,guest4}) do peer.Arena.Join(host) end
         tick(9)
-        eq(#fb.Net.match.names,5); ui.roomStart.scripts.OnClick(); tick(9)
+        eq(#fb.Net.match.names,5)
+        fb.Options.Set("boardTransitions",true)
+        local random=env.math.random
+        env.math.random=function(n) return n==8 and 4 or n==3 and 3 or 2 end
+        ui.roomStart.scripts.OnClick(); tick(9)
+        local reveal=fb.Transitions
+        eq(reveal.effect,"arena-dark"); eq(reveal.sprites[1].fbAsset,"arena-background")
+        local mini=0
+        for i=1,reveal.used do
+            if reveal.sprites[i].fbAsset:find("^mini%-bubble") then mini=mini+1 end
+        end
+        eq(mini,4*(38+1))
+        for i=1,reveal.patchCount do assert(#reveal.patches[i].fbCuts<=2) end
+        fb.Options.Set("boardTransitions",false); env.math.random=random
         eq(ui.screen,"opponent"); local m=fb.Net.match
         ui:Update(0.02)
         eq(ui.gameBackground.fbAsset,"arena-background")

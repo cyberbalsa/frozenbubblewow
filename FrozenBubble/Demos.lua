@@ -119,7 +119,36 @@ local function build()
     D.wipe:SetTexture(FB.media.."demo-wipe.tga"); D.wipe:SetAllPoints(); D.wipe:Hide()
 end
 
+-- The first trace contains the SDL background patches and the attached
+-- sprites separately. The opening effect runs before the moving sprites.
+function D.Opening(index,sprite)
+    local scene=data.scenes[index]
+    sprite(scene.background,0,0,640,480,-8)
+    local row=scene.frames[1]
+    for i=1,#row,8 do
+        local a,b,c,d,e,f,g,h=row:byte(i,i+7)
+        local slot,id=digits[a]*64+digits[b],digits[c]*64+digits[d]
+        if slot>0 and slot<1500 and id>0 then
+            local spec=data.sprites[id]
+            local x,y=digits[e]*64+digits[f]-512,digits[g]*64+digits[h]-512
+            local order=slot<=300 and -2 or 0
+            if spec[1]=="bubble" then
+                sprite((FB.db.colorblind and "bubble-symbol" or "bubble")..spec[2],x,y,32,32,order)
+            elseif spec[1]=="media" then
+                local info=FB.MediaInfo[spec[2]]
+                sprite(spec[2],x,y,info.w,info.h,order)
+            elseif spec[1]=="atlas" then
+                if FB.db.colorblind and spec[8]>0 then spec=data.sprites[spec[8]] end
+                sprite("demo-art-"..spec[2],x,y,spec[5],spec[6],order,spec[3],spec[4])
+            end
+        end
+    end
+end
+
 function D.Start(index)
+    FB.Transitions.Open("demo",index)
+end
+function D.Play(index)
     if not D.panel then build() end
     local ui=FB.UI
     D.scene=data.scenes[index]; D.frame=0; D.elapsed=0

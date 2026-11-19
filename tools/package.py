@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def package(version: str) -> Path:
     if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?", version):
-        raise ValueError("Expected a semantic version such as v0.1.0-alpha.16")
+        raise ValueError("Expected a semantic version such as v0.1.0-alpha.17")
     version = version.removeprefix("v")
     addon = ROOT / "FrozenBubble"
     toc = (addon / "FrozenBubble.toc").read_text()
@@ -21,7 +21,7 @@ def package(version: str) -> Path:
     out = ROOT / "dist"
     out.mkdir(exist_ok=True)
     archive = out / f"FrozenBubbleForever-v{version}.zip"
-    allowed = {".lua", ".toc", ".tga", ".ogg", ".md"}
+    allowed = {".lua", ".toc", ".tga", ".blp", ".ogg", ".md"}
     with ZipFile(archive, "w", compression=ZIP_DEFLATED, compresslevel=9) as z:
         for file in sorted(addon.rglob("*")):
             if not file.is_file():
@@ -45,5 +45,5 @@ def package(version: str) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", nargs="?", default="0.1.0-alpha.16")
+    parser.add_argument("version", nargs="?", default="0.1.0-alpha.17")
     package(parser.parse_args().version)

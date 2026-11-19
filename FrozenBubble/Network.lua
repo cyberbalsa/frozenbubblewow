@@ -108,10 +108,10 @@ function N.Begin()
     if m.capable and not m.series then
         m.round=1; m.series={id=m.id,wins=0,losses=0,limit=m.limit or 0}
     end
-    FB.StartVersus(m.seed,m.chainReaction)
     m.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction)
     -- The spectator advances shots received from the other player.
     m.remote.hurryMax=math.huge
+    FB.StartVersus(m.seed,m.chainReaction)
     FB.game.onShoot=N.Fire
     notify("Playing against "..m.peer)
 end
