@@ -36,10 +36,11 @@ function R.Apply(play)
         local kind,index=e[2],e[3]
         local name=room.names[index]
         local v=room.players[name]
-        if kind=="ATURN" or kind=="AFIRE" or kind=="ASTATE" then
+        if kind=="ATURN" or kind=="AFIRE" or kind=="ARISE" or kind=="ASTATE" then
             local fields=FB.Split("1|"..kind.."||"..e[4])
             if kind=="ATURN" then FB.PeerView.Turn(v,fields)
             elseif kind=="AFIRE" then FB.PeerView.Fire(v,fields,play.frame*0.02)
+            elseif kind=="ARISE" then FB.PeerView.Rise(v,fields)
             else
                 FB.PeerView.State(v,fields,play.right,play.frame*0.02)
                 v.target=room.names[e[5]]

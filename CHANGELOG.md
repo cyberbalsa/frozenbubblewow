@@ -1,3 +1,9 @@
+# 0.1.0-alpha.41
+
+- Duels and arenas send incoming penalty bubbles as soon as they launch. You can watch a volley rise on an opponent’s board even when it lands between board updates. Both players need alpha.41 or later for the live volley.
+- On miniature boards, penalty bubbles rise 30 desktop pixels per frame and hold at the destination before snapping into the staggered row. They draw in front of the penguin and chat panel.
+- Duel and arena recordings save the incoming volleys, including their colors, lanes and timing.
+
 # 0.1.0-alpha.40
 
 - The online winner’s name uses the original game lettering. The sign can appear while opponents’ boards are still freezing, and loose bubbles keep falling in front of it. Draws use the full-size menu panel.

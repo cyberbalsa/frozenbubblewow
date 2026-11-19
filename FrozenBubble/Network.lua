@@ -31,7 +31,8 @@ function N.Send(kind, channel, target, ...)
     if kind=="STATE" or kind=="ASTATE" or kind=="QUEUE" then
         for i=#N.outbox,1,-1 do
             local entry=N.outbox[i]
-            if (kind=="STATE" and entry.kind=="FIRE" or kind=="ASTATE" and entry.kind=="AFIRE") and entry.target==target then break end
+            if entry.target==target and (kind=="STATE" and (entry.kind=="FIRE" or entry.kind=="RISE")
+                or kind=="ASTATE" and (entry.kind=="AFIRE" or entry.kind=="ARISE")) then break end
             if entry.kind==kind and entry.channel==channel and entry.target==target then entry.message=message; return true end
         end
     end
@@ -130,7 +131,7 @@ function N.Begin()
     end
     m.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
-    FB.game.onShoot=N.Fire
+    FB.game.onShoot=N.Fire; FB.game.onRise=N.Rise
     FB.Recordings.Begin(m.seed,FB.game,m)
     notify("Playing against "..m.peer)
 end
@@ -166,6 +167,15 @@ function N.Fire(g,launchTick)
     local send=m.arena and FB.Arena.Fan or N.Whisper
     send(m.arena and "AFIRE" or "FIRE",m.id,m.seq,launchTick or g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
         g.current,g.next,g.rng,g:Pack())
+end
+-- An entire penalty volley can land between two arena snapshots. Send the
+-- owner's seven-or-fewer lanes before the first 30-pixel step.
+function N.Rise(g)
+    local m=N.match
+    if not m or m.phase~="playing" then return end
+    m.seq=m.seq+1
+    local send=m.arena and FB.Arena.Fan or N.Whisper
+    send(m.arena and "ARISE" or "RISE",m.id,m.seq,g.tick,g.shots,g.offset,g.pending,FB.PeerView.PackRising(g))
 end
 -- Keyboard turns advance on the peer's 20 ms clock. Mouse aim carries an
 -- absolute angle plus the shooter's lean. Refresh held inputs for packet loss.
@@ -337,6 +347,8 @@ function N.Receive(prefix,message,channel,sender)
         if FB.PeerView.Turn(m,p) then FB.DuelReplay.Packet(m,p) end
     elseif kind=="FIRE" and m.phase=="playing" then
         if FB.PeerView.Fire(m,p) then FB.DuelReplay.Packet(m,p) end
+    elseif kind=="RISE" and m.phase=="playing" then
+        if FB.PeerView.Rise(m,p) then FB.DuelReplay.Packet(m,p) end
     elseif kind=="STATE" and m.phase=="playing" then
         N.ApplyState(m,p)
     end

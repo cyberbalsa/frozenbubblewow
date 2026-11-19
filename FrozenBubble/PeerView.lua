@@ -92,12 +92,67 @@ function V.Fire(m,p,receivedAt)
     view.tick,view.elapsed,view.accumulator=tick,tick*0.02,0
     view.status,view.projectile,view.rising,view.chains="playing",nil,{},{}
     view.shots,view.lockedShots=shots-1,shots-1
+    view.incomingRise=nil
     view.current,view.next=color,current
     local facing=view.angle
     view:Shoot(angle)
     if seq<(view.turnSeq or 0) then view.angle=facing end
     view.next,view.rng=nextColor,rng
     return true
+end
+
+local function applyRise(view)
+    local volley=view.incomingRise
+    if not volley or view.tick<view.riseTick or view.projectile then return end
+    view.incomingRise=nil
+    if view.status~="playing" or view.offset~=volley.offset or view.lockedShots~=view.riseShot then return end
+    view.rising,view.pending=volley.bubbles,volley.pending
+    -- The owner moves its volley on the contact tick. Catch up late packets
+    -- without advancing the shot clock or the player's other animations.
+    for _=1,math.min(16,view.tick-view.riseTick+1) do
+        if #view.rising==0 then break end
+        view:MoveGarbage()
+    end
+end
+
+function V.Rise(m,p)
+    local view=m.remote
+    local seq=FB.Integer(p[4],1,10000000)
+    local tick=FB.Integer(p[5],1,100000000)
+    local shots=FB.Integer(p[6],1,1000000)
+    local offset=FB.Integer(p[7],0,1)
+    local pending=FB.Integer(p[8],0,10000000)
+    if #p~=9 or not seq or seq<=m.remoteSeq or not tick or not shots or shots~=view.shots
+        or view.riseShot==shots or not offset or not pending then return end
+    local bubbles=V.UnpackRising(p[9],offset)
+    if not bubbles or #bubbles==0 then return end
+    local _,start=E.Position(13,1,0)
+    local seen={}
+    for i,b in ipairs(bubbles) do
+        local slot=E.Key(b.row,b.col)
+        if seen[slot] or b.y<start+i*7 or b.y>=start+i*7+20 then return end
+        seen[slot]=true
+    end
+    local expected=view.offset
+    if view.projectile and shots%view.rootPeriod==0 then expected=1-expected end
+    if offset~=expected then return end
+    m.remoteSeq=seq
+    view.riseShot,view.riseTick=shots,tick
+    view.incomingRise={offset=offset,pending=pending,bubbles=bubbles}
+    applyRise(view)
+    return true
+end
+
+-- The desktop moves network penalty sprites 30 screen pixels per frame
+-- even on a half-size board. Hold the last position until the bubble sticks.
+function V.RisingY(view,b,mini)
+    if view.riseShot~=view.shots or not view.riseTick then return b.y end
+    local _,start=E.Position(13,b.col,0)
+    local speed=mini and 60 or 30
+    local _,destination=E.Position(b.row,b.col,0)
+    local last=math.max(1,math.floor((start-destination-E.STEP/2)/speed)+1)
+    local age=math.max(1,view.tick-view.riseTick+1)
+    return start-speed*math.min(age,last)
 end
 
 function V.Sync(view,grid,offset,tick,shots,locked,rng,rising)
@@ -112,6 +167,17 @@ function V.Sync(view,grid,offset,tick,shots,locked,rng,rising)
         end
         view.tick,view.elapsed,view.accumulator=tick,tick*0.02,0
         view.rng=rng; view.rising=rising
+    end
+    if tick or shots~=view.shots then
+        view.incomingRise=nil
+    elseif locked>=shots then
+        -- Compact snapshots omit the lane list. Retain the flight of any
+        -- bubble that the owner's corrected grid still shows as airborne.
+        local flight=view.incomingRise and view.incomingRise.bubbles or view.rising
+        for i=#flight,1,-1 do
+            local b=flight[i]
+            if grid[E.Key(b.row,b.col)] then table.remove(flight,i) end
+        end
     end
     if shots>view.shots or locked>=shots then view.projectile=nil end
     local diverged=offset~=view.offset
@@ -205,11 +271,15 @@ local function stepTurn(view)
 end
 -- Advance both duel boards on the same fixed tick. Packet corrections may
 -- replace the remote engine's tick, but do not move the local match clock.
+local function peerTick(view)
+    applyRise(view)
+    FB.MatchChat.Step(view)
+end
 function V.StepDuel(m,lowGraphics)
     local view=m.remote
     view.lowGraphics=lowGraphics
     view:Step(0.02,stepTurn)
-    FB.MatchChat.Step(view)
+    peerTick(view)
     if m.phase=="playing" then view.status="playing" end
 end
 
@@ -217,6 +287,6 @@ function V.Update(m,dt)
     local view=m.remote
     if not view then return end
     view.lowGraphics=FB.game and FB.game.lowGraphics
-    view:Update(dt,stepTurn,FB.MatchChat.Step)
+    view:Update(dt,stepTurn,peerTick)
     if m.phase=="playing" then view.status="playing" end
 end

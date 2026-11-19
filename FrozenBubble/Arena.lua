@@ -269,7 +269,7 @@ local function begin(m)
     m.phase="playing"; m.winner=nil; m.seq=0; m.lastState=-100; m.played=true
     A.BuildBoards(m,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
-    FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire
+    FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire; FB.game.onRise=N.Rise
     FB.Recordings.Begin(m.seed,FB.game,m)
     N.Notify("Round "..m.round.." · "..#m.names.." players")
     m.pulse=-100
@@ -460,6 +460,8 @@ function A.Receive(kind,p,channel,sender)
                 if FB.PeerView.Turn(v,p) then FB.Recordings.OnlineEvent(m,"ATURN",v.index,table.concat(p,"|",4)) end
             elseif kind=="AFIRE" then
                 if FB.PeerView.Fire(v,p) then FB.Recordings.OnlineEvent(m,"AFIRE",v.index,table.concat(p,"|",4)) end
+            elseif kind=="ARISE" then
+                if FB.PeerView.Rise(v,p) then FB.Recordings.OnlineEvent(m,"ARISE",v.index,table.concat(p,"|",4)) end
             elseif kind=="ASTATE" and (#p==19 or #p==15) then
                 local target=FB.Integer(p[#p],0,#m.names)
                 if target then

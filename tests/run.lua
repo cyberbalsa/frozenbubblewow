@@ -702,6 +702,42 @@ test("remote rising penalties round-trip all seven lanes; malformed frames are i
         assert(not a.PeerView.UnpackRising(wire,0))
     end
 end)
+test("spectators see the desktop penalty flight, freeze and snap on the board clock",function()
+    local peer=a.PeerView
+    local view=peer.NewDuelBoard(11,false)
+    view.grid={[1]=1}; view.attachedOrder={1}; view.shots=1; view.lockedShots=1; view.tick=186
+    local m={phase="playing",remote=view,remoteSeq=1}
+    local owner=E.New({},11,"versus")
+    owner.rising={{row=6,col=1,color=6,y=378}}
+    local packet={"1","ARISE","round","2","186","1","0","3",peer.PackRising(owner)}
+    local before=view:Pack()
+    for index,invalid in pairs({[4]="1",[5]="-1",[6]="2",[7]="1",[8]="-1",[9]="...."}) do
+        local valid=packet[index]; packet[index]=invalid
+        assert(not peer.Rise(m,packet)); packet[index]=valid
+    end
+    eq(m.remoteSeq,1); eq(view:Pack(),before)
+    assert(peer.Rise(m,packet)); assert(not peer.Rise(m,packet)); eq(view.pending,3)
+    -- Desktop demo 4, rp3 at (20,247), frames 186 onward. At y=295
+    -- the sprite waits above its final staggered socket until it sticks.
+    for frame,y in ipairs({385,355,325,295,295,295}) do
+        if frame>1 then peer.StepDuel(m) end
+        local b=view.rising[1]; assert(b)
+        eq(247+peer.RisingY(view,b,true)/2-8,y)
+        if frame==1 then eq(peer.RisingY(view,b,false),322) end
+    end
+    peer.StepDuel(m); eq(#view.rising,0); eq(view.grid[E.Key(6,1)],6)
+    -- A delayed launch after a newer snapshot must not add the bubble twice.
+    assert(not peer.Rise(m,packet)); eq(view:Count(),2)
+end)
+test("queued board snapshots preserve the penalty launch between them",function()
+    local c=client("VolleyQueue"); local net=c.Net
+    for _,prefix in ipairs({"","A"}) do
+        net.outbox={}
+        for _,kind in ipairs({"STATE","RISE","STATE","STATE"}) do net.Send(prefix..kind,"WHISPER","Peer","round") end
+        eq(#net.outbox,3); eq(net.outbox[1].kind,prefix.."STATE"); eq(net.outbox[2].kind,prefix.."RISE")
+    end
+    net.outbox={}
+end)
 test("lost end packets and a simultaneous loss settle after leaving the result screen",function()
     local h,j=client("Heidi"),client("June")
     h.Net.Challenge("June-TestRealm"); tick(2); j.Net.Accept(); tick(4)
@@ -1214,9 +1250,13 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local function update(dt)
             clock=clock+dt; eventFrame.scripts.OnUpdate(nil,dt)
             peer.game:Update(dt)
+            for _,item in ipairs(peer.Net.outbox) do
+                if item.kind=="RISE" then sendFromPeer("RISE"); break end
+            end
             snapshot()
         end
         assert(fb.game:Shoot(-0.31)); assert(fb.Net.outbox[#fb.Net.outbox].kind=="FIRE")
+        peer.game:AddGarbage(3)
         assert(peer.game:Shoot(0.63))
         local fire=sendFromPeer("FIRE")
         peer.Net.State(); local state=sendFromPeer("STATE")
@@ -1230,6 +1270,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(peer.MatchChat.Send("nice | shot")); sendFromPeer("CHAT"); eq(m.remote.chatFrames,250)
         snapshot()
         for _=1,7 do update(0.006); update(0.094) end
+        eq(m.remote.riseShot,1); eq(m.remote.pending,0)
         env.SlashCmdList.FROZENBUBBLE("record"); assert(r.capture.marked)
         -- Lose a FIRE in transit. The extended snapshot must restore the remote
         -- board and apply its cumulative attack exactly once in the replay.
@@ -2361,6 +2402,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         run(160); eq(m.phase,"playing"); assert(m.fixedClock); eq(#m.opponents,4)
         r.Mark(); departing.Recordings.Mark()
         local function shot(peer,angle) assert(peer.game:Shoot(angle)) end
+        guests[1].game:AddGarbage(4)
         shot(fb,0.43); shot(guests[1],-0.26); shot(guests[2],0.36)
         assert(guests[1].MatchChat.Send("gg")); assert(guests[3].MatchChat.Send("watch | left"))
         guests[1].Controls.Aim(guests[1].game,true,false,false,0.03)
@@ -2371,7 +2413,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         for _,e in ipairs(r.capture.record.arena.events) do
             if e[2]=="ATURN" and e[3]==v.index then receivedTurn=true end
         end
-        assert(receivedTurn)
+        assert(receivedTurn); eq(v.remote.riseShot,1)
         guests[1].Controls.Aim(guests[1].game,false,false,false,0.03)
         assert(v.remote.shots>=1)
         guests[1].Arena.Target(1)
@@ -2556,6 +2598,22 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             fb.Options.Set("graphicsLevel",3)
             board.shooter.SetPoint=nil; board.nextRim.SetPoint=nil
         end
+        -- Frame 186 of desktop demo 4 draws the first rp3 penalty at
+        -- (20,385). The mini sprite covers 16 desktop pixels.
+        local miniBoard,opponent=ui.miniBoards[3],m.opponents[3].remote
+        local sprite=miniBoard.rising[1]
+        local x,y
+        sprite.SetPoint=function(_,_,_,_,cx,cy) x,y=cx,cy end
+        opponent.rising={{col=1,row=6,x=16,y=348,color=6}}
+        opponent.riseShot,opponent.riseTick=opponent.shots,opponent.tick
+        for _,colorblind in ipairs({true,false}) do
+            fb.Options.Set("colorblind",colorblind)
+            ui:RenderBoard(miniBoard,opponent,true)
+            eq(20+x/2-8,20); eq(247-y/2-8,385)
+            assert(sprite.shown and miniBoard.fxLayer:GetFrameLevel()>ui.arenaHUD:GetFrameLevel())
+            eq(sprite.fbAsset,colorblind and "mini-bubble-symbol6" or "mini-bubble6")
+        end
+        sprite.SetPoint=nil; opponent.rising={}; opponent.riseShot,opponent.riseTick=nil,nil
         eq(ui.miniBoards[1].bubbles[1].fbAsset,"mini-bubble"..fb.game.grid[1])
         ui.board.scripts.OnKeyDown(ui.board,"F2"); ui:Update(0.02)
         eq(m.target,ui.roomOpponents[2].name); assert(ui.attackIcons[2].shown)

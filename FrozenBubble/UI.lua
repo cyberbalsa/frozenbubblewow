@@ -64,7 +64,7 @@ local function makeBoard(parent,x,y)
     for key=1,104 do b.bubbles[key]=bubble(b) end
     b.rising={}; b.penalties={}
     for i=1,7 do
-        b.rising[i]=bubble(b); b.rising[i]:SetDrawLayer("OVERLAY",2); b.rising[i]:Hide()
+        b.rising[i]=bubble(b.fxLayer); b.rising[i]:SetDrawLayer("OVERLAY",2); b.rising[i]:Hide()
     end
     b.limit=b:CreateTexture(nil,"OVERLAY"); b.limit:SetColorTexture(1,0.3,0.4,0)
     b.limit:SetSize(256,1); b.limit:SetPoint("TOPLEFT",0,-E.LIMIT)
@@ -1098,7 +1098,10 @@ function U:RenderBoard(board,game,remote)
     for i=pistonCount+1,#board.pistons do board.pistons[i]:Hide() end
     for i,texture in ipairs(board.rising) do
         local bubble=game and game.rising and game.rising[i]
-        if bubble then place(texture,board,bubble.x,bubble.y,bubble.color) else texture:Hide() end
+        if bubble then
+            local y=remote and FB.PeerView.RisingY(game,bubble,mini) or bubble.y
+            place(texture,board,bubble.x,y,bubble.color)
+        else texture:Hide() end
     end
     local pending=game and (game.mode=="versus" or game.mode=="training") and game.pending or 0
     local height,used=0,0
@@ -1117,7 +1120,7 @@ function U:RenderBoard(board,game,remote)
     -- The desktop paints round signs before it draws moving bubbles.
     local overSign=game and (winner or game.status=="lost" or game.status=="draw")
         and (self.screen=="game" or self.screen=="replay" or self.screen=="opponent")
-    local fxLevel=overSign and self.layers.panel+1 or self.layers.board+1
+    local fxLevel=overSign and self.layers.panel+1 or self.layers.hud+2
     if board.fxLevel~=fxLevel then board.fxLayer:SetFrameLevel(fxLevel); board.fxLevel=fxLevel end
     local chains=game and game.chains
     local chainCount=chains and #chains or 0

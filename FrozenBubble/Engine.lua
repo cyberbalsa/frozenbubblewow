@@ -223,6 +223,7 @@ function E:ApplyGarbage()
         bubble.y=bubble.y+index*7+self:Random(20)-1
     end
     self.sound("malus")
+    if self.onRise then self.onRise(self) end
 end
 function E:MoveGarbage()
     for i=#self.rising,1,-1 do

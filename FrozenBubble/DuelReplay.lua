@@ -49,6 +49,7 @@ function D.Apply(play)
             local t=play.frame*0.02
             if kind=="TURN" then FB.PeerView.Turn(play.duel,fields)
             elseif kind=="FIRE" then FB.PeerView.Fire(play.duel,fields,t)
+            elseif kind=="RISE" then FB.PeerView.Rise(play.duel,fields)
             elseif kind=="STATE" then FB.PeerView.State(play.duel,fields,play.right,t) end
         end
         play.eventIndex=play.eventIndex+1
