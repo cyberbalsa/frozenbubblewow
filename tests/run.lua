@@ -102,15 +102,57 @@ test("original bubble speed, ballistic clears, cascade delays, and sticking flas
     for _,fx in ipairs(g.effects) do
         if fx.kind=="pop" then pop=fx else fall=fx end
     end
-    assert(pop.vy<=-100 and pop.vy>=-300); assert(pop.vx>=-75 and pop.vx<=75)
+    assert(pop.vy<=-2 and pop.vy>=-6); assert(pop.vx>=-1.5 and pop.vx<=1.5)
+    local popY,fallY=pop.y,fall.y
     g:Update(0.02)
-    assert(pop.drawY<pop.y); assert(fall.delay>0)
-    eq(fall.drawY,fall.y)
+    assert(pop.y<popY); assert(fall.wait>0)
+    eq(fall.y,fallY)
     local stick=E.New({"1......."},1)
     stick.projectile={color=2}; stick.shots=1; stick:Attach(48,16)
     assert(stick.stick); eq(stick.lastPop,0)
     stick:Update(0.25); assert(stick.stick)
-    stick:Update(0.04); eq(stick.stick,nil)
+    stick:Update(0.04); eq(stick.stick.ticks,14)
+    stick:Update(0.02); eq(stick.stick,nil)
+end)
+test("a mid-frame collision gives bursts, falling bubbles and stick flashes the same age at every render rate",function()
+    local function shoot(color)
+        local g=E.New({"...11...","2......"},13)
+        g.current=color; g:Shoot(0)
+        return g
+    end
+    for _,color in ipairs({1,3}) do
+        local desktop=shoot(color)
+        for i=1,36 do desktop:Update(0.02) end
+        for _,frames in ipairs({3,18,36,72,144}) do
+            local g=shoot(color)
+            for i=1,frames do g:Update(0.72/frames) end
+            eq(g:Pack(),desktop:Pack()); eq(g.rng,desktop.rng)
+            if color==1 then
+                eq(#g.effects,4)
+                for i,fx in ipairs(g.effects) do
+                    eq(fx.x,desktop.effects[i].x); eq(fx.y,desktop.effects[i].y)
+                    eq(fx.vy,desktop.effects[i].vy)
+                end
+                -- At tick 33 the row-two bubble disconnects. SDL moves it
+                -- by 0, 0.5, 1 and 1.5 pixels on ticks 33 through 36.
+                eq(g.effects[4].y,47)
+            else eq(g.stick.ticks,4) end
+        end
+    end
+end)
+test("an airborne shot bursts at its current position when a versus board ends",function()
+    for _,result in ipairs({"won","lost","draw"}) do
+        local g=E.New({"1......."},29,"versus")
+        g.current=3; g:Shoot(0.4); g:Update(0.08)
+        local x,y=g.projectile.x,g.projectile.y
+        local rng=g.rng
+        g.status=result; g:Update(0.02)
+        eq(g.projectile,nil); eq(g.rng,rng)
+        local burst=g.effects[1]
+        eq(burst.color,3); eq(burst.frozen,result~="won")
+        eq(burst.x,x+burst.vx); eq(burst.y,y+(burst.vy-0.5))
+        g.paused=true; local stopped=burst.y; g:Update(0.1); eq(burst.y,stopped)
+    end
 end)
 test("63 upstream shot traces match the collision tick and snapped cell",function()
     local cases=dofile("tests/reference_shots.lua")
@@ -275,13 +317,32 @@ test("original penguin frame sequences advance, transition, and loop at 50 FPS",
     a.Animation.Penguin(texture,g,"p1",0.6); eq(texture.fbState,"normal")
     g.turning=-1; a.Animation.Penguin(texture,g,"p1",0.1)
     local turnFrame=texture.fbFrame
-    g.turning=0; a.Animation.Penguin(texture,g,"p1",0)
-    eq(texture.fbState,"left_from"); eq(texture.fbFrame,turnFrame)
+    g.turning=0; a.Animation.Penguin(texture,g,"p1",0.02)
+    eq(texture.fbState,"left_from"); eq(texture.fbFrame,turnFrame+2)
     a.Animation.Penguin(texture,g,"p1",0.5)
     for i=1,210 do a.Animation.Penguin(texture,g,"p1",0.02) end
     eq(texture.fbState,"wait_to")
     g.turning=1; a.Animation.Penguin(texture,g,"p1",0.02)
     eq(texture.fbState,"right_to")
+end)
+test("shooter turn, release, fire and idle frames match the desktop input sequence",function()
+    -- Frames sampled from the pinned Perl update_game input and advance blocks.
+    local reference={[1]=18,[5]=14,[6]=16,[8]=18,[9]=1,[15]=1,[16]=3,
+        [17]=52,[18]=53,[19]=22,[47]=50,[48]=20,[219]=20,[220]=2,[292]=74,
+        [293]=75,[315]=97,[316]=75,[400]=90}
+    for _,subframes in ipairs({1,2,4}) do
+        local t={SetTexture=function() end,SetTexCoord=function() end,Show=function() end}
+        local g=E.New({},5)
+        for tick=1,400 do
+            g.turning=(tick<=5 or tick>=9 and tick<=15) and -1 or (tick>=17 and tick<=19) and 1 or 0
+            if tick==19 then g.shots=1 end
+            for i=1,subframes do a.Animation.Penguin(t,g,"rp2",0.02/subframes) end
+            if reference[tick] then
+                eq(t.fbFrame,reference[tick],"penguin frame at tick "..tick)
+                eq(t.fbAsset,tick<220 and "anime-shooter-rp2" or "wait-rp2")
+            end
+        end
+    end
 end)
 test("queue handshake survives dropped offer, accept, start and ready",function()
     drops={OFFER=true,ACCEPT=true,START=true,READY=true}
@@ -662,6 +723,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.CreateFontString=function(f) return frame(nil,nil,f) end; methods.CreateTexture=methods.CreateFontString
     methods.SetSize=function(f,w,h) f.width=w; f.height=h end
     methods.SetTexCoord=function(f,...) f.fbCoords=table.concat({...},",") end
+    methods.SetDrawLayer=function(f,layer,sub) f.fbLayer,f.fbSub=layer,sub end
     methods.SetText=function(f,s) f.text=tostring(s) end
     methods.GetText=function(f) return f.text end
     methods.GetWidth=function(f) return f.width end; methods.GetHeight=function(f) return f.height end
@@ -865,9 +927,9 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local ui=fb.UI
         local game=fb.Engine.New({"11......","22....."},3,"training",true)
         fb.game=game; game.shots=10; game.lockedShots=10; game.tick=20
-        game.stick={age=0,key=1}
+        game.stick={ticks=0,key=1}
         game.effects={game:Effect(1,"pop"),game:Effect(2,"fall")}
-        game.chains={{drawX=20,drawY=60,color=4}}
+        game.chains={{x=20,y=60,color=4}}
         fb.Options.Set("graphicsLevel",1)
         ui:RenderBoard(ui.board,game)
         assert(ui.board.fx[1].shown and not ui.board.fx[2].shown and ui.board.fx[3].shown)
@@ -877,6 +939,43 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.Options.Set("graphicsLevel",2); ui:RenderBoard(ui.board,game)
         assert(ui.board.stick.shown and ui.board.fx[2].shown and ui.board.boardOverlays[2].shown)
         fb.Options.Set("graphicsLevel",3); fb.StartCampaign(1)
+    end)
+    test("mouse aim keeps the penguin turning and a held direction works at the angle limit",function()
+        local ui=fb.UI
+        fb.StartCampaign(1)
+        local cursor=ui.Cursor
+        ui.board.IsMouseOver=function() return true end
+        ui.Cursor=function() return 258,260 end
+        ui.lastX,ui.lastY=nil,nil
+        for i=1,48 do ui:Update(1/120) end
+        assert(fb.game.angle>0.8); eq(ui.penguin.fbState,"right")
+        eq(fb.game.shots,0)
+        for i=1,130 do ui:Update(1/120) end
+        eq(ui.penguin.fbState,"normal"); eq(fb.game.poseAngle,fb.game.angle)
+        ui.board.IsMouseOver=nil; ui.Cursor=cursor
+        fb.game.angle=fb.Engine.MAX_ANGLE; ui.keys.RIGHT=true
+        for i=1,30 do ui:Update(0.02) end
+        eq(fb.game.angle,fb.Engine.MAX_ANGLE); eq(ui.penguin.fbState,"right")
+        ui.keys.RIGHT=nil; fb.StartCampaign(1)
+    end)
+    test("sticky frames hold twice and debris passes in front of the cannon at original sprite sizes",function()
+        local ui,board=fb.UI,fb.UI.board
+        local game=fb.Engine.New({"1......."},5,"versus")
+        game.stick={key=1,ticks=0}
+        for tick=1,14 do
+            game:Update(0.02); ui:RenderBoard(board,game)
+            eq(board.stick.fbFrame,math.ceil(tick/2)); assert(board.stick.shown)
+        end
+        game:Update(0.02); ui:RenderBoard(board,game); assert(not board.stick.shown)
+        game.current=4; game:Shoot(0); game.status="lost"; game:Update(0.02)
+        ui:RenderBoard(board,game)
+        local sprite=board.fx[1]
+        eq(sprite.fbLayer,"OVERLAY"); eq(sprite.fbSub,4)
+        eq(sprite.fbAsset,"frozen"); eq(sprite.width,34); eq(sprite.height,48)
+        -- A pooled sprite must return to the ordinary colored ball dimensions.
+        local fresh=fb.Engine.New({"1......."},9)
+        fresh.effects[1]=fresh:Effect(1,"fall"); ui:RenderBoard(board,fresh)
+        eq(sprite.fbSub,3); eq(sprite.fbAsset,"bubble1"); eq(sprite.width,32); eq(sprite.height,32)
     end)
     test("two-player menu, simultaneous controls, chat focus and shared pause",function()
         local ui=fb.UI
@@ -1076,6 +1175,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:Update(0.02)
         eq(ui.gameBackground.fbAsset,"arena-background")
         eq(#ui.roomOpponents,4); assert(ui.miniBoards[1].shown and ui.miniBoards[4].shown and not ui.remoteBoard.shown)
+        eq(ui.roomOpponents[1].remote.effectFloor,918); eq(ui.roomOpponents[4].remote.effectFloor,462)
+        eq(ui.roomOpponents[1].remote.chainTurnY,348); eq(ui.roomOpponents[4].remote.chainTurnY,352)
         eq(ui.miniBoards[1].shooter.fbAsset,"mini-cannon"); eq(ui.miniPenguins[1].fbAsset,"anime-shooter-rp1")
         eq(ui.miniBoards[1].bubbles[1].fbAsset,"mini-bubble"..fb.game.grid[1])
         ui.board.scripts.OnKeyDown(ui.board,"F2"); ui:Update(0.02)

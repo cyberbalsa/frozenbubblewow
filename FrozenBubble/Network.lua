@@ -127,7 +127,10 @@ function N.Finish(result,reason,send)
         N.results[m.peer..":"..m.id]=m
         if send then N.Whisper("END",m.id,result); m.lastRetry=now() end
     end
-    if FB.game and FB.game.mode=="versus" then FB.game.status=result; FB.game.projectile=nil end
+    if FB.game and FB.game.mode=="versus" then
+        FB.game.status=result
+        if result~="won" and result~="lost" and result~="draw" then FB.game.projectile=nil end
+    end
     if m.remote then m.remote.status=result=="won" and "lost" or result=="lost" and "won" or result end
     if result=="won" then FB.db.wins=FB.db.wins+1; FB.Sound("applause")
     elseif result=="lost" then FB.db.losses=FB.db.losses+1; FB.Sound("lose") end

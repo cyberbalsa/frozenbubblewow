@@ -58,13 +58,14 @@ local function makeBoard(parent,x,y)
     -- The original background already contains the playfield. Do not cover it.
     b.bubbles={}; b.fx={}; b.boardOverlays={}
     for key=1,104 do b.bubbles[key]=bubble(b) end
-    for i=1,100 do b.fx[i]=bubble(b); b.fx[i]:Hide() end
     b.rising={}; b.penalties={}
-    for i=1,7 do b.rising[i]=bubble(b); b.rising[i]:Hide() end
+    for i=1,7 do
+        b.rising[i]=bubble(b); b.rising[i]:SetDrawLayer("OVERLAY",2); b.rising[i]:Hide()
+    end
     b.limit=b:CreateTexture(nil,"OVERLAY"); b.limit:SetColorTexture(1,0.3,0.4,0)
     b.limit:SetSize(256,1); b.limit:SetPoint("TOPLEFT",0,-E.LIMIT)
     b.roof=b:CreateTexture(nil,"OVERLAY"); b.roof:SetColorTexture(0.5,0.85,1,0); b.roof:SetSize(256,3)
-    b.compressor=FB.Animation.Image(b,"compressor",2,0,252,51,"OVERLAY"); b.compressor:Hide()
+    b.compressor=FB.Animation.Image(b,"compressor",2,0,252,51,"BACKGROUND"); b.compressor:Hide()
     b.pistons={}
     b.projectile=bubble(b); b.current=bubble(b); b.next=bubble(b)
     b.shooter=b:CreateTexture(nil,"ARTWORK",nil,1); b.shooter:Hide()
@@ -128,7 +129,10 @@ function U:Build()
     self.board:SetScript("OnMouseUp",function() self.stroke=nil end)
     self.board:SetScript("OnMouseWheel",function(_,delta)
         if self.editing then self:SelectEditorColor((self.editorColor-1+delta)%8+1)
-        elseif FB.game and not FB.LocalVersus.match then FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE) end
+        elseif FB.game and not FB.LocalVersus.match then
+            FB.game.poseAngle=FB.game.poseAngle or FB.game.angle
+            FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE)
+        end
     end)
     self.board:SetScript("OnKeyDown",function(b,key)
         if InCombatLockdown() then return end
@@ -894,6 +898,17 @@ function U:UpdateEditor()
         place(self.editorPreview,self.board,x,y,self.editorColor,32,0.5)
     else self.editorPreview:Hide() end
 end
+-- bubble_lose has an icicle below the circle. Upstream draws it one pixel
+-- above and left of the bubble, except in the stationary next-bubble socket.
+local function placeFrozen(texture,board,x,y,nextBubble)
+    local mini=board.fbMiniSeat
+    local asset=mini and "mini-frozen" or "frozen"
+    local info=FB.MediaInfo[asset]
+    local scale=mini and 2 or 1
+    local shift=nextBubble and 0 or scale
+    texture:ClearAllPoints(); texture:SetPoint("CENTER",board,"TOPLEFT",x+1-shift,-(y+8-shift))
+    texture:SetSize(info.w*scale,info.h*scale); FB.Animation.Frame(texture,asset,1)
+end
 function U:RenderBoard(board,game,remote)
     local low=FB.db.graphicsLevel==1
     local mini=board.fbMiniSeat
@@ -920,9 +935,12 @@ function U:RenderBoard(board,game,remote)
                 local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
                 board.boardOverlays[overlays]=overlay
                 if mini then effect="mini-"..effect end
-                local info=FB.MediaInfo[effect]
-                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y-(ended and ended[key] and 7 or 0))
-                overlay:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(overlay,effect,1)
+                if ended and ended[key] then placeFrozen(overlay,board,x,y)
+                else
+                    local info=FB.MediaInfo[effect]
+                    overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y)
+                    overlay:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(overlay,effect,1)
+                end
             end
         else board.bubbles[key]:Hide() end
     end
@@ -942,8 +960,9 @@ function U:RenderBoard(board,game,remote)
         local bottom=roof-info.h+3
         while bottom>0 do
             pistonCount=pistonCount+1
-            local t=board.pistons[pistonCount] or FB.Animation.Image(board,"compressor-ext",0,0,nil,nil,"OVERLAY")
+            local t=board.pistons[pistonCount] or FB.Animation.Image(board,"compressor-ext",0,0,nil,nil,"BACKGROUND")
             board.pistons[pistonCount]=t
+            t:SetDrawLayer("BACKGROUND",1)
             local visible=math.min(shaft.h,bottom)
             t:ClearAllPoints(); t:SetPoint("TOPLEFT",(256-shaft.w)/2,44-bottom+visible)
             t:SetHeight(visible); t:SetTexCoord(0,shaft.w/shaft.tw,(shaft.h-visible)/shaft.th,shaft.h/shaft.th)
@@ -971,12 +990,19 @@ function U:RenderBoard(board,game,remote)
     for i=used+1,#board.penalties do board.penalties[i]:Hide() end
     local chains=game and game.chains
     local chainCount=chains and #chains or 0
-    for i,t in ipairs(board.fx) do
-        local fx=(chains and chains[i]) or (game and game.effects and game.effects[i-chainCount])
-        if fx and (not low or i<=chainCount or game.chainReaction and fx.kind=="fall") then
-            place(t,board,fx.drawX or fx.x,fx.drawY or fx.y,fx.color,32,1)
+    local count=chainCount+(game and game.effects and #game.effects or 0)
+    for i=1,count do
+        local fx=(chains and chains[i]) or game.effects[i-chainCount]
+        local t=board.fx[i]
+        if not t then t=bubble(board); board.fx[i]=t end
+        if not low or i<=chainCount or game.chainReaction and fx.kind=="fall" then
+            local order=fx.kind=="pop" and 4 or 3
+            if t.fbFxOrder~=order then t:SetDrawLayer("OVERLAY",order); t.fbFxOrder=order end
+            if fx.frozen then placeFrozen(t,board,fx.x,fx.y)
+            else place(t,board,fx.x,fx.y,fx.color) end
         else t:Hide() end
     end
+    for i=count+1,#board.fx do board.fx[i]:Hide() end
     board.projectile:Hide(); board.current:Hide(); board.next:Hide(); board.shooter:Hide()
     board.stick:Hide()
     board.nextRim:Hide(); board.hurry:Hide()
@@ -989,7 +1015,7 @@ function U:RenderBoard(board,game,remote)
     if game.stick and not low then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
-        FB.Animation.Frame(board.stick,mini and "mini-stick" or "stick",math.floor(game.stick.age/0.04)+1)
+        FB.Animation.Frame(board.stick,mini and "mini-stick" or "stick",math.floor(math.max(0,game.stick.ticks-1)/2)+1)
     end
     if game.projectile then place(board.projectile,board,game.projectile.x,game.projectile.y,game.projectile.color)
     end
@@ -1005,12 +1031,8 @@ function U:RenderBoard(board,game,remote)
     FB.Animation.Frame(board.shooter,asset,low and 1 or math.floor(100-angle*200/math.pi+0.5)+1)
     local nextY=board.fbNextY or (versus and 416 or 412)
     if game.status=="lost" or game.status=="draw" then
-        local frozen=mini and "mini-frozen" or "frozen"
-        local info=FB.MediaInfo[frozen]
-        for i,t in ipairs({board.current,board.next}) do
-            t:ClearAllPoints(); t:SetPoint("CENTER",board,"TOPLEFT",128,-(i==1 and launchY+7 or nextY+8))
-            t:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(t,frozen,1)
-        end
+        placeFrozen(board.current,board,128,launchY)
+        placeFrozen(board.next,board,128,nextY,true)
     else
         place(board.current,board,128,launchY,game.current)
         place(board.next,board,128,nextY,game.next)
@@ -1111,17 +1133,23 @@ function U:Update(dt)
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game
     if game and not FB.LocalVersus.match and not self.editing and not game.paused and game.status=="playing" then
-        local oldAngle=game.angle
         local left,right,center=K.Held(self.keys,1),K.Held(self.keys,2),K.Held(self.keys,4)
         if left or right or center then K.Aim(game,left,right,center,dt*1.5)
-        elseif self.board:IsMouseOver() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then
-            local x,y=self:Cursor()
-            if self.lastX~=x or self.lastY~=y then
-                if y<game.launchY-10 then game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE) end
-                self.lastX,self.lastY=x,y
+        else
+            local poseAngle=game.poseAngle or game.angle
+            if self.board:IsMouseOver() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then
+                local x,y=self:Cursor()
+                if self.lastX~=x or self.lastY~=y then
+                    if y<game.launchY-10 then game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE) end
+                    self.lastX,self.lastY=x,y
+                end
             end
+            -- Mouse aim is immediate. Let the penguin finish the corresponding
+            -- turn at the keyboard's 0.03 radians per desktop frame.
+            local delta=game.angle-poseAngle
+            game.turning=delta<0 and -1 or delta>0 and 1 or 0
+            game.poseAngle=math.abs(delta)<=dt*1.5 and game.angle or poseAngle+game.turning*dt*1.5
         end
-        game.turning=game.angle<oldAngle and -1 or game.angle>oldAngle and 1 or 0
     end
     self.penguin:SetShown(FB.db.graphicsLevel==3 and not self.editing and self.gameLayer:IsShown() and not FB.MatchChat.input:IsShown())
     if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end

@@ -48,7 +48,8 @@ function K.Aim(game,left,right,center,step)
         else angle=angle+(angle>0 and -step or step) end
     end
     game.angle=FB.Clamp(angle,-FB.Engine.MAX_ANGLE,FB.Engine.MAX_ANGLE)
-    game.turning=game.angle<old and -1 or game.angle>old and 1 or 0
+    game.turning=right and 1 or left and -1 or 0
+    game.poseAngle=game.angle
 end
 
 function K.Build(ui,text,button)

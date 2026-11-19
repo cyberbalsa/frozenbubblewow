@@ -6,7 +6,7 @@ E.__index = E
 E.W, E.H, E.R, E.STEP, E.ROWS = 256, 400, 16, 28, 13
 E.LAUNCH_Y, E.LIMIT = 362, 350
 -- Upstream runs at 20 ms: 10 px/frame, gravity 0.5 px/frame/frame.
-E.SPEED, E.GRAVITY = 500, 1250
+E.SPEED = 500
 E.MAX_ANGLE = math.pi/2 - 0.1
 
 function E.Columns(row,offset) return (row+(offset or 0)) % 2 == 1 and 8 or 7 end
@@ -45,6 +45,7 @@ function E.New(level, seed, mode, chainReaction)
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
     self.chains={}
+    self.effectRng=self.rng
     self.chainReaction=chainReaction==true and (mode=="random" or mode=="training" or mode=="versus")
     self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
     self.penaltyRules=mode=="versus" or mode=="training"
@@ -82,14 +83,18 @@ function E:Group(start, sameColor)
     end
     return queue
 end
+-- Cosmetic draws use a separate stream so graphics cannot change the next shot.
+local function burst(game,x,y,color)
+    game.effectRng=game.effectRng*16807%2147483647
+    local vx=3*game.effectRng/2147483647-1.5
+    game.effectRng=game.effectRng*16807%2147483647
+    return {x=x,y=y,vx=vx,vy=-2-4*game.effectRng/2147483647,color=color,kind="pop",wait=0}
+end
 function E:Effect(key,kind)
     local row,col=E.Cell(key)
     local x,y=E.Position(row,col,self.ceiling,self.offset)
-    -- Cosmetic randomness is separate from the deterministic ammunition generator.
-    local variation=(key*7919+self.shots*101)%1000/1000
-    return {x=x,y=y,color=self.grid[key],kind=kind,age=0,
-        vx=kind=="pop" and (variation*3-1.5)*50 or 0,
-        vy=kind=="pop" and -(2+(key*31%100)/100*4)*50 or 0,delay=0}
+    if kind=="pop" then return burst(self,x,y,self.grid[key]) end
+    return {x=x,y=y,vx=0,vy=0,color=self.grid[key],kind="fall",wait=0}
 end
 function E:Remove(key,kind)
     self.effects[#self.effects+1]=self:Effect(key,kind)
@@ -122,7 +127,7 @@ function E:Resolve(key)
                 chain.x,chain.y,chain.color=fx.x,fx.y,fx.color
                 chain.wait,chain.speed=delay,0
                 self.chains[#self.chains+1]=chain
-            else self.effects[#self.effects].delay=delay*0.02 end
+            else self.effects[#self.effects].wait=delay end
             shift=shift+1
         end
     end
@@ -244,7 +249,7 @@ function E:Attach(x,y,hit)
     self.grid[best]=self.projectile.color
     self.projectile=nil
     self:Resolve(best)
-    if self.lastPop==0 then self.stick={key=best,age=0} end
+    if self.lastPop==0 then self.stick={key=best,ticks=0} end
     self:CheckEnd()
     if self.status=="playing" then
         if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
@@ -273,6 +278,12 @@ function E:StepEnding()
     if self.endingStatus~=self.status then
         if self.endingStatus then self.effects={} end
         self.endingStatus,self.endIndex,self.endCells,self.endTick=self.status,0,{},self.tick
+        if self.projectile then
+            local shot=self.projectile
+            local fx=burst(self,shot.x,shot.y,shot.color)
+            fx.frozen=self.status~="won"
+            self.effects[#self.effects+1]=fx
+        end
         self.projectile,self.stick,self.chains,self.rising=nil,nil,{},{}
         -- cleanup_player_bubbles sorts bottom row first, right to left.
         self.endOrder={}
@@ -289,8 +300,7 @@ function E:StepEnding()
     if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.frozenSound=true end
     if not freeze and self.grid[key] then self.effects[#self.effects+1]=self:Effect(key,"pop") end
 end
-function E:Step(dt)
-    if self.paused then return end
+local function advanceGame(self,dt)
     if self.status~="playing" then
         if self.status=="won" or self.status=="lost" or self.status=="draw" then self:StepEnding() end
         return
@@ -328,22 +338,29 @@ function E:Step(dt)
         self:MoveChains()
     end
 end
+function E:Step(dt)
+    if self.paused then return end
+    advanceGame(self,dt)
+    -- update_game moves sprites after collisions and end-of-round actions, even
+    -- on the tick they are created. Speeds here are pixels per desktop frame.
+    local bottom=self.effectFloor or self.launchY+80
+    for i=#self.effects,1,-1 do
+        local fx=self.effects[i]
+        if fx.wait>0 then fx.wait=fx.wait-1
+        else
+            fx.x,fx.y=fx.x+fx.vx,fx.y+fx.vy
+            fx.vy=fx.vy+0.5
+            if fx.y>bottom then table.remove(self.effects,i) end
+        end
+    end
+    if self.stick then
+        self.stick.ticks=self.stick.ticks+1
+        if self.stick.ticks>14 then self.stick=nil end
+    end
+end
 function E:Update(dt)
-    -- Fixed simulation steps keep bounces and attachment independent of render FPS.
     self.accumulator=self.accumulator+math.min(dt,0.25)
     while self.accumulator+1e-9>=0.02 do self:Step(0.02); self.accumulator=self.accumulator-0.02 end
-    if not self.paused then
-        for i=#self.effects,1,-1 do
-            local fx=self.effects[i]; fx.age=fx.age+dt
-            local flight=math.max(0,fx.age-fx.delay)
-            -- y = y0 + v0*t + g*t*(t-0.02)/2 exactly interpolates upstream's
-            -- position-before-velocity Euler updates at each original 20 ms tick.
-            fx.drawX=fx.x+fx.vx*flight
-            fx.drawY=fx.y+fx.vy*flight+E.GRAVITY*flight*math.max(0,flight-0.02)/2
-            if fx.drawY>(self.mode=="versus" and 446 or 442) then table.remove(self.effects,i) end
-        end
-        if self.stick then self.stick.age=self.stick.age+dt; if self.stick.age>=0.28 then self.stick=nil end end
-    end
 end
 function E:Pack()
     local out={}

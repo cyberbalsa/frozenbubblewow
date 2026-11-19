@@ -111,7 +111,7 @@ function E:MoveChains()
         else
             -- Screen y=380 as a sprite top-left maps to board center y=356
             -- in split screen (board top 40), or 352 in solo (board top 44).
-            local turnY=self.mode=="versus" and 356 or 352
+            local turnY=self.chainTurnY or self.launchY-10
             if chain.y>turnY or chain.speedX then
                 local r,c=E.Cell(chain.target)
                 local x,y=E.Position(r,c,self.ceiling,self.offset)
@@ -143,7 +143,7 @@ function E:MoveChains()
                 if self.grid[neighbor] then
                     self.grid[slot]=chain.color; self.attachedOrder[#self.attachedOrder+1]=slot
                     self:Resolve(slot)
-                    if self.lastPop==0 then self.stick={key=slot,age=0} end
+                    if self.lastPop==0 then self.stick={key=slot,ticks=0} end
                     self.changed=true
                     break
                 end

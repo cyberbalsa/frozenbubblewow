@@ -198,11 +198,13 @@ end
 local function begin(m)
     if InCombatLockdown() then A.Leave("Combat started."); return false end
     m.phase="playing"; m.seq=0; m.lastState=-100; m.played=true
-    for _,v in pairs(m.players) do
-        if v.name~=m.me then
-            v.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction)
-            v.remote.launchY=362; v.remote.hurryMax=math.huge; v.phase="playing"; v.lastSeen=GetTime()
-        end
+    for seat,v in ipairs(A.Opponents(m)) do
+        v.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction)
+        -- Desktop removes falling sprites below screen y=470 on every board.
+        local boardTop=seat<=2 and 19 or 247
+        v.remote.effectFloor=(470-boardTop)*2+16
+        v.remote.chainTurnY=((seat<=2 and 185 or 415)-boardTop)*2+16
+        v.remote.launchY=362; v.remote.hurryMax=math.huge; v.phase="playing"; v.lastSeen=GetTime()
     end
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire
@@ -213,7 +215,7 @@ end
 local function lost(m,v)
     if v.lost then return end
     v.lost=true; m.mask=m.mask+2^(v.index-1)
-    if v.remote then v.remote.status="lost"; v.remote.projectile=nil; v.phase="done" end
+    if v.remote then v.remote.status="lost"; v.phase="done" end
     if v.name==m.me or m.target==v.name then m.target=nil end
     m.pulse=-100
 end
@@ -244,7 +246,7 @@ local function finish(m,winner)
     if name then m.players[name].wins=m.players[name].wins+1 end
     for _,v in pairs(m.players) do
         local g=v.name==m.me and FB.game or v.remote
-        g.status=not name and "draw" or name==v.name and "won" or "lost"; g.projectile=nil
+        g.status=not name and "draw" or name==v.name and "won" or "lost"
         v.phase="done"
     end
     if name then

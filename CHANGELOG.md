@@ -1,3 +1,9 @@
+# 0.1.0-alpha.16
+
+- Popped bubbles, falling clusters, and attachment flashes follow the desktop game's 50 Hz clock. Falling bubbles pass in front of the cannon. A shot caught in midair at the end of a versus round bursts where it was flying.
+- The shooter penguin follows a mouse sweep through its turning animation. Holding an aim key keeps the original leaning pose at the end of the cannon's travel. Firing, releasing a turn, and waiting use the original frame sequences.
+- Miniature arena boards use their own screen positions for falling bubbles and returning chains. A bubble shed by a top board can fall past the lower board.
+
 # 0.1.0-alpha.15
 
 - Host or join a live three-to-five-player arena in Multiplayer. Everyone starts with the same board. The host sets the chain rules and victory limit and can allow targeting and continuing after a guest leaves.

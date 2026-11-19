@@ -28,52 +28,59 @@ local sequences={
     wait_to={"wait",1,74,1,"wait"}, wait={"wait",75,97,1,"wait"},
     win={"win",1,68,1,"win"}, lose_to={"loose",1,64,1,"lose"}, lose={"loose",65,158,1,"lose"},
 }
+local function pose(t,name)
+    t.fbState=name
+    t.fbIndex=sequences[name][2]
+end
+
+local function penguinInput(t,game)
+    local direction=game.turning==-1 and "left" or game.turning==1 and "right"
+    local fired=game.shots~=t.fbShots
+    t.fbShots=game.shots
+    t.fbIdleTicks=(direction or fired) and 0 or t.fbIdleTicks+1
+    if fired then
+        pose(t,"action")
+    elseif direction then
+        if t.fbState==direction.."_from" then pose(t,direction)
+        elseif t.fbState~=direction and t.fbState~=direction.."_to" then pose(t,direction.."_to") end
+    elseif t.fbState=="left_to" or t.fbState=="right_to" then
+        -- update_game reverses the zero-based animation index as length-index.
+        local towards=sequences[t.fbState]
+        local progress=(t.fbIndex-towards[2])*towards[4]
+        pose(t,t.fbState=="left_to" and "left_from" or "right_from")
+        local back=sequences[t.fbState]
+        local length=math.abs(back[3]-back[2])+1
+        t.fbIndex=back[2]+((length-progress)%length)*back[4]
+    elseif t.fbState=="left" or t.fbState=="right" then
+        pose(t,t.fbState.."_from")
+    elseif t.fbIdleTicks>200 and t.fbState~="wait" and t.fbState~="wait_to" then
+        pose(t,"wait_to")
+    end
+end
+
 function A.Penguin(texture,game,player,dt)
-    player=player or "p1"
-    if texture.fbGame~=game then
-        texture.fbGame=game; texture.fbState="normal"; texture.fbIndex=20; texture.fbTime=0; texture.fbShots=0; texture.fbIdle=0
+    if texture.fbGame~=game or not texture.fbState then
+        texture.fbGame=game
+        texture.fbTime,texture.fbShots,texture.fbIdleTicks=0,0,0
+        pose(texture,"normal")
     end
-    local function state(name)
-        if texture.fbState~=name then texture.fbState=name; texture.fbIndex=sequences[name][2]; texture.fbTime=0 end
-    end
-    if not texture.fbState then state("normal") end
     if game then
-        if game.status=="won" then state("win")
-        elseif game.status=="lost" or game.status=="draw" then
-            if texture.fbState~="lose" and texture.fbState~="lose_to" then state("lose_to") end
-        elseif not game.paused then
-            local direction=game.turning and (game.turning<0 and "left" or game.turning>0 and "right")
-            if game.shots~=texture.fbShots then
-                state("action"); texture.fbIndex=21; texture.fbTime=0
-                texture.fbShots=game.shots; texture.fbIdle=0
-            elseif direction then
-                texture.fbIdle=0
-                if texture.fbState==direction.."_from" then state(direction)
-                elseif texture.fbState~=direction then state(direction.."_to") end
-            else
-                texture.fbIdle=(texture.fbIdle or 0)+dt
-                local previous=texture.fbState
-                if previous=="left_to" or previous=="right_to" then
-                    -- Continue the return motion from the pose reached before release.
-                    local frame=texture.fbIndex
-                    state(previous=="left_to" and "left_from" or "right_from")
-                    texture.fbIndex=frame
-                elseif previous=="left" or previous=="right" then state(previous.."_from")
-                elseif texture.fbIdle>4 and previous~="wait" and previous~="wait_to" then state("wait_to") end
+        if game.status=="won" and texture.fbState~="win" then pose(texture,"win")
+        elseif (game.status=="lost" or game.status=="draw") and texture.fbState~="lose" and texture.fbState~="lose_to" then
+            pose(texture,"lose_to")
+        end
+    end
+    if game and not game.paused then
+        texture.fbTime=texture.fbTime+dt
+        while texture.fbTime+1e-9>=0.02 do
+            texture.fbTime=texture.fbTime-0.02
+            if game.status=="playing" then penguinInput(texture,game) end
+            local seq=sequences[texture.fbState]
+            if seq[5] then
+                texture.fbIndex=texture.fbIndex+seq[4]
+                if (texture.fbIndex-seq[3])*seq[4]>0 then pose(texture,seq[5]) end
             end
         end
     end
-    texture.fbTime=(texture.fbTime or 0)+(game and game.paused and 0 or dt)
-    while texture.fbTime>=0.02 do
-        texture.fbTime=texture.fbTime-0.02
-        local seq=sequences[texture.fbState]
-        if seq[5] then
-            texture.fbIndex=texture.fbIndex+seq[4]
-            if seq[4]>0 and texture.fbIndex>seq[3] or seq[4]<0 and texture.fbIndex<seq[3] then
-                texture.fbState=seq[5]; texture.fbIndex=sequences[seq[5]][2]
-            end
-        end
-    end
-    local seq=sequences[texture.fbState]
-    A.Frame(texture,seq[1].."-"..player,texture.fbIndex)
+    A.Frame(texture,sequences[texture.fbState][1].."-"..(player or "p1"),texture.fbIndex)
 end
