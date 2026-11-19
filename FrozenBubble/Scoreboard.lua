@@ -54,6 +54,34 @@ local function scoreRow(parent,x,y,w,h)
     return frame
 end
 
+function U:BuildTrainingResult(text)
+    local panel=CreateFrame("Button",nil,self.result)
+    panel:SetScale(1.6); panel:SetSize(341,280); panel:SetPoint("CENTER",self.frame,"CENTER")
+    A.Image(panel,"panel",0,0,nil,nil,"BACKGROUND")
+    caption(text,panel,"Your score after two minutes:",0,94,341)
+    self.trainingScore=caption(text,panel,"",0,126,341)
+    caption(text,panel,"Press any key.",0,158,341)
+    panel:RegisterForClicks("LeftButtonUp","RightButtonUp")
+    panel:SetScript("OnClick",function(_,key) self:ContinueTrainingResult(key=="RightButton") end)
+    panel:Hide(); self.trainingResult=panel
+end
+
+local function leaveTraining(ui)
+    local entry=FB.game.scoreEntry
+    if entry and S.Pending(entry) then S.Submit(entry,"") end
+    FB.LeaveBoard(); FB.game=nil; ui:ShowMenu()
+end
+
+function U:ContinueTrainingResult(quit)
+    local game=FB.game
+    if self.screen~="game" or self.inactive or InCombatLockdown() or not game or
+        game~=self.trainingGame or not self.result:IsShown() or GetTime()<self.trainingReadyAt then return end
+    if quit then leaveTraining(self)
+    elseif game.scoreEntry and S.Pending(game.scoreEntry) then self:ShowScores(game.scoreEntry,false,game)
+    else self:RetryRound() end
+    return true
+end
+
 function U:BuildScoreEntry(text,button,input)
     local shield=self.panels.scoreEntry
     shield:ClearAllPoints(); shield:SetAllPoints(self.frame)
@@ -79,7 +107,11 @@ function U:BuildScoreEntry(text,button,input)
             box:EnableMouse(false); self.scoreSubmit:Hide(); self.scoreSkip:Hide()
             box:SetText(entry.displayName); outro:Show(); self.scoreOutroTime=0
             FB.Sound("menu_selected")
-        else FB.Sound("cancel"); self:ShowScores(nil,true) end
+        else
+            FB.Sound("cancel")
+            if self.trainingScoreRound and self.trainingScoreRound==FB.game then self:RetryRound()
+            else self:ShowScores(nil,true) end
+        end
     end
     self.scoreSubmit=button(panel,"Save name",50,196,115,function() finish(true) end)
     self.scoreSkip=button(panel,"Discard",176,196,115,function() finish(false) end)
@@ -90,7 +122,7 @@ function U:BuildScoreEntry(text,button,input)
     shield:SetScript("OnUpdate",function(_,dt)
         if self.screen=="scoreEntry" and self.namingScore and outro:IsShown() and not self.inactive and not InCombatLockdown() then
             self.scoreOutroTime=self.scoreOutroTime+dt
-            if self.scoreOutroTime>=2 then self:ShowScores(self.namingScore) end
+            if self.scoreOutroTime>=2 then self:ShowScores(self.namingScore,false,self.trainingScoreRound) end
         end
     end)
 end
@@ -159,15 +191,19 @@ function U:BuildScores(text,button,input)
     end
     self.scoreEmpty=text(p,"No campaign runs yet",60,177,17,520); self.scoreEmpty:SetJustifyH("CENTER")
     local function nextMode()
+        if self.trainingScoreRound then self:RetryRound(); return end
         local i=self.scoreMode=="campaign" and 1 or self.scoreMode=="training" and 2 or 3
         self.scoreMode=pages[i%#pages+1]; self.scorePage=1; self:RefreshScores()
     end
     self.scoreSelector=button(p,"Campaign",70,445,106,nextMode)
-    button(p,"Back",8,445,58,function() self:ShowMenu() end)
+    local function back()
+        if self.trainingScoreRound then leaveTraining(self) else self:ShowMenu() end
+    end
+    self.scoreBack=button(p,"Back",8,445,58,back)
     self.scoreSource=button(p,"Personal",181,445,100,function()
         self.shared=not self.shared; self.scorePage=1; self:RefreshScores()
     end)
-    button(p,"Refresh shared",286,445,111,function()
+    self.scoreRefresh=button(p,"Refresh shared",286,445,111,function()
         FB.Net.RequestScores()
         if FB.Community.state=="manual" then FB.Community.Manual("SCOREQ") end
         self.shared=true; self.scorePage=1; self:RefreshScores()
@@ -180,17 +216,20 @@ function U:BuildScores(text,button,input)
     p:SetScript("OnKeyDown",function(panel,key)
         if InCombatLockdown() then return end
         local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
-        local used=active and (key=="ESCAPE" or key=="ENTER" or key=="SPACE" or key=="LEFT" or key=="RIGHT")
+        local used=active and (self.trainingScoreRound~=nil or key=="ESCAPE" or key=="ENTER" or key=="SPACE" or key=="LEFT" or key=="RIGHT")
         panel:SetPropagateKeyboardInput(not used)
         if not used then return end
-        if key=="ESCAPE" then self:ShowMenu()
+        if key=="ESCAPE" then back()
+        elseif self.trainingScoreRound then
+            self:RetryRound(); self.keys.resultKey=key
         elseif key=="LEFT" or key=="RIGHT" then
             self.scorePage=self.scorePage+(key=="LEFT" and -1 or 1); self:RefreshScores()
         else nextMode() end
     end)
 end
 
-function U:ShowScores(entry,skipPending)
+function U:ShowScores(entry,skipPending,trainingRound)
+    self.trainingScoreRound=trainingRound
     local pending=not skipPending and S.Pending(entry)
     if pending then self:NameHighscore(pending); return end
     self.namingScore=nil; self.highlightScore=entry
@@ -199,7 +238,7 @@ function U:ShowScores(entry,skipPending)
         self.shared=false
         for i,row in ipairs(S.Rows(false,entry.mode)) do
             if row==entry then
-                self.scorePage=math.ceil(i/(entry.mode=="campaign" and 10 or 20))
+                self.scorePage=trainingRound and 1 or math.ceil(i/(entry.mode=="campaign" and 10 or 20))
                 local game=FB.game
                 if entry.mode=="endless" and game and game.scoreEntry==entry and self.scorePage==1 and not game.applauded then
                     FB.Sound("applause"); game.applauded=true
@@ -220,7 +259,11 @@ function U:RefreshScores()
     local count=math.max(1,math.ceil(math.max(#rows,#chains)/perPage))
     self.scorePage=FB.Clamp(self.scorePage,1,count)
     local first=(self.scorePage-1)*perPage
-    self.scoreSelector:SetText(S.Label(mode).." ›")
+    self.scoreSelector:SetText(self.trainingScoreRound and "Next round" or S.Label(mode).." ›")
+    self.scoreBack:SetText(self.trainingScoreRound and "Menu" or "Back")
+    local browsing=not self.trainingScoreRound
+    self.scoreSource:SetShown(browsing); self.scoreRefresh:SetShown(browsing)
+    self.scorePrev:SetShown(browsing); self.scoreNumber:SetShown(browsing); self.scoreNext:SetShown(browsing)
     self.scoreSource:SetText(self.shared and "Community" or "Personal")
     self.shareBest:SetShown(not training)
     self.scorePrev:SetEnabled(self.scorePage>1); self.scoreNext:SetEnabled(self.scorePage<count)
@@ -250,7 +293,7 @@ function U:RefreshScores()
             local entries=i==1 and rows or chains
             col:ClearAllPoints(); col:SetPoint("TOPLEFT",training and (i-1)*320 or 160,-44)
             col.title:SetText(training and (i==1 and "Regular" or "Chain-reaction enabled") or "Endless")
-            col.share:SetShown(training); col.empty:SetShown(#entries==0)
+            col.share:SetShown(training and browsing); col.empty:SetShown(#entries==0)
             for j,line in ipairs(col.lines) do
                 local idx=first+j
                 local row=entries[idx]

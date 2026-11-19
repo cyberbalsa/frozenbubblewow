@@ -93,7 +93,10 @@ end
 
 function S.Finish(mode,score,level,seconds,completed)
     local entry=makeEntry(mode,score,level,seconds,completed)
-    if not S.Qualifies(entry) then return store(entry) end
+    if not S.Qualifies(entry) then
+        if mode=="training" or mode=="training-chain" then return end
+        return store(entry)
+    end
     FB.db.pendingScores[#FB.db.pendingScores+1]=entry
     return entry
 end

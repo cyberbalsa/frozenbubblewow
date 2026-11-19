@@ -227,15 +227,7 @@ function U:Build()
     draw:SetFont(FB.media.."DejaVuSans.ttf",44/3); draw:SetJustifyH("CENTER")
     draw:SetShadowColor(0,0,0,1); draw:SetShadowOffset(1,-1); self.drawPanel:Hide()
     self.resultDetail=text(self.result,"",0,250,18,526.4,{0.2,0.1,0.2}); self.resultDetail:SetJustifyH("CENTER")
-    -- The two-minute results use the original centered 341 x 280 menu panel.
-    self.trainingResult=CreateFrame("Frame",nil,self.result)
-    self.trainingResult:SetScale(1.6); self.trainingResult:SetSize(341,280)
-    self.trainingResult:SetPoint("CENTER",self.frame,"CENTER"); self.trainingResult:EnableMouse(false)
-    A.Image(self.trainingResult,"panel",0,0,nil,nil,"BACKGROUND")
-    text(self.trainingResult,"Your score after two minutes:",0,94,14,341):SetJustifyH("CENTER")
-    self.trainingScore=text(self.trainingResult,"",0,126,14,341); self.trainingScore:SetJustifyH("CENTER")
-    text(self.trainingResult,"Press any key.",0,158,14,341):SetJustifyH("CENTER")
-    self.trainingResult:Hide()
+    self:BuildTrainingResult(text)
     self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end)
     self.nextButton:SetFrameLevel(self.layers.panel+2); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
@@ -434,16 +426,8 @@ function U:ResultReady(game,remote,winner,shared)
     return true
 end
 function U:ShowTrainingResult(show)
-    if self.trainingResult:IsShown()==show then return end
+    self.trainingResult:EnableMouse(show and self.screen=="game")
     self.trainingResult:SetShown(show)
-    self.retryButton:ClearAllPoints(); self.resultScores:ClearAllPoints()
-    if show then
-        self.retryButton:SetPoint("TOP",self.trainingResult,"TOP",0,-312)
-        self.resultScores:SetPoint("TOP",self.trainingResult,"TOP",0,-364.8)
-    else
-        self.retryButton:SetPoint("TOPLEFT",116,-284)
-        self.resultScores:SetPoint("TOPLEFT",140,-317)
-    end
 end
 
 function U:RetryRound()
@@ -479,7 +463,9 @@ function U:RoundResultKey(board,key)
     board:SetPropagateKeyboardInput(false)
     if self.keys[key] then return true end
     self.keys[key]=true
-    if shared then
+    if game.mode=="training" and game.status=="finished" then
+        if not self:ContinueTrainingResult(key=="ESCAPE") then return true end
+    elseif shared then
         -- update_lost accepts Escape immediately and other keys once the loser freezes.
         if key~="ESCAPE" and not sharedRematchReady(shared) then return true end
         FB.LocalVersus.Rematch()
@@ -488,7 +474,6 @@ function U:RoundResultKey(board,key)
         elseif game.mode=="campaign" and FB.run.eligible then self:OpenRoundScores() else self:ShowMenu() end
     else
         if self.resultGame~=game or not self.result:IsShown() then return true end
-        if game.status=="finished" and GetTime()<(self.trainingReadyAt or 0) then return true end
         if game.status=="won" and FB.db.graphicsLevel>1 and not FB.db.reducedMotion then
             if bursting(game) then return true end
         end
@@ -650,6 +635,7 @@ function U:WindowControls(layout)
     self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",close,-4)
 end
 function U:ShowMenu()
+    self.trainingScoreRound=nil
     FB.Recordings.playback=nil
     FB.Transitions.Cancel()
     self:WindowControls(false)
@@ -822,6 +808,7 @@ function U:Options()
     self.effectsValue:SetText("Effects: "..math.floor((FB.db.effectsVolume or 1)*100+0.5).."%")
 end
 function U:Panel(name)
+    if name~="scoreEntry" and name~="scores" then self.trainingScoreRound=nil end
     FB.Plaques.Clear()
     self.drawPanel:Hide()
     if name~="replay" then FB.Recordings.playback=nil end
@@ -1354,7 +1341,7 @@ function U:Update(dt)
     local draw=online and game.status=="draw"
     self.drawPanel:SetShown(draw and ready or false)
     local canFinish=ended and game.mode=="campaign" and FB.run and FB.run.eligible and not FB.run.closed
-    self.resultScores:SetShown(ended and game.scoreEntry~=nil or canFinish or false)
+    self.resultScores:SetShown(ended and game.status~="finished" and game.scoreEntry~=nil or canFinish or false)
     self.resultScores:SetText(canFinish and "Finish run" or "View highscores")
     self.winnerName:SetShown(winner and not shared or false)
     self.resultBadge:SetShown(winner and not shared or false)
@@ -1371,7 +1358,7 @@ function U:Update(dt)
     self.leaveSeries:SetShown(ended and (canRematch or restarting) or false)
     self.retryButton:SetEnabled(not restarting and not (canRematch and match.ready))
     self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or game and game.mode=="campaign" and FB.run and FB.run.closed and "New campaign" or "Try again")
-    self.retryButton:SetShown(ended and not canAdvance and (not shared or sharedReady) and (not online or advance) or false)
+    self.retryButton:SetShown(ended and not finished and not canAdvance and (not shared or sharedReady) and (not online or advance) or false)
     local training=game and game.mode=="training" and not self.editing
     self.trainingClock:SetShown(training or false)
     if self.editing then

@@ -38,7 +38,9 @@ function FB.Music()
         local track="introzik.ogg"
         if scene then track=scene.background=="solo-background" and "frozen-mainzik-1p.ogg" or "frozen-mainzik-2p.ogg"
         elseif screen=="replay" and FB.Recordings.playback then track=(FB.Recordings.playback.left or FB.Recordings.playback.arena) and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg"
-        elseif board or namingBoard then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
+        elseif board or namingBoard or screen=="scores" and FB.UI.trainingScoreRound then
+            track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg"
+        end
         if FB.musicTrack~=track and PlayMusic(FB.media..track)~=false then FB.musicTrack=track end
     else FB.StopGameMusic() end
 end

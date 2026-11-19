@@ -1,3 +1,8 @@
+# 0.1.0-alpha.46
+
+- Restored the desktop training score card and its one-second input delay. Press a key or left-click to continue. Escape or a right-click leaves without saving the run.
+- Saving a qualifying score shows the training table with the game music still playing. Continue from the table to start another round with the same chain-reaction rules. Discarding a name or finishing below the cutoff goes straight to the next round.
+
 # 0.1.0-alpha.45
 
 - Added the desktop multiplayer training difficulty setting. Choose an average wait of 0 to 120 seconds between penalty volleys. The default is 30 seconds. Personal recordings remember the setting.
