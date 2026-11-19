@@ -16,7 +16,9 @@ function Options.Set(key,value)
         FB.UI:SelectEditorColor(FB.UI.editorColor)
         if FB.UI.screen=="scores" then FB.UI:RefreshScores() end
     end
-    if key=="windowSize" then FB.UI:Resize() end
+    if key=="windowSize" then
+        if FB.UI.fullWindow then FB.UI:ToggleFullWindow() else FB.UI:Resize() end
+    end
     if key=="music" or key=="musicVolume" then FB.Music() end
     if key=="sound" or key=="music" or key=="musicVolume" then FB.UI:Options() end
     if key=="flightPrompt" or key=="idlePrompt" or key=="idleSeconds" or key=="craftingPrompt" then

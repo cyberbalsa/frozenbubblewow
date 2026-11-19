@@ -6,6 +6,8 @@ Mouse aims; left click fires. While hovering over the board, Left/Right or A/D a
 
 Choose **2P Game** to share one keyboard. The right player aims with Left/Right, fires with Up and centers with Down. The left player aims with X/V, fires with C and centers with D. P pauses both boards. **Next round** keeps each player’s win count.
 
+Choose **Keys** on the main menu to rebind both players. F fits the game to the screen and restores its previous position when pressed again. In an online round, press Enter with the pointer over your board to type a message to your opponent. Enter sends it and Escape cancels it. Both players need alpha 10 or later to see match chat.
+
 Use Multiplayer → Join community channel for discovery. The channel is called `FrozenBubbleForever`. If automatic addon messages are blocked, use **Announce queue**, **Share my best**, **Browse community**, or **Publish** to send a discovery message directly from a click. Matches and requested level downloads use addon whispers. All players must have the addon installed, and Blizzard's channel visibility and message restrictions apply.
 
 Type **/fb scores** to see campaign board previews and the two training rankings. Campaign clears rank first, followed by the furthest level reached and then the quickest time. Use the Personal button to switch to community scores. Hover over a score to see the character’s realm.

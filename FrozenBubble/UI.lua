@@ -80,7 +80,7 @@ end
 local function canPauseGame()
     return FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match)
 end
-local localKeys={LEFT=true,RIGHT=true,UP=true,DOWN=true,X=true,V=true,C=true,D=true,P=true}
+local K=FB.Controls
 function U:Build()
     local A=FB.Animation
     local f=CreateFrame("Frame","FrozenBubbleWindow",UIParent,"BackdropTemplate")
@@ -90,10 +90,11 @@ function U:Build()
     f:SetBackdrop({bgFile="Interface\\Buttons\\WHITE8X8"})
     f:SetBackdropColor(0.1,0.06,0.12,1)
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
-    f:SetScript("OnDragStart",f.StartMoving); f:SetScript("OnDragStop",f.StopMovingOrSizing)
+    f:SetScript("OnDragStart",function() if not self.fullWindow then f:StartMoving() end end); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
         self.keys={}; self.board:EnableKeyboard(false)
         if canPauseGame() then FB.game.paused=true end
+        if FB.MatchChat.Close then FB.MatchChat.Close() end
         FB.StopGameMusic()
     end)
     f:SetScript("OnShow",function()
@@ -125,34 +126,38 @@ function U:Build()
         elseif FB.game and not FB.LocalVersus.match then FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE) end
     end)
     self.board:SetScript("OnKeyDown",function(b,key)
-        if FB.LocalVersus.match and self.screen=="opponent" then
-            if InCombatLockdown() then return end
-            local active=self:HasFocus() and not self.inactive and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
-            local used=active and localKeys[key]
-            b:SetPropagateKeyboardInput(not used)
-            if used and not self.keys[key] then
-                self.keys[key]=true
-                if key=="UP" then FB.Fire()
-                elseif key=="C" and not FB.game.paused and FB.LocalVersus.match.left:Shoot() then FB.Sound("launch")
-                elseif key=="P" then FB.TogglePause() end
-            end
-            return
+        if InCombatLockdown() then return end
+        if self.inactive or (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) or not self:HasFocus() then
+            b:SetPropagateKeyboardInput(true); self.keys={}; return
         end
         if self.editing then
-            if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then b:SetPropagateKeyboardInput(true); return end
             local color=tonumber(key)
             local used=color and color>=1 and color<=8
             b:SetPropagateKeyboardInput(not used)
             if used and not InCombatLockdown() then self:SelectEditorColor(color) end
             return
         end
-        local used=key=="LEFT" or key=="RIGHT" or key=="A" or key=="D" or key=="SPACE" or key=="UP" or key=="P"
-        b:SetPropagateKeyboardInput(not used)
-        if InCombatLockdown() then b:EnableKeyboard(false); return end
+        local shared=FB.LocalVersus.match
+        local action=(shared and K.shared or K.solo)[key]
+        if action==10 and (not FB.Net.match or FB.Net.match.phase~="playing") then action=nil end
+        local pause=key=="PAUSE" or key=="P" and not action
+        b:SetPropagateKeyboardInput(not action and not pause)
+        if (not action and not pause) or self.keys[key] then return end
         self.keys[key]=true
-        if key=="SPACE" or key=="UP" then FB.Fire() elseif key=="P" then FB.TogglePause() end
+        if action==3 then FB.Fire()
+        elseif action==7 and not FB.game.paused and shared.left:Shoot() then FB.Sound("launch")
+        elseif action==9 then self:ToggleFullWindow()
+        elseif action==10 then self.chatKey=key
+        elseif pause then FB.TogglePause() end
     end)
-    self.board:SetScript("OnKeyUp",function(_,key) self.keys[key]=nil end)
+    self.board:SetScript("OnKeyUp",function(_,key)
+        -- Focus the edit box after the opening keystroke has finished.
+        if key==self.chatKey then
+            self.chatKey=nil
+            if self.keys[key] and not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then FB.MatchChat.Open() end
+        end
+        self.keys[key]=nil
+    end)
     self.overlay=CreateFrame("Frame",nil,self.board); self.overlay:SetAllPoints(); self.overlay:EnableMouse(false)
     self.overlay:SetFrameLevel(self.board:GetFrameLevel()+3)
     self.pauseArt=A.Image(self.overlay,"pause",33,130,190,143); self.pauseArt:Hide()
@@ -185,16 +190,16 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
+    for _,name in ipairs({"keys","help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="keys" and name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    self:BuildHelp(); self:BuildLobby(); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -213,7 +218,7 @@ function U:Build()
         {"netgame","netgame",function() FB.Community.Join(); self:ShowLobby() end},
         {"editor","editor",function() self:StartEditor() end},
         {"graphics","gfx-l1",function() self:Panel("settings") end},
-        {"keys","keys",function() self:Panel("help") end},
+        {"keys","keys",function() self:Panel("keys") end},
         {"highscores","highscore",function() self:ShowScores() end},
     }
     for i,entry in ipairs(entries) do
@@ -241,14 +246,17 @@ function U:Build()
     menu:SetScript("OnKeyDown",function(panel,key)
         if InCombatLockdown() then return end
         local active=self.screen=="menu" and not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
-        local used=active and (key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
+        local used=active and (key==K.keys[9] or key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
             key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" or key=="ESCAPE")
         panel:SetPropagateKeyboardInput(not used)
         if not used then return end
         if key=="UP" or key=="LEFT" then self:SelectMain((self.menuSelection-2)%#entries+1)
         elseif key=="DOWN" or key=="RIGHT" then self:SelectMain(self.menuSelection%#entries+1)
         elseif key=="ESCAPE" then self.frame:Hide()
-        else self.menuHover[self.menuSelection].activate() end
+        elseif key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" then
+            self.menuHover[self.menuSelection].activate()
+            if self.screen=="keys" then K.WaitForRelease(key) end
+        else self:ToggleFullWindow() end
     end)
     local strip=CreateFrame("Frame",nil,menu)
     strip:SetSize(292,30); strip:SetPoint("TOPLEFT",304,-243); strip:SetClipsChildren(true)
@@ -267,6 +275,7 @@ function U:Build()
     versionCover:SetSize(38,154); versionCover:SetPoint("BOTTOMRIGHT",-2,0)
     -- A compact in-game menu/toolbar, like the Peggle addon, instead of an app sidebar.
     self.toolbar=CreateFrame("Frame",nil,self.gameLayer); self.toolbar:SetAllPoints(); self.toolbar:SetFrameLevel(self.layers.hud)
+    FB.MatchChat.Build(self,text)
     self.menuControl=button(self.toolbar,"Menu",16,728,90,function() self:ShowMenu() end)
     self.pauseControl=button(self.toolbar,"Pause",115,728,90,function() FB.TogglePause() end)
     self.editButton=button(self.toolbar,"Edit level",16,687,110,function() self:StartEditor(self.playingCustomID) end)
@@ -302,9 +311,11 @@ function U:SetCombatInput(blocked)
     self.combatInput=blocked
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
+    self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
     self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
     if blocked then
+        FB.MatchChat.Close()
         self.mouseRestore={}
         local function disable(frame)
             if frame.IsMouseEnabled and frame:IsMouseEnabled() then
@@ -323,6 +334,7 @@ end
 function U:UpdateVisibility(dt)
     if not self.frame or not self.frame:IsShown() then return end
     local combat=InCombatLockdown()
+    if next(self.keys) and GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then self.keys={} end
     local focused=not combat and (GetTime()<(self.focusGrace or 0) or self:HasFocus())
     if focused then self.outsideSince=nil
     elseif not self.outsideSince then self.outsideSince=GetTime() end
@@ -353,8 +365,20 @@ function U:UpdateVisibility(dt)
         FB.Debug.Log("FOCUS",combat and "combat" or inactive and "lost" or "gained")
     end
 end
+function U:ToggleFullWindow()
+    if self.fullWindow then
+        self.fullWindow=nil
+        self.frame:ClearAllPoints(); self.frame:SetPoint(unpack(self.restoreAnchor,1,5))
+        self.restoreAnchor=nil
+    else
+        self.restoreAnchor={self.frame:GetPoint(1)}
+        self.fullWindow=true; self.frame:ClearAllPoints(); self.frame:SetPoint("CENTER",UIParent,"CENTER")
+    end
+    self.frame:SetMovable(not self.fullWindow); self:Resize()
+end
 function U:Resize()
     local scale=math.min((UIParent:GetWidth()-30)/1024,(UIParent:GetHeight()-30)/768)*(FB.db.windowSize or 1)
+    if self.fullWindow then scale=math.min(UIParent:GetWidth()/1024,UIParent:GetHeight()/768) end
     self.frame:SetScale(scale)
 end
 function U:PlaceBoard(board,x,y,scale)
@@ -373,6 +397,7 @@ function U:ShowMenu()
     if canPauseGame() then FB.game.paused=true end
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.solo:EnableKeyboard(false)
+    self.panels.keys:EnableKeyboard(false); FB.MatchChat.Close()
     self.panels.chain:EnableKeyboard(false)
     self.panels.scores:EnableKeyboard(false)
     self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; self.menu:EnableKeyboard(not self.combatInput); FB.Music()
@@ -457,7 +482,7 @@ function U:StartChainGame(chains)
     if self.chainMode=="local" then FB.LocalVersus.Start(chains) else FB.StartSolo(self.chainMode,chains) end
 end
 function U:ChooseChainRules(mode)
-    self.chainControls:SetText(mode=="local" and "Right board: Left/Right aim, Up fires, Down centers.\nLeft board: X / V aim, C fires, D centers." or "")
+    self.chainControls:SetText(mode=="local" and string.format("Right: %s / %s aim, %s fires, %s centers.\nLeft: %s / %s aim, %s fires, %s centers.",unpack(K.keys,1,8)) or "")
     self.chainMode=mode
     self.chainTitle:SetText(mode=="local" and "Two players" or mode=="training" and "Multiplayer training" or "Random level")
     self:Panel("chain")
@@ -496,6 +521,9 @@ function U:Panel(name)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorSockets:SetShown(self.editing); self.editorDirty=true
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
+    self.panels.keys:EnableKeyboard(name=="keys" and not self.combatInput)
+    if name=="keys" then K.Begin() end
+    FB.MatchChat.Close()
     self.panels.chain:EnableKeyboard(name=="chain" and not self.combatInput)
     self.panels.scores:EnableKeyboard(name=="scores" and not self.combatInput)
     if name=="solo" then self:SelectSolo(1,true) end
@@ -960,13 +988,14 @@ function U:AnimateMenu(dt)
 end
 function U:Update(dt)
     if not self.frame or not self.frame:IsShown() then return end
+    FB.MatchChat.Refresh()
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game
     if game and not FB.LocalVersus.match and not self.editing and not game.paused and game.status=="playing" then
         local oldAngle=game.angle
-        if self.keys.LEFT or self.keys.A then game.angle=FB.Clamp(game.angle-dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
-        elseif self.keys.RIGHT or self.keys.D then game.angle=FB.Clamp(game.angle+dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
-        elseif self.board:IsMouseOver() then
+        local left,right,center=K.Held(self.keys,1),K.Held(self.keys,2),K.Held(self.keys,4)
+        if left or right or center then K.Aim(game,left,right,center,dt*1.5)
+        elseif self.board:IsMouseOver() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then
             local x,y=self:Cursor()
             if self.lastX~=x or self.lastY~=y then
                 if y<game.launchY-10 then game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE) end

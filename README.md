@@ -19,6 +19,12 @@ Type `/fb`. Use the arrow keys and Enter or Space to navigate the main menu. Aim
 - **Online versus:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. Choose **Chain reactions on** in Multiplayer before you queue or challenge someone. The queue pairs players who selected the same rules. Both players need alpha 7 or newer for chain matches. You can watch the opponent aim, fire, and drop clusters on the left board. Hiding the window leaves the match running. Timeout or combat cancels the match without a result.
 - **Editor:** paint up to ten rows, test, save, import/export a 98-character layout code, and publish to the community. Saved/imported levels are unranked.
 
+## Keys and match chat
+
+Choose **Keys** on the main menu to bind aim, fire and center for each player. The last two prompts set the full-window and chat keys. All ten bindings save together. Escape cancels a partial change. By default, F fits the addon to your screen and F again restores its size and position.
+
+During an online round, press Enter over your board to chat. Type your message and press Enter to send or Escape to discard it. Your opponent sees it below their left board for ten seconds. Both players need alpha 10 or later for match chat.
+
 ## Addon settings
 
 Open **Settings → AddOns → Frozen Bubble Forever**, right-click the minimap button, or type `/fb settings`. Left-click the button to toggle the game and drag to move it.
@@ -45,7 +51,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.9` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.10` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

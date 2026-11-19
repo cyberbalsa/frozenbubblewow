@@ -11,6 +11,8 @@ FB.MediaInfo = {
     ["blink-green-right"] = {w=12, h=16, tw=16, th=16, columns=1, frames=1},
     ["blink-purple-left"] = {w=12, h=14, tw=16, th=16, columns=1, frames=1},
     ["blink-purple-right"] = {w=13, h=14, tw=16, th=16, columns=1, frames=1},
+    ["chat-input"] = {w=219, h=37, tw=256, th=64, columns=1, frames=1},
+    ["chat-peer"] = {w=174, h=17, tw=256, th=32, columns=1, frames=1},
     ["compressor"] = {w=252, h=51, tw=256, th=64, columns=1, frames=1},
     ["compressor-ext"] = {w=188, h=28, tw=256, th=32, columns=1, frames=1},
     ["editor-background"] = {w=640, h=480, tw=1024, th=512, columns=1, frames=1},

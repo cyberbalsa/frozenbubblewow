@@ -223,7 +223,9 @@ function N.Receive(prefix,message,channel,sender)
         end
     end
     if not m or sender~=m.peer or p[3]~=m.id then return end
-    if kind=="ACCEPT" and m.host and m.phase=="offer" then
+    if kind=="CHAT" then
+        FB.MatchChat.Receive(m,table.concat(p,"|",4))
+    elseif kind=="ACCEPT" and m.host and m.phase=="offer" then
         m.phase="start"; m.since=now(); m.lastRetry=-100
     elseif kind=="START" and not m.host and (m.phase=="accept" or m.phase=="playing") then
         N.Whisper("READY",m.id); N.Begin()

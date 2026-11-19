@@ -235,7 +235,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Community","MediaInfo","Animation"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
     fb.db={}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -296,6 +296,19 @@ test("cumulative attacks survive duplicates and lost snapshots",function()
     a.Net.State(); tick(1); eq(b.game.pending,5)
     drops.STATE=true; a.game.shots=4; a.game.lockedShots=4; a.game.attack=8; a.Net.State(); tick(2)
     eq(b.game.pending,8)
+end)
+test("match chat travels only to the active opponent and preserves literal pipes",function()
+    local m=b.Net.match
+    local message="Almost! |cffff0000 | wow"
+    assert(a.MatchChat.Send(message)); tick(1)
+    eq(m.chatText,"Almost! ||cffff0000 || wow"); assert(m.chatUntil>clock)
+    for _,sample in ipairs({{"WHISPER","Wrong-TestRealm",m.id,"bad"},{"CHANNEL",m.peer,m.id,"bad"},
+        {"WHISPER",m.peer,"wrong","bad"},{"WHISPER",m.peer,m.id,string.rep("a",121)},
+        {"WHISPER",m.peer,m.id,"bad\ntext"}}) do
+        b.Net.Receive(b.PREFIX,"1|CHAT|"..sample[3].."|"..sample[4],sample[1],sample[2])
+    end
+    eq(m.chatText,"Almost! ||cffff0000 || wow")
+    assert(not a.MatchChat.Send("") and not a.MatchChat.Send(string.rep("a",121)))
 end)
 test("stale, foreign, invalid and excessive attack packets are ignored",function()
     local m=b.Net.match; local seq=m.remoteSeq; local pending=b.game.pending
@@ -598,6 +611,65 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     end)
     env.SlashCmdList.FROZENBUBBLE(""); fb.StartCampaign(1)
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent"}) do fb.UI:Panel(name); fb.UI:Update(1) end
+    test("Keys captures ten distinct bindings, cancels atomically and restores a saved profile",function()
+        local ui,k=fb.UI,fb.Controls
+        local mouse,focus=env.GetMouseFoci,env.GetCurrentKeyBoardFocus
+        local panel=ui.panels.keys
+        env.GetMouseFoci=function() return {panel} end
+        ui:ShowMenu(); ui:SelectMain(7,true); ui.menu.scripts.OnKeyDown(ui.menu,"ENTER")
+        eq(ui.screen,"keys")
+        local function press(key)
+            panel.scripts.OnKeyDown(panel,key); panel.scripts.OnKeyUp(panel,key)
+        end
+        press("ENTER"); press("J"); press("ESCAPE")
+        eq(ui.screen,"menu"); eq(k.keys[1],"LEFT")
+        ui.menuHover[7].activate()
+        env.GetCurrentKeyBoardFocus=function() return env.UIParent end
+        press("Z"); env.GetCurrentKeyBoardFocus=focus
+        panel.scripts.OnKeyDown(panel,"J"); panel.scripts.OnKeyDown(panel,"J")
+        panel.scripts.OnKeyUp(panel,"J"); press("J")
+        local wanted={"J","L","K","I","S","G","T","R","F1","H"}
+        for n=2,10 do press(wanted[n]) end
+        k.Load(fb.db.bindings); for n,key in ipairs(wanted) do eq(k.keys[n],key) end
+        clock=clock+2; panel.scripts.OnUpdate(); eq(ui.screen,"menu")
+        local down,up=ui.board.scripts.OnKeyDown,ui.board.scripts.OnKeyUp
+        fb.StartCampaign(1); env.GetMouseFoci=function() return {ui.board} end
+        down(ui.board,"J"); ui:Update(0.04); eq(fb.game.angle,-0.06); up(ui.board,"J")
+        down(ui.board,"I"); ui:Update(0.04); eq(fb.game.angle,0); up(ui.board,"I")
+        down(ui.board,"UP"); down(ui.board,"SPACE"); eq(fb.game.shots,0)
+        down(ui.board,"K"); eq(fb.game.shots,1)
+        ui:ShowMenu(); ui.menuHover[2].activate()
+        assert(ui.chainControls.text:find("J / L",1,true)); ui.chainNo.scripts.OnClick()
+        down(ui.board,"L"); down(ui.board,"S"); fb.LocalVersus.Update(0.02,ui.keys)
+        eq(fb.game.angle,0.03); eq(fb.LocalVersus.match.left.angle,-0.03)
+        down(ui.board,"T"); down(ui.board,"K"); eq(fb.LocalVersus.match.left.shots,1); eq(fb.game.shots,1)
+        local savedSize=fb.db.windowSize; fb.db.windowSize=0.65
+        local anchor,scale={"TOPLEFT",env.UIParent,"TOPLEFT",11,-13},nil
+        ui.frame.GetPoint=function() return env.unpack(anchor) end
+        ui.frame.SetPoint=function(_,...) anchor={...} end
+        ui.frame.SetScale=function(_,value) scale=value end
+        down(ui.board,"F1"); assert(ui.fullWindow); eq(anchor[1],"CENTER")
+        eq(scale,math.min(900/1024,610/768)); up(ui.board,"F1")
+        down(ui.board,"F1"); assert(not ui.fullWindow); eq(anchor[1],"TOPLEFT"); eq(anchor[4],11); eq(anchor[5],-13)
+        eq(scale,math.min(870/1024,580/768)*0.65)
+        ui.frame.GetPoint,ui.frame.SetPoint,ui.frame.SetScale=nil,nil,nil; fb.db.windowSize=savedSize
+        fb.StartCampaign(1); k.Load({"J","J"}); eq(k.keys[1],"LEFT"); eq(k.keys[8],"D")
+        env.GetMouseFoci=mouse
+    end)
+    test("online chat opens from the board, cancels on Escape and closes with the match",function()
+        local ui,chat=fb.UI,fb.MatchChat
+        local oldMouse=env.GetMouseFoci
+        fb.StartVersus(37); fb.Net.match={id="37-1",phase="playing",peer="Chat-TestRealm"}
+        env.GetMouseFoci=function() return {ui.board} end
+        local function open()
+            ui.board.scripts.OnKeyDown(ui.board,"ENTER"); ui.board.scripts.OnKeyUp(ui.board,"ENTER"); assert(chat.input.shown)
+        end
+        open(); chat.input:SetText("don't send"); chat.input.scripts.OnEscapePressed(); assert(not chat.input.shown)
+        open(); chat.input:SetText("nice shot"); chat.input.scripts.OnEnterPressed()
+        eq(fb.Net.outbox[#fb.Net.outbox].message,"1|CHAT|37-1|nice shot")
+        open(); fb.Net.match=nil; chat.Refresh(); assert(not chat.input.shown)
+        env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
+    end)
     test("two-player menu, simultaneous controls, chat focus and shared pause",function()
         local ui=fb.UI
         local oldMouse,oldKeyboard=env.GetMouseFoci,env.GetCurrentKeyBoardFocus

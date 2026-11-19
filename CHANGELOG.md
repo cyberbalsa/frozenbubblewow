@@ -1,3 +1,9 @@
+# 0.1.0-alpha.10
+
+- The original Keys menu now walks through both players’ aim, fire and center controls. Finish the ten prompts to save your bindings. Escape keeps the previous set.
+- F fits the addon to the screen. Press it again to return to the same window size and position.
+- Press Enter over your board during an online round to write to your opponent. Enter sends the message, Escape discards it, and incoming messages appear for ten seconds with the original artwork and sound. Both players need alpha 10 or later for chat.
+
 # 0.1.0-alpha.9
 
 - **2P Game** opens a shared-keyboard match. Player 1 uses the arrows on the right board. Player 2 uses X and V to aim, C to fire and D to center on the left. Both players start with the same layout and opening bubbles.
