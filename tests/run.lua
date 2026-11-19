@@ -306,7 +306,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -624,8 +624,8 @@ test("community verifies self-echo before advertising automatically",function()
     a.Community.Join(); tick(2); eq(a.Community.state,"ready")
     a.Community.Manual("CATALOG"); eq(a.lastManual,"FBF1|1|CATALOG")
 end)
-test("level validation rejects disconnected and bottom-row layouts",function()
-    local g=E.New({},1); g.grid={[17]=1}; assert(not a.Community.Validate(g:Pack()))
+test("level validation accepts original floating groups and rejects out-of-editor rows",function()
+    local g=E.New({},1); g.grid={[17]=1}; assert(a.Community.Validate(g:Pack()))
     g.grid={[1]=1,[9]=2}; assert(a.Community.Validate(g:Pack()))
     g.grid[E.Key(11,1)]=3; assert(not a.Community.Validate(g:Pack()))
 end)
@@ -784,7 +784,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
     loadModule("LogoData",fb,env); loadModule("TitleLogo",fb,env)
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -1284,6 +1284,64 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         end
         fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),12)
         fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),11)
+    end)
+    test("editor paint follows the original ten staggered rectangular row bands",function()
+        local painter={editGame={grid={}},editorColor=8}
+        for y=-1,280 do
+            local row=math.floor(y/28)
+            for x=-1,256 do
+                painter.stroke={remembered=true}
+                fb.UI.Paint(painter,"LeftButton",x+0.5,y+0.5)
+                local column=math.floor((x-row%2*16)/32)
+                local expected
+                if row>=0 and row<10 and column>=0 and column<8-row%2 then expected=row*8+column+1 end
+                local key=next(painter.editGame.grid)
+                eq(key,expected)
+                if key then painter.editGame.grid[key]=nil end
+            end
+        end
+    end)
+    test("editor opens a private campaign copy, previews the brush and browses saved sets",function()
+        local ui=fb.UI
+        local oldFocus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.panels.editor} end
+        ui.editGame=nil; fb.db.editorDraft=nil; ui:StartEditor()
+        eq(#ui.editBoards,100); eq(ui.editID,"default-levelset")
+        eq(ui.editGame:Pack(),ui:DefaultEditorBoards()[1]); assert(not ui:EditorModified())
+        local function key(k)
+            local panel=ui.panels.editor
+            panel.scripts.OnKeyDown(panel,k); panel.scripts.OnKeyUp(panel,k)
+        end
+        key("J"); eq(ui.editorDialog,"jump"); ui.dialogValue:SetText("101"); ui:AcceptEditorDialog()
+        eq(ui.editIndex,1); eq(ui.editorDialog,"jump")
+        ui.dialogValue:SetText("33"); ui.dialogValue.scripts.OnEnterPressed(); eq(ui.editIndex,33)
+        local original=ui:DefaultEditorBoards()[33]
+        eq(ui.editGame:Pack(),original)
+        key("0"); eq(ui.editorColor,0)
+        ui.board.IsMouseOver=function() return true end
+        local keyAt=next(ui.editGame.grid); local r,c=fb.Engine.Cell(keyAt)
+        local mouse=ui.Cursor
+        ui.Cursor=function() return fb.Engine.Position(r,c) end
+        ui:UpdateEditor(); eq(ui.erasedPreview,keyAt)
+        ui:Paint("LeftButton"); eq(ui.editGame.grid[keyAt],nil); assert(ui:EditorModified())
+        key("2"); ui:UpdateEditor(); assert(ui.editorPreview.shown); eq(ui.editorPreview.fbAsset,"bubble2")
+        eq(ui:DefaultEditorBoards()[33],original)
+        ui:UndoEditor(); assert(not ui:EditorModified())
+        ui.board.IsMouseOver=nil; ui.Cursor=mouse
+        key("F1"); eq(ui.editorDialog,"help"); assert(ui.editorHelp.shown)
+        local previous=ui.editGame:Pack(); ui:Paint("RightButton",16,16); eq(ui.editGame:Pack(),previous)
+        key("ESCAPE"); eq(ui.editorDialog,nil)
+        ui:EditorDialog("new"); ui.dialogValue:SetText("Ice cave"); ui:AcceptEditorDialog()
+        eq(ui.levelTitle:GetText(),"Ice cave"); eq(#ui.editBoards,1)
+        ui:Paint("LeftButton",34,93); local id=assert(ui:SaveEditor())
+        ui:EditorDialog("open"); eq(#ui.editorFiles,2)
+        key("DOWN"); eq(ui.editorFiles[ui.fileIndex].id,"default-levelset")
+        ui:AcceptEditorDialog(); eq(ui.editID,"default-levelset")
+        ui:EditorDialog("delete"); eq(ui.editorFiles[1].id,id); eq(#ui.editorFiles,1)
+        ui:AcceptEditorDialog(); eq(ui.editorDialog,"confirm")
+        ui.editorBack.scripts.OnClick(); assert(fb.db.custom[id])
+        ui:EditorDialog("delete"); ui:AcceptEditorDialog(); ui:AcceptEditorDialog(); eq(fb.db.custom[id],nil)
+        env.GetMouseFoci=oldFocus
     end)
     test("edit, reorder, export and play a custom set through its final board",function()
         local ui=fb.UI

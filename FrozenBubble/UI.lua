@@ -83,8 +83,6 @@ local function canPauseGame()
     return FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match)
 end
 local K=FB.Controls
-local editorKeys={LEFT="prev",H="prev",P="prev",RIGHT="next",L="next",N="next",UP="first",DOWN="last",
-    A="append",I="insert",D="remove",["["]="left",["]"]="right",LEFTBRACKET="left",RIGHTBRACKET="right"}
 function U:Build()
     local A=FB.Animation
     local f=CreateFrame("Frame","FrozenBubbleWindow",UIParent,"BackdropTemplate")
@@ -115,21 +113,21 @@ function U:Build()
     self.board=makeBoard(self.gameLayer,0,0)
     self.board:SetFrameLevel(self.layers.board)
     self.board:EnableMouse(true); self.board:EnableMouseWheel(true)
-    self.board:SetScript("OnEnter",function(b) if not InCombatLockdown() then b:EnableKeyboard(true); b:SetPropagateKeyboardInput(true) end end)
+    self.board:SetScript("OnEnter",function(b) if not self.editing and not InCombatLockdown() then b:EnableKeyboard(true); b:SetPropagateKeyboardInput(true) end end)
     self.board:SetScript("OnLeave",function(b)
-        if not (FB.LocalVersus.match and self.screen=="opponent") then b:EnableKeyboard(false); self.keys={} end
+        if not self.editing and not (FB.LocalVersus.match and self.screen=="opponent") then b:EnableKeyboard(false); self.keys={} end
         self.stroke=nil
     end)
     self.board:SetScript("OnMouseDown",function(_,which)
         if InCombatLockdown() then return end
         if self.editing and (which=="LeftButton" or which=="RightButton") then
-            self.levelTitle:ClearFocus(); self.levelCode:ClearFocus()
             self.stroke={button=which}; self:Paint(which)
         elseif not self.editing and not FB.LocalVersus.match and which=="LeftButton" then FB.Fire() end
     end)
     self.board:SetScript("OnMouseUp",function() self.stroke=nil end)
     self.board:SetScript("OnMouseWheel",function(_,delta)
-        if self.editing then self:SelectEditorColor((self.editorColor-1+delta)%8+1)
+        if self.editorDialog or self.inactive or InCombatLockdown() then return end
+        if self.editing then self:SelectEditorColor((self.editorColor+delta)%9)
         elseif FB.game and not FB.LocalVersus.match then
             FB.game.poseAngle=FB.game.poseAngle or FB.game.angle
             FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE)
@@ -141,21 +139,7 @@ function U:Build()
             b:SetPropagateKeyboardInput(true); self.keys={}; return
         end
         if self.pauseScreen and self.pauseScreen:IsShown() then self:PauseKey(b,key); return end
-        if self.editing then
-            local color=FB.Integer(key,1,8)
-            local action=editorKeys[key]
-            local used=color or action or key=="S" or key=="O" or key=="F"
-            b:SetPropagateKeyboardInput(not used)
-            if used and not self.keys[key] then
-                self.keys[key]=true
-                if color then self:SelectEditorColor(color)
-                elseif action then self:EditorAction(action)
-                elseif key=="S" then self:SaveEditor()
-                elseif key=="O" then self.marketRemote=false; self:ShowMarket()
-                else self:ToggleFullWindow() end
-            end
-            return
-        end
+        if self.editing then self:EditorKey(b,key); return end
         local room=FB.Net.match
         if self.screen=="opponent" and room and room.arena then
             local target=({F1=1,F2=2,F3=3,F4=4,F10=0})[key]
@@ -248,7 +232,7 @@ function U:Build()
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -408,6 +392,7 @@ function U:SetCombatInput(blocked)
     self.combatInput=blocked
     if blocked then FB.Transitions.Interrupt(); self.pauseScreen:EnableKeyboard(false); self.pauseCapture=false end
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
+    self.panels.editor:EnableKeyboard(not blocked and self.screen=="editor")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
@@ -459,7 +444,7 @@ function U:UpdateVisibility(dt)
             elseif not inactive and self.focusPausedGame==FB.game and not combat and (self.screen=="game" or self.screen=="opponent") then FB.game.paused=false; self.focusPausedGame=nil end
         end
         FB.Music()
-        if not inactive and self.board:IsMouseOver() and self.gameLayer:IsShown() then
+        if not inactive and not self.editing and self.board:IsMouseOver() and self.gameLayer:IsShown() then
             self.board:EnableKeyboard(true); self.board:SetPropagateKeyboardInput(true)
         end
         FB.Debug.Log("FOCUS",combat and "combat" or inactive and "lost" or "gained")
@@ -499,7 +484,7 @@ function U:ShowMenu()
     FB.Transitions.Cancel()
     self:WindowControls(false)
     FB.Demos.Close()
-    self.editing=false; self.stroke=nil
+    self.editing=false; self.stroke=nil; self:CloseEditorDialog(); self.panels.editor:EnableKeyboard(false)
     self.focusPausedGame=nil
     self.keys={}; self.board:EnableKeyboard(false)
     if canPauseGame() then FB.game.paused=true end
@@ -662,7 +647,8 @@ function U:Panel(name)
     self.menu:EnableKeyboard(false)
     self.keys={}; self.board:EnableKeyboard(false)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
-    self.editorSockets:SetShown(self.editing); self.editorDirty=true
+    self.editorPreview:Hide(); self:CloseEditorDialog(); self.editorDirty=true
+    self.panels.editor:EnableKeyboard(self.editing and not self.combatInput)
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
     self.panels.keys:EnableKeyboard(name=="keys" and not self.combatInput)
     if name=="keys" then K.Begin() end
@@ -680,7 +666,7 @@ function U:Panel(name)
     for _,board in ipairs(self.miniBoards) do board:Hide() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
-    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
+    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing)
     self.remoteBoard:SetShown(name=="opponent")
     self.remoteLabel:SetShown(name=="opponent")
     self.remotePenguin:SetShown(name=="opponent")
@@ -702,7 +688,7 @@ function U:Panel(name)
         if m and m.arena and m.played then self:LayoutArena(m) end
     else
         self.penguin:SetPoint("TOPLEFT",646.4,-672)
-        FB.Animation.Frame(self.gameBackground,name=="editor" and "editor-background" or "solo-background",1)
+        FB.Animation.Frame(self.gameBackground,name=="editor" and "Editor\\boards" or "solo-background",1)
         self:PlaceBoard(self.board,304,70.4,1.6)
         self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",15,-150)
         self.hud:SetFont("Fonts\\ARIALN.TTF",22,"OUTLINE"); self.hud:SetJustifyH("CENTER"); self.hud:SetWidth(230)
@@ -781,9 +767,7 @@ function U:BuildMarket()
     local p=self.panels.market
     text(p,"LEVEL MARKETPLACE",0,0,16,350)
     text(p,"Free levels, shared directly between players.",0,27,12,350,muted)
-    button(p,"Browse community",0,56,170,function()
-        FB.Community.Browse(FB.Community.state~="ready"); self.marketRemote=true; self.marketPage=1; self:RefreshMarket()
-    end)
+    button(p,"Browse community",0,56,170,function() self:BrowseCommunity() end)
     button(p,"My library",182,56,160,function() self.marketRemote=false; self.marketPage=1; self:RefreshMarket() end)
     self.marketRows={}
     for i=1,6 do
@@ -800,6 +784,10 @@ function U:BuildMarket()
     button(p,"Next",112,371,100,function() self.marketPage=(self.marketPage or 1)+1; self:RefreshMarket() end)
     text(p,"Creators must be online for downloads. Published levels can be re-shared. Open the editor to import, export, or delete a saved level.",0,408,12,350,muted)
 end
+function U:BrowseCommunity()
+    self.marketRemote=true; self.marketPage=1
+    FB.Community.Browse(FB.Community.state~="ready"); self:ShowMarket()
+end
 function U:ShowMarket() self:Panel("market"); self:RefreshMarket() end
 function U:RefreshMarket()
     local source=self.marketRemote and FB.Community.catalog or FB.db.custom
@@ -814,126 +802,53 @@ function U:RefreshMarket()
         row.button:SetText(self.marketRemote and "Download" or "Play")
     end
 end
-function U:BuildEditor()
-    local prompt=self.panels.editorPrompt
-    text(prompt,"Save your changes before opening another set?",0,54,20,340)
-    local function proceed(save)
-        local target=self.pendingEditor
-        if not target then return end
-        self.pendingEditor=nil
-        if save and not self:SaveEditor() then self:Panel("editor"); return end
-        self:StartEditor(target.id,target.fresh,target.index,true)
-    end
-    button(prompt,"Save and open",0,150,150,function() proceed(true) end)
-    button(prompt,"Discard edits",165,150,150,function() proceed(false) end)
-    button(prompt,"Keep editing",75,206,165,function() self.pendingEditor=nil; self:Panel("editor") end)
-    local p=self.panels.editor
-    p:ClearAllPoints(); p:SetScale(1.6); p:SetSize(640,480); p:SetPoint("TOPLEFT",self.frame,"TOPLEFT")
-    p:EnableMouse(false)
-    self.editorHeading=text(p,"Level editor",217,9,15,192); self.editorHeading:SetJustifyH("CENTER")
-    self.editorPalette={}
-    for i=1,8 do
-        local color=i
-        local tile=CreateFrame("Button",nil,p); tile:SetSize(29,29)
-        tile:SetPoint("TOPLEFT",12+((i-1)%4)*32,-62-math.floor((i-1)/4)*36)
-        local icon=tile:CreateTexture(nil,"ARTWORK"); icon:SetAllPoints()
-        local ring=tile:CreateTexture(nil,"OVERLAY"); ring:SetSize(42,42); ring:SetPoint("CENTER")
-        ring:SetTexture("Interface\\Buttons\\UI-ActionButton-Border"); ring:SetBlendMode("ADD")
-        self.editorPalette[i]={icon=icon,ring=ring}
-        tile:SetScript("OnClick",function() self:SelectEditorColor(color) end)
-    end
-    self:SelectEditorColor(1)
-    text(p,"Bubble color",12,42,12,130)
-    button(p,"Undo",10,146,61,function() self:UndoEditor() end)
-    button(p,"Clear",77,146,64,function()
-        if next(self.editGame.grid) then self:RememberEditor(); self.editGame.grid={} end
-    end)
-    text(p,"Drag to paint. Right-drag to erase.\nWheel or 1–8 changes color.",190,370,12,252):SetJustifyH("CENTER")
-    local actions={
-        {"Prev","prev","Next","next"},{"First","first","Last","last"},
-        {"Insert","insert","Append","append"},{"Move <","left","Move >","right"},
-    }
-    for row,action in ipairs(actions) do
-        for col=1,3,2 do
-            local command=action[col+1]
-            button(p,action[col],10+(col-1)*34,224+(row-1)*33,65,function() self:EditorAction(command) end)
-        end
-    end
-    button(p,"Remove board",10,356,133,function() self:EditorAction("remove") end)
-    text(p,"Set name",493,43,12,135)
-    self.levelTitle=input(p,493,61,135,"My level"); self.levelTitle:SetMaxLetters(36)
-    button(p,"Save",493,94,135,function() self:SaveEditor() end)
-    button(p,"Test level",493,127,135,function() self:TestEditor() end)
-    button(p,"Publish",493,160,135,function()
-        local id=self:SaveEditor(); if id then FB.Community.Publish(id,FB.Community.state~="ready") end
-    end)
-    button(p,"New set",493,193,135,function() self:StartEditor(nil,true) end)
-    button(p,"Open library",493,232,135,function() self.marketRemote=false; self:ShowMarket() end)
-    button(p,"Export",493,285,65,function() self:OpenEditorText(true) end)
-    button(p,"Import",563,285,65,function() self:OpenEditorText(false) end)
-    self:BuildEditorText(text,button,fill)
-    button(p,"Delete saved set",493,365,135,function()
-        if self.editID then
-            FB.db.custom[self.editID]=nil; self.editID=nil; self.editorStatus:SetText("Deleted from your library. Draft kept open.")
-        end
-    end)
-    self.editorStatus=text(p,"",191,334,12,252); self.editorStatus:SetJustifyH("CENTER")
-    self.editorStatus:SetFont("Fonts\\ARIALN.TTF",12,"OUTLINE")
-    self.editorSockets=CreateFrame("Frame",nil,self.board); self.editorSockets:SetAllPoints()
-    self.editorSockets:SetFrameLevel(self.board:GetFrameLevel()); self.editorSockets:EnableMouse(false)
-    self.emptyCells={}
-    for r=1,10 do for c=1,E.Columns(r) do
-        local key=E.Key(r,c); local x,y=E.Position(r,c)
-        local socket=self.editorSockets:CreateTexture(nil,"BACKGROUND")
-        socket:SetTexture(FB.media.."bubble2.tga"); socket:SetSize(29,29)
-        socket:SetPoint("CENTER",self.board,"TOPLEFT",x,-y); socket:SetAlpha(0.23)
-        self.emptyCells[key]=socket
-    end end
-    self.editorPreview=bubble(self.editorSockets); self.editorPreview:SetDrawLayer("OVERLAY")
-    self.editorPreview:Hide(); self.editorSockets:Hide()
-end
-function U:SelectEditorColor(color)
-    self.editorColor=color
-    for i,tile in ipairs(self.editorPalette) do
-        FB.SetBubbleTexture(tile.icon,i); tile.ring:SetShown(i==color)
-    end
-    self.editorDirty=true
-end
 function U:Cursor()
     local x,y=GetCursorPosition(); local scale=self.board:GetEffectiveScale()
     return x/scale-self.board:GetLeft(),self.board:GetTop()-y/scale
 end
+-- The desktop editor divides a row into rectangular hit areas, shifted by
+-- half a bubble on the seven-cell rows. The visible sprites overlap by 4 px.
 local function editorCell(x,y)
-    if x<0 or x>=256 or y<0 or y>=284 then return end
-    local row=math.floor((y-16)/E.STEP)+1
-    local best,distance
-    for r=math.max(1,row),math.min(10,row+1) do
-        local first=E.Position(r,1)
-        local c=FB.Clamp(math.floor((x-first)/32+0.5)+1,1,E.Columns(r))
-        local cx,cy=E.Position(r,c); local d=(cx-x)^2+(cy-y)^2
-        if d<=19^2 and (not distance or d<distance) then best,distance=E.Key(r,c),d end
-    end
-    return best
+    if y<0 or y>=280 then return end
+    local row=math.floor(y/E.STEP)+1
+    local col=math.floor((x-(row%2==0 and 16 or 0))/32)+1
+    if col>=1 and col<=E.Columns(row) then return E.Key(row,col) end
 end
+
 function U:Paint(which,x,y)
+    if self.editorDialog then return end
     if not x then x,y=self:Cursor() end
     local stroke=self.stroke or {}
-    local fromX,fromY=stroke.x or x,stroke.y or y
-    local steps=math.max(1,math.ceil(math.max(math.abs(x-fromX),math.abs(y-fromY))/8))
-    local color
-    if which=="LeftButton" then color=self.editorColor elseif which~="RightButton" then return end
-    for i=1,steps do
-        local key=editorCell(fromX+(x-fromX)*i/steps,fromY+(y-fromY)*i/steps)
+    if which~="LeftButton" and which~="RightButton" then return end
+    local color=which=="LeftButton" and self.editorColor~=0 and self.editorColor or nil
+    local function paintAt(px,py)
+        local key=editorCell(px,py)
         if key and self.editGame.grid[key]~=color then
             if not stroke.remembered then self:RememberEditor(); stroke.remembered=true end
             self.editGame.grid[key]=color; self.editorDirty=true
         end
     end
-    stroke.x,stroke.y=x,y
+    if stroke.x and (stroke.x~=x or stroke.y~=y) then
+        -- Visit every interval between hex-row and column boundaries. This
+        -- keeps a thin diagonal stroke continuous even on a slow frame.
+        local dx,dy=x-stroke.x,y-stroke.y
+        local cuts={0,1}
+        if dx~=0 then for px=0,256,16 do
+            local t=(px-stroke.x)/dx; if t>0 and t<1 then cuts[#cuts+1]=t end
+        end end
+        if dy~=0 then for py=0,280,28 do
+            local t=(py-stroke.y)/dy; if t>0 and t<1 then cuts[#cuts+1]=t end
+        end end
+        table.sort(cuts)
+        for i=2,#cuts do if cuts[i]>cuts[i-1] then
+            local t=(cuts[i-1]+cuts[i])/2; paintAt(stroke.x+t*dx,stroke.y+t*dy)
+        end end
+    end
+    paintAt(x,y); stroke.x,stroke.y=x,y
 end
 function U:UpdateEditor()
     local key
-    if self.board:IsMouseOver() and not self.inactive and not InCombatLockdown() then
+    if not self.editorDialog and self.board:IsMouseOver() and not self.inactive and not InCombatLockdown() then
         local x,y=self:Cursor()
         key=editorCell(x,y)
         if self.stroke then
@@ -942,13 +857,15 @@ function U:UpdateEditor()
         end
     else self.stroke=nil end
     if self.editorDirty then
-        self:RenderBoard(self.board,self.editGame)
-        for slot,texture in pairs(self.emptyCells) do texture:SetShown(not self.editGame.grid[slot]) end
-        self.editorDirty=false
+        self:RenderBoard(self.board,self.editGame); self.editorDirty=false
     end
-    if key then
+    if self.erasedPreview then self.board.bubbles[self.erasedPreview]:SetAlpha(1); self.erasedPreview=nil end
+    if key and self.editorColor==0 and self.editGame.grid[key] then
+        self.board.bubbles[key]:SetAlpha(0.4); self.erasedPreview=key
+    end
+    if key and self.editorColor~=0 and not self.stroke then
         local r,c=E.Cell(key); local x,y=E.Position(r,c)
-        place(self.editorPreview,self.board,x,y,self.editorColor,32,0.5)
+        place(self.editorPreview,self.board,x,y,self.editorColor,32,0.4)
     else self.editorPreview:Hide() end
 end
 -- bubble_lose has an icicle below the circle. Upstream draws it one pixel

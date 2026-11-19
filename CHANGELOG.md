@@ -1,3 +1,9 @@
+# 0.1.0-alpha.20
+
+- The level editor opens on a working copy of the original 100 boards. The wooden signs, bubble palette, eraser, help card and level browser use the desktop artwork. Press J to jump to a board or click Open to preview a saved set.
+- The brush follows the original staggered rows. Drag to paint, right-drag to erase, and use Ctrl+Z to undo a stroke. You can save, test and share levels with floating clusters.
+- Tools groups testing, undo, reordering, import, export and community level sharing beneath the board.
+
 # 0.1.0-alpha.19
 
 - Pausing fills the game window with the desktop pause artwork. The penguin plays all 35 frames at 50 Hz, then repeats frames 12–35. Click the picture or press P, Pause, Escape, Enter, or Space to resume.

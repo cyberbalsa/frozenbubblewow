@@ -30,7 +30,7 @@ function U:BuildEditorText(text,button,fill)
     end)
     self.codeImport=button(p,"Import",24,309,125,function()
         if self:ImportEditor(box:GetText()) then self:Panel("editor")
-        else self.codeNotice:SetText("Invalid layout. Check row widths, colors and ceiling connections.") end
+        else self.codeNotice:SetText("Invalid layout. Check row widths, colors and empty boards.") end
     end)
     button(p,"Back",364,309,124,function() self:Panel("editor") end)
     self.levelCode=box
@@ -54,6 +54,17 @@ function U:OpenEditorText(export)
     end
 end
 local blankBoard=string.rep("0",98)
+local originals
+function U:DefaultEditorBoards()
+    if not originals then
+        originals={}
+        for i,rows in ipairs(FB.Levels) do
+            local data=table.concat(rows):gsub("%.","0")
+            originals[i]=data..string.rep("0",98-#data)
+        end
+    end
+    return originals
+end
 function U:EditorBoards()
     self.editBoards[self.editIndex]=self.editGame:Pack()
     return self.editBoards
@@ -61,7 +72,9 @@ end
 function U:SelectEditorBoard(index)
     self.editIndex=index
     self.editGame.grid=E.Unpack(self.editBoards[index])
-    self.editorHeading:SetText("Board "..index.." / "..#self.editBoards)
+    self.editorHeading:SetText(index.."/"..#self.editBoards)
+    self.editorNav.prev:SetEnabled(index>1); self.editorNav.first:SetEnabled(index>1)
+    self.editorNav.next:SetEnabled(index<#self.editBoards); self.editorNav.last:SetEnabled(index<#self.editBoards)
     self.levelCode:SetText(""); self.stroke=nil; self.editorDirty=true
 end
 function U:StoreEditorDraft()
@@ -69,7 +82,7 @@ function U:StoreEditorDraft()
         FB.db.editorDraft={boards={unpack(self:EditorBoards())},index=self.editIndex,title=self.levelTitle:GetText(),id=self.editID}
     end
 end
-function U:StartEditor(id,fresh,index,confirmed)
+function U:StartEditor(id,fresh,index,confirmed,title)
     if not FB.CanStart() then return end
     local draft=not self.editGame and FB.db.editorDraft
     if type(draft)=="table" and type(draft.boards)=="table" and #draft.boards>=1 and #draft.boards<=FB.Community.maxBoards then
@@ -83,16 +96,18 @@ function U:StartEditor(id,fresh,index,confirmed)
     end
     local replace=fresh or id and self.editID~=id
     if replace and self.editGame and not confirmed and self:EditorModified() then
-        self.pendingEditor={id=id,fresh=fresh,index=index}; self.frame:Show(); self:Panel("editorPrompt"); return
+        self.pendingEditor={id=id,fresh=fresh,index=index,title=title}; self.frame:Show(); self:Panel("editorPrompt"); return
     end
     if FB.game then FB.game.paused=true end
     if not self.editGame or replace then
+        if not fresh and not id then id="default-levelset" end
+        local stock=id=="default-levelset"
         local item=id and FB.db.custom[id]
-        self.editGame=E.New({},1,"custom"); self.editorHistory={}; self.editID=item and id
-        self.editBoards=item and {unpack(FB.Community.Boards(item))} or {blankBoard}
-        self.levelTitle:SetText(item and item.title or "My set")
+        self.editGame=E.New({},1,"custom"); self.editorHistory={}; self.editID=(stock or item) and id
+        self.editBoards=stock and {unpack(self:DefaultEditorBoards())} or item and {unpack(FB.Community.Boards(item))} or {blankBoard}
+        self.levelTitle:SetText(stock and "default-levelset" or item and item.title or title or "My set")
         self:SelectEditorBoard(FB.Integer(index,1,#self.editBoards) or 1)
-        self.editorStatus:SetText("Connect the bubbles to the ceiling.")
+        self.editorStatus:SetText("")
     elseif index and index~=self.editIndex and self.editBoards[index] then
         self:EditorBoards(); self:SelectEditorBoard(index)
     end
@@ -101,6 +116,9 @@ end
 function U:EditorModified()
     local item=self.editID and FB.db.custom[self.editID]
     local boards=self:EditorBoards()
+    if self.editID=="default-levelset" then
+        return self.levelTitle:GetText()~="default-levelset" or table.concat(boards)~=table.concat(self:DefaultEditorBoards())
+    end
     if not item then return #boards>1 or boards[1]~=blankBoard or self.levelTitle:GetText()~="My set" end
     return item.title~=self.levelTitle:GetText() or FB.Community.Code(boards)~=FB.Community.Code(FB.Community.Boards(item))
 end
@@ -139,7 +157,7 @@ function U:EditorAction(action)
 end
 function U:ImportEditor(code)
     local boards=FB.Community.Decode(code)
-    if not boards then self.editorStatus:SetText("Invalid code. Every board needs bubbles connected to the ceiling."); return end
+    if not boards then self.editorStatus:SetText("Invalid code. Use a nonempty ten-row board with colors 1–8 in the WoW code."); return end
     self:RememberEditor()
     if #boards==1 then self.editBoards[self.editIndex]=boards[1]; self:SelectEditorBoard(self.editIndex)
     else self.editBoards=boards; self:SelectEditorBoard(1) end
@@ -148,7 +166,7 @@ end
 function U:TestEditor()
     local data=self.editGame:Pack()
     if not FB.Community.Validate(data) then
-        self.editorStatus:SetText("Connect at least one bubble to the ceiling, and attach every group."); return
+        self.editorStatus:SetText("Add at least one bubble within the ten editable rows."); return
     end
     FB.StartCustomBoard({boards={data},title=self.levelTitle:GetText(),draftIndex=self.editIndex},1)
 end

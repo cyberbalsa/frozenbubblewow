@@ -82,13 +82,9 @@ end
 function C.Validate(data)
     local grid=FB.Engine.Unpack(data)
     if not grid or not next(grid) then return nil end
-    -- Editor levels use the original ten rows; all bubbles must connect to the ceiling.
-    local e=FB.Engine.New({},1,"custom"); e.grid=grid
-    local attached=e:RootDistances()
-    for key in pairs(grid) do
-        local row=FB.Engine.Cell(key)
-        if row>10 or not attached[key] then return nil end
-    end
+    -- The desktop editor permits floating groups and gaps. open_level loads
+    -- them as drawn, and normal match resolution decides when they fall.
+    for key in pairs(grid) do if FB.Engine.Cell(key)>10 then return nil end end
     return grid
 end
 function C.Boards(item)
@@ -157,7 +153,7 @@ end
 function C.SaveSet(title,boards,author,replacing)
     if #boards<1 or #boards>C.maxBoards then return nil,"A set holds 1 to 100 boards." end
     for i,data in ipairs(boards) do
-        if not C.Validate(data) then return nil,"Board "..i.." needs bubbles connected to the ceiling." end
+        if not C.Validate(data) then return nil,"Board "..i.." must contain a bubble within the ten editable rows." end
     end
     title=C.CleanTitle(title); if title=="" then title="Untitled" end
     local code=C.Code(boards)
