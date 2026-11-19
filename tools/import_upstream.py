@@ -6,6 +6,8 @@ from pathlib import Path
 import shutil
 from PIL import Image
 
+from bubble_texture import bubble_texture
+
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("upstream", type=Path)
 args = parser.parse_args()
@@ -25,6 +27,8 @@ textures = {f"bubble{i}": f"balls/bubble-{i}.gif" for i in range(1, 9)}
 textures.update(background="back_one_player.png", shooter="shooter.png")
 for name, path in textures.items():
     im = Image.open(src / "share/gfx" / path).convert("RGBA")
+    if name.startswith("bubble"):
+        im = bubble_texture(im)
     if name == "background":
         im = im.resize((1024, 512))
     if name == "shooter":

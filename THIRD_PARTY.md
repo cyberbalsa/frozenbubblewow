@@ -25,3 +25,5 @@ The gameplay reference is `bin/frozen-bubble` in the pinned checkout. Run `perl 
 The main menu and both board backgrounds, menu logo, and wooden button use the original PNGs at double resolution. After importing the original art, run `python3 tools/upscale_textures.py /path/to/frozen-bubble --binary /path/to/upscayl-bin --models /path/to/models`. This pass uses the digital-art-4x model from [Upscayl 2.15.0](https://github.com/upscayl/upscayl/tree/v2.15.0/resources), with 30% of the original filtered color blended back in for grain. The source alpha sets the silhouette.
 
 [Compare the original and upscaled textures](art/upscayl-comparison.png).
+
+The eight colored bubbles retain their original GIF interiors. The importer renders each on a 128×128 texture, using nearby sprite colors and fractional transparency around the circumference. [Bubble edge comparison](art/bubble-rims.png).

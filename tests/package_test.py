@@ -46,6 +46,19 @@ class Packaging(unittest.TestCase):
             for sound in re.findall(r'FB.Sound\("([a-z_]+)"\)', lua.read_text()):
                 self.assertTrue((ROOT / f"FrozenBubble/Media/{sound}.ogg").is_file(), sound)
 
+    def test_bubble_edges_have_partial_coverage(self):
+        for color in range(1, 9):
+            with self.subTest(color=color):
+                data = (ROOT / f"FrozenBubble/Media/bubble{color}.tga").read_bytes()
+                self.assertEqual((data[2], data[16]), (2, 32))  # uncompressed BGRA
+                width, height = struct.unpack_from("<HH", data, 12)
+                self.assertEqual((width, height), (128, 128))
+                start = 18 + data[0]
+                alpha = data[start + 3:start + width * height * 4:4]
+                self.assertEqual(alpha[0], 0)
+                self.assertEqual(alpha[64 * width + 64], 255)
+                self.assertGreater(len(set(alpha)), 32)
+
     def test_upscaled_textures_keep_atlas_coordinates(self):
         metadata = (ROOT / "FrozenBubble/MediaInfo.lua").read_text()
         for name in ("menu-background", "versus-background", "solo-background", "ui-button", "menu-logo"):
