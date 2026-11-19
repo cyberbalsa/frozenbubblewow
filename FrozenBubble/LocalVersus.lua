@@ -4,6 +4,7 @@ FB.LocalVersus = L
 
 function L.Start(chains, previous)
     if not FB.CanStart() then return end
+    FB.LeaveCampaignBoard()
     local seed=FB.GameSeed()
     local right=FB.Engine.New(nil,seed,"versus",chains,FB.Sound)
     local left=FB.Engine.New(nil,seed,"versus",chains,FB.Sound)

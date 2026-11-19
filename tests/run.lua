@@ -736,6 +736,29 @@ test("existing campaign records rank by progress and then time; only confirmed c
     for i=1,40 do c.Scores.Record("campaign",i,5,10+i) end
     eq(#c.Scores.Rows(false,"campaign"),30); eq(c.Scores.Rows(false,"campaign")[4],early)
 end)
+test("score names use separate desktop cutoffs, survive reload, and stay private to the local table",function()
+    local c=client("Peggy")
+    local s=c.Scores
+    for i=1,10 do s.Record("campaign",10,17,100+i/100) end
+    local missed=s.Finish("campaign",9999,17,100.11)
+    eq(s.Pending(),nil); eq(missed.seconds,100)
+    local exact=s.Finish("campaign",0,17,100.10)
+    eq(s.Pending(),exact); eq(#s.Rows(false,"campaign"),11)
+    local accepted=s.Submit(exact,"  Pépin-Deux  "); eq(accepted,exact)
+    eq(accepted.displayName,"Pépin-Deux"); eq(accepted.name,c.PlayerName()); eq(s.Submit(exact,"again"),nil)
+    eq(s.Rows(false,"campaign")[12],missed)
+    for i=1,20 do s.Record("training",50,1,120) end
+    eq(s.Finish("training",49,1,120).score,49); eq(s.Pending(),nil)
+    local chain=s.Finish("training-chain",1,1,120)
+    local regular=s.Finish("training",50,1,121)
+    s.Init(c.db); eq(s.Pending(),chain); eq(s.Best("training-chain"),nil)
+    local alt=client("OtherPenguin"); alt.db=c.db
+    eq(alt.Scores.Pending(chain),nil); eq(alt.Scores.Submit(chain,"Other"),nil)
+    eq(s.Submit(regular,"  "),nil); eq(s.Pending(regular),nil)
+    s.Submit(chain,"Snow|ball"); eq(s.Best("training-chain").displayName,"Snowball")
+    c.Community.Join(); tick(2); c.Community.Manual("SCORE",s.Fields(chain))
+    eq(c.lastManual,"FBF1|1|SCORE|training-chain|1|1|120|0")
+end)
 test("community scores preserve clears across query and manual channel packets; alts keep their own names",function()
     local c=client("Ilse")
     local d=client("Jon")
@@ -1290,13 +1313,19 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.UI.trainingTime.text,"2'00\""); assert(fb.UI.trainingClock.shown)
         fb.game.tick=6049; fb.game.score=14
         for _=1,3 do eventFrame.scripts.OnUpdate(eventFrame,0.02) end
-        eq(fb.game.status,"finished"); eq(#fb.Scores.Rows(false,"training"),1)
-        eq(fb.Scores.Best("training").score,14); assert(fb.UI.trainingResult.shown)
+        eq(fb.game.status,"finished"); eq(#fb.Scores.Rows(false,"training"),0)
+        assert(fb.UI.trainingResult.shown); fb.UI.resultScores.scripts.OnClick()
+        eq(fb.UI.screen,"scoreEntry"); fb.UI.scoreName:SetText("Fast fins"); fb.UI.scoreName.scripts.OnEnterPressed()
+        fb.UI.panels.scoreEntry.scripts.OnUpdate(nil,2)
+        eq(fb.Scores.Best("training").score,14); eq(fb.UI.scoreColumns[1].lines[1].name.text,"Fast fins: 14")
+        fb.UI:ShowGame()
         fb.UI.retryButton.scripts.OnClick(); eq(fb.game.tick,0); eq(fb.game.status,"playing")
         fb.UI:Panel("solo"); fb.UI.soloEntries[3].activate(); eq(fb.UI.screen,"chain"); fb.UI.chainYes.scripts.OnClick(); eq(fb.game.mode,"random"); assert(fb.game.chainReaction)
         fb.UI.retryButton.scripts.OnClick(); assert(fb.game.chainReaction)
         fb.StartSolo("training",true); fb.game.tick=6049; fb.game.score=29
-        eventFrame.scripts.OnUpdate(eventFrame,0.02); eq(fb.Scores.Best("training-chain").score,29)
+        eventFrame.scripts.OnUpdate(eventFrame,0.02); fb.UI.resultScores.scripts.OnClick()
+        fb.UI.scoreSubmit.scripts.OnClick(); fb.UI.panels.scoreEntry.scripts.OnUpdate(nil,2)
+        eq(fb.Scores.Best("training-chain").score,29)
         eq(fb.Scores.Best("training").score,14)
         fb.UI:Panel("solo"); fb.UI.soloEntries[2].activate(); eq(fb.UI.screen,"pick")
     end)
@@ -1317,19 +1346,47 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.StartSolo("training"); fb.game.tick=6049; fb.game.score=12
         eventFrame.scripts.OnUpdate(nil,0.02); assert(ui.trainingResult.shown and not ui.resultArt.shown)
         eq(ui.trainingScore.text,"12"); press("SPACE"); eq(ui.screen,"game")
-        clock=clock+1; press("ENTER"); eq(ui.screen,"scores"); eq(ui.highlightScore,fb.game.scoreEntry)
+        clock=clock+1; press("ENTER"); eq(ui.screen,"scoreEntry"); eq(ui.namingScore,fb.game.scoreEntry)
+        ui.scoreName.scripts.OnEscapePressed(); eq(ui.screen,"scores"); eq(fb.game.scoreEntry,nil)
         env.GetMouseFoci=oldFocus
+    end)
+    test("a campaign retries on the same clock, can finish from pause and never counts a board twice",function()
+        local ui=fb.UI; local unlocked=fb.db.unlocked
+        fb.StartCampaign(1)
+        local run=fb.run; fb.game.status="won"; fb.game.elapsed=12.25; fb.game.score=80
+        eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
+        fb.game.status="lost"; fb.game.elapsed=3.5; fb.game.score=20
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(fb.db.checkpoint.level,2)
+        eq(fb.db.checkpoint.seconds,15.75); eq(fb.Scores.Pending(),nil)
+        ui.retryButton.scripts.OnClick(); eq(fb.run,run); eq(fb.level,2); assert(run.eligible)
+        local current=fb.game; fb.game.elapsed=2.9; fb.game.score=15
+        ui:ShowMenu(); fb.ContinueCampaign(); eq(fb.game,current)
+        fb.TogglePause(); ui:UpdatePause(0); assert(ui.finishRunButton.shown)
+        ui.finishRunButton.scripts.OnClick(); eq(ui.screen,"scoreEntry")
+        local entry=ui.namingScore; eq(entry.level,2); eq(entry.seconds,18); eq(entry.score,115)
+        assert(math.abs(entry.elapsed-18.65)<1e-8); eq(fb.db.checkpoint,nil); assert(run.closed)
+        eq(fb.FinishCampaignRun(),entry); eq(#fb.db.pendingScores,1)
+        ui:ShowMenu(); ui:ShowScores(); eq(ui.namingScore,entry)
+        ui.scoreName:SetText(""); ui.scoreName.scripts.OnEnterPressed()
+        eq(fb.game.scoreEntry,nil); eq(fb.Scores.Pending(),nil)
+        fb.StartCampaign(1); fb.game.elapsed=0.4; fb.StartSolo("random")
+        assert(not fb.db.checkpoint.eligible); fb.ContinueCampaign(); assert(not fb.run.eligible)
+        fb.TogglePause(); ui:UpdatePause(0); assert(not ui.finishRunButton.shown)
+        fb.db.unlocked=unlocked
     end)
     test("campaign finish opens its own card with the right preview, time and colorblind artwork",function()
         local unlocked=fb.db.unlocked; fb.db.unlocked=100
         local run={score=50,seconds=321,eligible=true}
         fb.StartCampaign(100,run); fb.game.status="won"; fb.game.elapsed=4
-        eventFrame.scripts.OnUpdate(eventFrame,0.02)
-        assert(fb.game.scoreEntry.completed and fb.UI.resultScores.shown)
-        fb.UI.resultScores.scripts.OnClick()
+        local mouse=env.GetMouseFoci; env.GetMouseFoci=function() return {fb.UI.board} end
+        eventFrame.scripts.OnUpdate(eventFrame,0.02); env.GetMouseFoci=mouse
+        assert(fb.game.scoreEntry.completed); eq(fb.UI.screen,"scoreEntry")
+        fb.UI.scoreName:SetText("Ice Queen"); fb.UI.scoreSubmit.scripts.OnClick()
+        fb.UI.panels.scoreEntry.scripts.OnUpdate(nil,1); eq(fb.UI.screen,"scoreEntry")
+        fb.UI.panels.scoreEntry.scripts.OnUpdate(nil,1)
         eq(fb.UI.screen,"scores"); eq(fb.UI.scoreMode,"campaign"); eq(fb.UI.highlightScore,fb.game.scoreEntry)
         local card=fb.UI.scoreCards[1]
-        eq(card.entry,fb.game.scoreEntry); eq(card.level.text,"won!"); eq(card.time.text,"5'25\"")
+        eq(card.entry,fb.game.scoreEntry); eq(card.name.text,"Ice Queen"); eq(card.level.text,"won!"); eq(card.time.text,"5'25\"")
         eq(card.board.fbAsset,"score-boards"); eq(card.board.fbFrame,100)
         fb.Options.Set("colorblind",true); eq(card.board.fbAsset,"score-boards-symbol")
         fb.Options.Set("colorblind",false)
@@ -1337,7 +1394,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.UI:RefreshScores(); fb.UI.scoreNext.scripts.OnClick()
         eq(fb.UI.scorePage,2); eq(card.board.fbFrame,5)
         fb.UI.scorePrev.scripts.OnClick(); eq(card.board.fbFrame,100)
-        fb.UI.scoreSource.scripts.OnClick(); eq(fb.UI.scoreNumber.text,"1 / 1")
+        fb.UI.scoreSource.scripts.OnClick(); eq(fb.UI.scoreNumber.text,"1 / 1"); eq(card.name.text,"UITester")
         fb.UI.scoreSource.scripts.OnClick()
         fb.UI.scoreSelector.scripts.OnClick()
         eq(fb.UI.scoreMode,"training"); eq(fb.UI.scoreHeading.fbAsset,"scores-training")
@@ -1681,6 +1738,10 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(not g.paused and not ui.pauseScreen.shown)
         ui.board.scripts.OnKeyDown(ui.board,"SPACE"); eq(g.shots,0)
         ui.board.scripts.OnKeyUp(ui.board,"SPACE"); eq(#tracks,starts); eq(stops,0); eq(volume,0.65)
+        fb.StartSolo("training"); fb.game.tick=6049; fb.game.score=100
+        eventFrame.scripts.OnUpdate(nil,0.02); ui:OpenRoundScores(); eq(ui.screen,"scoreEntry")
+        eq(#tracks,starts); eq(volume,0.65)
+        ui.scoreSkip.scripts.OnClick(); eq(ui.screen,"scores")
         ui:ShowMenu(); eq(tracks[#tracks],fb.media.."introzik.ogg")
         ui:StartEditor(nil,true); eq(tracks[#tracks],fb.media.."introzik.ogg")
         fb.LocalVersus.Start(false); eq(tracks[#tracks],fb.media.."frozen-mainzik-2p.ogg")

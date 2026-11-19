@@ -184,6 +184,7 @@ function U:Build()
     pause:SetFrameLevel(self.layers.panel+1); pause:EnableMouse(true)
     A.Image(pause,"pause-background",0,0,nil,nil,"BACKGROUND")
     self.pauseArt=A.Image(pause,"pause",220,164)
+    self.finishRunButton=button(pause,"Finish run",14,442,100,function() self:OpenRoundScores() end)
     pause:SetPropagateKeyboardInput(true); pause:EnableKeyboard(false); pause:Hide()
     pause:SetScript("OnKeyDown",function(panel,key) self:PauseKey(panel,key) end)
     pause:SetScript("OnKeyUp",function(_,key) self.keys[key]=nil end)
@@ -212,7 +213,7 @@ function U:Build()
     self.leaveSeries=button(self.result,"Back to lobby",140,317,246,function() FB.Net.Leave(); self:ShowLobby() end)
     self.leaveSeries:Hide()
     self.resultScores=button(self.result,"View highscores",140,317,246,function()
-        if FB.game and FB.game.scoreEntry then self:ShowScores(FB.game.scoreEntry) end
+        self:OpenRoundScores()
     end)
     self.resultScores:Hide()
     self.retryButton:SetFrameLevel(self.layers.panel+2); self.resultScores:SetFrameLevel(self.layers.panel+2)
@@ -224,16 +225,16 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","market","editor","opponent","solo","chain","pick","settings"}) do
+    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="editorText" and name~="keys" and name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="editorText" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -366,7 +367,8 @@ function U:ShowTrainingResult(show)
 end
 
 function U:RetryRound()
-    if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
+    if FB.game and FB.game.mode=="campaign" then
+        if FB.run.closed then FB.StartCampaign(1) else FB.StartCampaign(FB.level,FB.run) end
     elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
     elseif FB.game and FB.game.customSet then
         local game=FB.game
@@ -385,7 +387,8 @@ function U:SoloResultKey(board,key)
     if self.keys[key] then return true end
     self.keys[key]=true
     if key=="ESCAPE" then
-        if game.status=="lost" then self:RetryRound() else self:ShowMenu() end
+        if game.status=="lost" then self:RetryRound()
+        elseif game.mode=="campaign" and FB.run.eligible then self:OpenRoundScores() else self:ShowMenu() end
     else
         if self.resultGame~=game or not self.result:IsShown() then return true end
         if game.status=="finished" and GetTime()<(self.trainingReadyAt or 0) then return true end
@@ -393,7 +396,7 @@ function U:SoloResultKey(board,key)
             for _,fx in ipairs(game.effects) do if fx.kind=="pop" then return true end end
         end
         if self.nextButton:IsShown() then FB.NextLevel()
-        elseif game.scoreEntry and (game.status=="finished" or game.status=="won") then self:ShowScores(game.scoreEntry)
+        elseif game.scoreEntry and (game.status=="finished" or game.status=="won") then self:OpenRoundScores()
         else self:RetryRound() end
     end
     self.keys[key]=true
@@ -423,6 +426,7 @@ function U:UpdatePause(dt)
         end
         return
     end
+    self.finishRunButton:SetShown(FB.game.mode=="campaign" and FB.run and FB.run.eligible or false)
     if not panel:IsShown() then
         self.pauseElapsed=0; panel:Show(); self.board:EnableKeyboard(false)
     elseif not self.inactive and not FB.db.reducedMotion then
@@ -546,6 +550,7 @@ function U:ShowMenu()
     self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; self.menu:EnableKeyboard(not self.combatInput); self:UpdatePause(0); FB.Music()
 end
 function U:ShowGame()
+    if FB.game and FB.game.status=="retired" then self:ShowScores(FB.game.scoreEntry); return end
     if not FB.game then self:Panel("solo"); return end
     if canPauseGame() and not InCombatLockdown() then FB.game.paused=false end
     self:Panel(FB.game.mode=="versus" and "opponent" or "game"); FB.Music()
@@ -715,8 +720,8 @@ function U:Panel(name)
     self.arenaHUD:Hide(); self.board.fbPenaltyX,self.board.fbPenaltyY,self.board.fbNextY=nil,nil,nil
     for _,board in ipairs(self.miniBoards) do board:Hide() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
-    local gameplay=name=="game" or name=="opponent" or name=="editor"
-    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing)
+    local gameplay=name=="game" or name=="opponent" or name=="editor" or name=="scoreEntry" and FB.game and FB.game.scoreEntry==self.namingScore
+    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and name~="scoreEntry")
     self.remoteBoard:SetShown(name=="opponent")
     self.remoteLabel:SetShown(name=="opponent")
     self.remotePenguin:SetShown(name=="opponent")
@@ -1218,9 +1223,17 @@ function U:Update(dt)
     if game and game.status=="finished" and self.trainingGame~=game then
         self.trainingReadyAt=GetTime()+1; self.trainingGame=game
     elseif not game or game.status~="finished" then self.trainingGame=nil end
+    if self.screen=="game" and game and game.status=="won" and game.mode=="campaign" and FB.level==100
+        and game.scoreEntry and not game.offeredScore and not self.inactive and not InCombatLockdown()
+        and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then
+        game.offeredScore=true
+        self:OpenRoundScores(); return
+    end
     self.resultGame=game
-    self.result:SetShown(ready or false)
-    self.resultScores:SetShown(ended and game.scoreEntry~=nil or false)
+    self.result:SetShown(self.screen~="scoreEntry" and ready or false)
+    local canFinish=ended and game.mode=="campaign" and FB.run and FB.run.eligible and not FB.run.closed
+    self.resultScores:SetShown(ended and game.scoreEntry~=nil or canFinish or false)
+    self.resultScores:SetText(canFinish and "Finish run" or "View highscores")
     self.winnerName:SetShown(winner and not shared or false)
     self.resultBadge:SetShown(winner and not shared or false)
     if winner and not shared then
@@ -1235,7 +1248,7 @@ function U:Update(dt)
     local restarting=match and (match.phase=="restart" or match.phase=="barrier" and match.parent~=nil)
     self.leaveSeries:SetShown(ended and (canRematch or restarting) or false)
     self.retryButton:SetEnabled(not restarting and not (canRematch and match.ready))
-    self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or "Try again")
+    self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or game and game.mode=="campaign" and FB.run and FB.run.closed and "New campaign" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
     local training=game and game.mode=="training" and not self.editing
     self.trainingClock:SetShown(training or false); self.trainingTime:SetShown(training or false)

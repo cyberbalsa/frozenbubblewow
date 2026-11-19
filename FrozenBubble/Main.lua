@@ -22,6 +22,7 @@ function FB.Music()
         local scene=FB.Transitions.demo and FB.DemoData.scenes[FB.Transitions.demo] or FB.Demos.scene
         local screen=FB.Transitions.target or FB.UI.screen
         local board=screen=="game" or screen=="opponent"
+        local namingBoard=screen=="scoreEntry" and FB.game and FB.game.scoreEntry==FB.UI.namingScore
         local muted=FB.UI.inactive or InCombatLockdown() or (board and FB.game and FB.game.paused)
         if muted and not FB.musicTrack then return end
         local get=(C_CVar and C_CVar.GetCVar) or GetCVar
@@ -36,7 +37,7 @@ function FB.Music()
         if muted then return end
         local track="introzik.ogg"
         if scene then track=scene.background=="solo-background" and "frozen-mainzik-1p.ogg" or "frozen-mainzik-2p.ogg"
-        elseif board then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
+        elseif board or namingBoard then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
         if FB.musicTrack~=track and PlayMusic(FB.media..track)~=false then FB.musicTrack=track end
     else FB.StopGameMusic() end
 end
@@ -54,12 +55,23 @@ function FB.StartCampaign(level,run)
 end
 function FB.ContinueCampaign()
     local cp=FB.db.checkpoint
-    if cp then FB.StartCampaign(cp.level,{score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
+    local game=FB.game
+    if cp and game and game.mode=="campaign" and game.status=="playing" then
+        if FB.CanStart() then FB.UI.frame:Show(); FB.UI:ShowGame() end
+    elseif cp then FB.StartCampaign(cp.level,{score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
     else FB.StartCampaign(FB.db.unlocked) end
+end
+function FB.LeaveCampaignBoard()
+    local cp,game=FB.db.checkpoint,FB.game
+    if cp and game and game.mode=="campaign" and game.status=="playing" and (game.shots>0 or game.elapsed>0) then
+        -- The checkpoint has the board's opening state. Replaying it cannot
+        -- count toward the same timed highscore after this game is discarded.
+        cp.eligible=false
+    end
 end
 function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
-    FB.LocalVersus.match=nil
+    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil
     FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
     FB.game.timed=FB.db.shotClock~=false
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
@@ -68,7 +80,7 @@ function FB.StartCustomBoard(set,index)
     local board=set.boards[index]
     local grid=not set.builtin and FB.Engine.Unpack(board)
     if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
-    FB.LocalVersus.match=nil; FB.run=nil
+    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil; FB.run=nil
     FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound)
     FB.game.timed=FB.db.shotClock~=false
     if grid then
@@ -89,7 +101,7 @@ function FB.PlayCustom(id,index)
     if item then FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1) end
 end
 function FB.StartVersus(matchSeed,chainReaction)
-    FB.LocalVersus.match=nil
+    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil
     FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
     FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction,FB.Sound); FB.run=nil
@@ -117,6 +129,24 @@ function FB.NextLevel()
         FB.StartCustomBoard(game.customSet,game.customIndex+1)
     elseif game.mode=="campaign" and FB.level<100 then FB.StartCampaign(FB.level+1,FB.run) end
 end
+-- A failed board can be retried within the same timed campaign. Settle
+-- the run only on a finish request or after its last level is cleared.
+function FB.FinishCampaignRun()
+    local game,run=FB.game,FB.run
+    if not game or game.mode~="campaign" or not run then return end
+    if run.closed then return game.scoreEntry end
+    run.closed=true
+    if not game.recorded then
+        run.score=run.score+game.score; run.seconds=run.seconds+game.elapsed
+        game.recorded=true; game.score=0
+    end
+    local completed=game.status=="won" and FB.level==100
+    local reached=game.status=="won" and math.min(100,FB.level+1) or FB.level
+    if run.eligible then game.scoreEntry=FB.Scores.Finish("campaign",run.score,reached,run.seconds,completed) end
+    if not completed then game.status="retired"; game.paused=true end
+    FB.db.checkpoint=nil
+    return game.scoreEntry
+end
 local function finishSolo()
     local game=FB.game
     if not game or game.mode=="versus" or game.status=="playing" or game.recorded then return end
@@ -126,15 +156,14 @@ local function finishSolo()
     if game.mode=="campaign" then
         FB.run.score=FB.run.score+game.score; game.score=0
         FB.run.seconds=FB.run.seconds+game.elapsed
-        if game.status=="won" and FB.level<100 then
-            FB.db.unlocked=math.max(FB.db.unlocked,FB.level+1)
-            FB.db.checkpoint={level=FB.level+1,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
+        if game.status=="won" and FB.level==100 then FB.FinishCampaignRun()
         else
-            if FB.run.eligible then game.scoreEntry=FB.Scores.Record("campaign",FB.run.score,FB.level,FB.run.seconds,game.status=="won") end
-            FB.db.checkpoint=nil
+            local level=game.status=="won" and FB.level+1 or FB.level
+            FB.db.unlocked=math.max(FB.db.unlocked,level)
+            FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
         end
     elseif game.mode=="endless" or game.mode=="training" and game.status=="finished" then
-        game.scoreEntry=FB.Scores.Record(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
+        game.scoreEntry=FB.Scores.Finish(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
     end
 end
 local events=CreateFrame("Frame")
@@ -198,10 +227,7 @@ events:SetScript("OnEvent",function(_,event,...)
     elseif event=="PLAYER_LOGOUT" then
         FB.UI:StoreEditorDraft()
         FB.StopGameMusic()
-        if FB.db.checkpoint and FB.game and FB.game.mode=="campaign" and FB.game.status=="playing" then
-            -- Restarting a partially played board is practice, preventing checkpoint score farming.
-            FB.db.checkpoint.eligible=false
-        end
+        FB.LeaveCampaignBoard()
     end
 end)
 events:SetScript("OnUpdate",function(_,dt)

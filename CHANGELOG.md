@@ -1,3 +1,9 @@
+# 0.1.0-alpha.22
+
+- A lost campaign board can be retried in the same run. The clock includes every attempt. Choose **Finish run** on the pause or result screen to record how far you got.
+- Qualifying campaign and training scores open the original wooden name-entry panel. Press Enter to accept your character name, type a nickname for your personal table, or discard the score. Open Highscores to finish an interrupted entry after a reload.
+- A full campaign clear ranks ahead of reaching level 100. Tied campaign levels use elapsed time down to fractions of a second in the personal table. Community scores keep the character name supplied by WoW.
+
 # 0.1.0-alpha.21
 
 - Aim, fire and the penguin’s reaction now follow the original 20 ms game clock. An auto-fired bubble moves on its launch tick. Pressing fire while the cannon is busy queues one shot if you hold the key until it is ready.

@@ -5,7 +5,8 @@ local pages={"campaign","training","endless"}
 local function duration(seconds)
     return string.format("%d'%02d\"",math.floor(seconds/60),seconds%60)
 end
-local function player(row)
+local function player(row,shared)
+    if not shared and row.displayName then return row.displayName end
     return row.name:match("^[^-]+") or row.name
 end
 local function styleName(label,row,highlight)
@@ -23,7 +24,10 @@ local function scoreRow(parent,x,y,w,h)
     frame:SetScript("OnEnter",function(f)
         if not f.entry or not GameTooltip then return end
         local row=f.entry
-        GameTooltip:SetOwner(f,"ANCHOR_RIGHT"); GameTooltip:SetText(row.name)
+        GameTooltip:SetOwner(f,"ANCHOR_RIGHT")
+        if row.displayName and not U.shared then
+            GameTooltip:SetText(row.displayName); GameTooltip:AddLine(row.name)
+        else GameTooltip:SetText(row.name) end
         if row.mode=="campaign" then
             GameTooltip:AddLine(row.completed and "Campaign cleared" or ("Level "..row.level))
             GameTooltip:AddLine(duration(row.seconds))
@@ -34,7 +38,73 @@ local function scoreRow(parent,x,y,w,h)
     return frame
 end
 
-function U:BuildScores(text,button)
+function U:BuildScoreEntry(text,button,input)
+    local shield=self.panels.scoreEntry
+    shield:ClearAllPoints(); shield:SetAllPoints(self.frame)
+    local panel=CreateFrame("Frame",nil,shield)
+    panel:SetSize(341,280); panel:SetScale(1.6); panel:SetPoint("CENTER")
+    A.Image(panel,"panel",0,0,nil,nil,"BACKGROUND")
+    text(panel,"Congratulations!",0,12,14,341):SetJustifyH("CENTER")
+    text(panel,"You have a highscore!",0,30,14,341):SetJustifyH("CENTER")
+    text(panel,"Your name?",0,76,14,217):SetJustifyH("CENTER")
+    local box=input(panel,222,70,108,"")
+    self.scoreName=box; box:SetMaxLetters(24); box:SetMaxBytes(96)
+    local outro=text(panel,"Great game!",0,245,14,341); outro:SetJustifyH("CENTER")
+    self.scoreOutro=outro
+    local function finish(save)
+        if self.screen~="scoreEntry" or InCombatLockdown() or self.scoreOutro:IsShown() then return end
+        local entry=self.namingScore
+        if not entry then return end
+        box:ClearFocus()
+        local stored=S.Submit(entry,save and box:GetText() or "")
+        if FB.game and FB.game.scoreEntry==entry then FB.game.scoreEntry=stored end
+        if stored then
+            box:EnableMouse(false); self.scoreSubmit:Hide(); self.scoreSkip:Hide()
+            box:SetText(entry.displayName); outro:Show(); self.scoreOutroTime=0
+            FB.Sound("menu_selected")
+        else FB.Sound("cancel"); self:ShowScores(nil,true) end
+    end
+    self.scoreSubmit=button(panel,"Save name",50,196,115,function() finish(true) end)
+    self.scoreSkip=button(panel,"Discard",176,196,115,function() finish(false) end)
+    box:SetScript("OnEnterPressed",function() finish(true) end)
+    box:SetScript("OnEscapePressed",function() finish(false) end)
+    box:SetScript("OnTextChanged",function(_,typed) if typed then FB.Sound("typewriter") end end)
+    shield:SetScript("OnHide",function() box:ClearFocus() end)
+    shield:SetScript("OnUpdate",function(_,dt)
+        if self.screen=="scoreEntry" and self.namingScore and outro:IsShown() and not self.inactive and not InCombatLockdown() then
+            self.scoreOutroTime=self.scoreOutroTime+dt
+            if self.scoreOutroTime>=2 then self:ShowScores(self.namingScore) end
+        end
+    end)
+end
+
+function U:OpenRoundScores()
+    if InCombatLockdown() then return end
+    local game=FB.game
+    if not game then return end
+    local entry=game.mode=="campaign" and FB.FinishCampaignRun() or game.scoreEntry
+    if not entry then
+        self.scoreMode=game.mode=="training" and "training" or game.mode
+        self.shared=false; self.scorePage=1; self:ShowScores(nil,true); return
+    end
+    self:ShowScores(entry)
+end
+
+function U:NameHighscore(entry)
+    if InCombatLockdown() then return end
+    if FB.game and FB.game.scoreEntry==entry then FB.game.offeredScore=true end
+    self.namingScore=entry
+    self.scoreMode=entry.mode=="training-chain" and "training" or entry.mode
+    self.scorePage=1; self.shared=false
+    self:Panel("scoreEntry"); self.result:Hide()
+    self.scoreOutro:Hide(); self.scoreSubmit:Show(); self.scoreSkip:Show()
+    self.scoreName:EnableMouse(true); self.scoreName:SetText(player(entry,false))
+    self.scoreName:SetFocus(); self.scoreName:HighlightText()
+    FB.Sound("applause")
+end
+
+function U:BuildScores(text,button,input)
+    self:BuildScoreEntry(text,button,input)
     local p=self.panels.scores
     p:ClearAllPoints(); p:SetSize(640,480); p:SetScale(1.6); p:SetPoint("TOPLEFT",self.frame,"TOPLEFT")
     A.Image(p,"scores-background",0,0,640,480,"BACKGROUND")
@@ -104,8 +174,10 @@ function U:BuildScores(text,button)
     end)
 end
 
-function U:ShowScores(entry)
-    self.highlightScore=entry
+function U:ShowScores(entry,skipPending)
+    local pending=not skipPending and S.Pending(entry)
+    if pending then self:NameHighscore(pending); return end
+    self.namingScore=nil; self.highlightScore=entry
     if entry then
         self.scoreMode=entry.mode=="training-chain" and "training" or entry.mode
         self.shared=false
@@ -113,7 +185,7 @@ function U:ShowScores(entry)
             if row==entry then
                 self.scorePage=math.ceil(i/(entry.mode=="campaign" and 10 or 20))
                 local game=FB.game
-                if game and game.scoreEntry==entry and self.scorePage==1 and not game.applauded then
+                if entry.mode=="endless" and game and game.scoreEntry==entry and self.scorePage==1 and not game.applauded then
                     FB.Sound("applause"); game.applauded=true
                 end
                 break
@@ -148,7 +220,7 @@ function U:RefreshScores()
         card.entry=row; card:SetShown(row and true or false)
         if row then
             A.Frame(card.board,FB.db.colorblind and "score-boards-symbol" or "score-boards",row.level)
-            card.name:SetText(player(row)); styleName(card.name,row,self.highlightScore)
+            card.name:SetText(player(row,self.shared)); styleName(card.name,row,self.highlightScore)
             card.level:SetText(row.completed and "won!" or ("level "..row.level))
             card.time:SetText(duration(row.seconds))
         end
@@ -168,7 +240,7 @@ function U:RefreshScores()
                 if row then
                     local prev=entries[idx-1]
                     line.rank:SetText((not prev or prev.score~=row.score) and (idx..".") or "")
-                    line.name:SetText(player(row)..": "..row.score); styleName(line.name,row,self.highlightScore)
+                    line.name:SetText(player(row,self.shared)..": "..row.score); styleName(line.name,row,self.highlightScore)
                 end
             end
         end

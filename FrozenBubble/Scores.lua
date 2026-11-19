@@ -7,7 +7,7 @@ end
 function S.Init(db)
     if not FB.Series.Valid(db.versusLimit) then db.versusLimit=db.schema and 0 or 5 end
     db.schema=1
-    db.scores=db.scores or {}; db.peers=db.peers or {}; db.custom=db.custom or {}
+    db.scores=db.scores or {}; db.pendingScores=db.pendingScores or {}; db.peers=db.peers or {}; db.custom=db.custom or {}
     db.unlocked=FB.Clamp(tonumber(db.unlocked) or 1,1,100)
     if db.sound==nil then db.sound=true end
     if db.music==nil then db.music=true end
@@ -20,6 +20,7 @@ local function better(a,b)
     if a.mode=="campaign" then
         if (a.completed==true)~=(b.completed==true) then return a.completed==true end
         if a.level~=b.level then return a.level>b.level end
+        return (a.elapsed or a.seconds)<(b.elapsed or b.seconds)
     elseif a.score~=b.score then return a.score>b.score end
     return a.seconds<b.seconds
 end
@@ -29,11 +30,14 @@ local function ordered(a,b)
     if a.name~=b.name then return a.name<b.name end
     return (a.date or 0)<(b.date or 0)
 end
-function S.Record(mode,score,level,seconds,completed)
-    if mode=="custom" or mode=="versus" then return end
-    local rows=FB.db.scores
+local function makeEntry(mode,score,level,seconds,completed)
     local entry={name=FB.PlayerName(),mode=mode,score=math.floor(score),level=level or 1,
         seconds=math.floor(seconds),date=time(),completed=completed==true and mode=="campaign" and level==100 or nil}
+    if mode=="campaign" then entry.elapsed=seconds end
+    return entry
+end
+local function store(entry)
+    local rows,mode=FB.db.scores,entry.mode
     rows[#rows+1]=entry
     local worst,count=nil,0
     for i,row in ipairs(rows) do
@@ -45,6 +49,51 @@ function S.Record(mode,score,level,seconds,completed)
     if count>30 and table.remove(rows,worst)==entry then return end
     S.revision=(S.revision or 0)+1
     return entry
+end
+function S.Record(mode,score,level,seconds,completed)
+    if mode=="custom" or mode=="versus" then return end
+    return store(makeEntry(mode,score,level,seconds,completed))
+end
+
+-- handle_new_hiscores compares the run with the last entry in each
+-- desktop table. A tie at the cutoff also gets the name prompt.
+function S.Qualifies(entry)
+    local mode=entry.mode
+    if mode~="campaign" and mode~="training" and mode~="training-chain" then return false end
+    local limit=mode=="campaign" and 10 or 20
+    local ahead=0
+    for _,row in ipairs(FB.db.scores) do
+        if row.mode==mode and (mode=="campaign" and better(row,entry) or mode~="campaign" and row.score>entry.score) then
+            ahead=ahead+1
+        end
+    end
+    return ahead<limit
+end
+
+function S.Finish(mode,score,level,seconds,completed)
+    local entry=makeEntry(mode,score,level,seconds,completed)
+    if not S.Qualifies(entry) then return store(entry) end
+    FB.db.pendingScores[#FB.db.pendingScores+1]=entry
+    return entry
+end
+
+-- Keep interrupted name entries across reloads. Only accepted scores appear
+-- in a leaderboard or answer a community score query.
+function S.Pending(entry)
+    local owner=FB.PlayerName()
+    for i,row in ipairs(FB.db.pendingScores) do
+        if row.name==owner and (not entry or entry==row) then return row,i end
+    end
+end
+
+function S.Submit(entry,value)
+    local pending,index=S.Pending(entry)
+    if not pending or pending~=entry then return end
+    table.remove(FB.db.pendingScores,index)
+    local name=(value or ""):gsub("[|%c]",""):match("^%s*(.-)%s*$")
+    if name=="" or #name>96 then return end
+    entry.displayName=name
+    return store(entry)
 end
 function S.Best(mode,name)
     local best

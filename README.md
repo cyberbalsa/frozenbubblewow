@@ -12,11 +12,11 @@ Download `FrozenBubbleForever-<version>.zip` from [GitHub Releases](https://gith
 
 Type `/fb`. Use the arrow keys and Enter or Space to navigate the main menu. Aim with the mouse and click to fire. While the pointer is over the board, Left/Right or A/D aim; Space/Up fire; P pauses solo games. Match three of the same color and drop clusters disconnected from the ceiling. The ceiling descends every nine solo shots and the launcher fires after 10.5 seconds in solo play.
 
-With the keyboard, a fire press during a shot fires once when the cannon is ready if you keep holding it. After a solo win, press a key when the last popping bubble has left the screen to continue. After a loss, a key retries once the board has frozen. Escape retries a loss immediately or leaves a cleared board. The mouse buttons on the result screen also work.
+With the keyboard, a fire press during a shot fires once when the cannon is ready if you keep holding it. After a solo win, press a key when the last popping bubble has left the screen to continue. After a loss, a key retries once the board has frozen. Escape retries a loss immediately. On a cleared board in a scored campaign, Escape finishes the run. The mouse buttons on the result screen also work.
 
 Turn off **Use the local shot clock** in **Settings → AddOns → Frozen Bubble Forever** to take your time between shots. This applies to solo and shared-keyboard games. Training still lasts two minutes, and online matches always use their shot clock.
 
-- **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Runs started at level 1 qualify for campaign highscores. Finished campaigns rank first, followed by the furthest level reached. A shorter time wins a tie. Restarting a partially played board after logout becomes practice.
+- **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Start at level 1 for a scored run. Retry a lost board to keep going on the same clock, or choose **Finish run** from the pause or result screen. Finished campaigns rank first, followed by the furthest level reached. A shorter time wins a tie. Restarting a partially played board after logout becomes practice.
 - **Multiplayer training:** survive the two-minute clock on a solo board. Earn one point for each bubble beyond three in a clear, including any that fall. Incoming penalties use the versus rules. Random levels and training both offer chain reactions. Turn them on and a falling bubble can fly back up to complete another match. Training records separate scores for each ruleset.
 - **Endless:** clear the board for a new wave and a 500-point bonus.
 - **2P Game** shares one keyboard. On the right board, Left and Right aim, Up fires and Down centers. On the left, X and V aim, C fires and D centers. P pauses both boards. Each win adds a round to that player’s total. Choose **Next round** to keep the score.
@@ -66,6 +66,8 @@ The addon probes channel delivery instead of treating a successful API return as
 
 The marketplace is a free exchange, with no currency or payment flow. A creator marks a level public; other players browse listings and request its layout directly. Creators must be online. Downloads are validated, stored locally, and may be explicitly republished by recipients. At most 100 saved levels, 200 live listings, and ten listings per catalog response are retained/returned. Listings expire after three minutes; requests time out after 12 seconds. Layouts are data, never executable code.
 
+A top-ten campaign run or top-twenty score in either training ruleset opens the desktop name-entry panel. Ties at the cutoff qualify. Press Enter to use your character name, type a nickname for your personal table, or choose Discard. After a reload, open Highscores or type `/fb scores` on the same character to finish an interrupted entry. Shared scores use your WoW character name.
+
 Highscores are personal or cached community reports, not a server-verified global ranking. Player names come from WoW's message sender, but another addon or a modified client can fabricate its own score. Match state is also peer-reported; this is friendly competition, not a cheat-proof ladder.
 
 ## Debugging
@@ -76,7 +78,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.21` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.22` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 
