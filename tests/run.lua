@@ -864,18 +864,24 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
                 for _,k in ipairs({"x","y","vx","vy","color"}) do eq(actual.projectile[k],replay.projectile[k]) end
             end
         end
-        for _,mode in ipairs({"random","endless","training","versus"}) do
+        for _,rules in ipairs({{1,"random"},{1,"endless"},{1,"training"},{1,"versus"},
+            {2,"random"},{2,"endless"},{2,"training"},{2,"versus"}}) do
+            local mode,desktop=rules[2],rules[1]==2
             local seed=34164
             local soundA,soundB={},{}
             local emit=function(cue) soundA[#soundA+1]=cue end
-            local match=mode=="versus" and fb.LocalVersus.New(seed,true,{2,1},emit)
-            local g=match and match.right or fb.Engine.New(nil,seed,mode,true,emit)
+            local match=mode=="versus" and fb.LocalVersus.New(seed,true,{2,1},emit,desktop)
+            local g=match and match.right or fb.Engine.New(nil,seed,mode,true,emit,desktop)
             local left=match and match.left
             g.timed=true
             rec.Begin(seed,g,match); local data=rec.capture.record
             local play=rec.NewPlayback(data,function(cue) soundB[#soundB+1]=cue end)
             for tick=1,1500 do
                 local angle=math.sin(tick*0.017)*1.2
+                if desktop and (tick==21 or tick==410) then
+                    rec.Graphics(g,tick==21)
+                    if left then rec.Graphics(left,tick==21) end
+                end
                 if tick==18 or tick==740 then
                     rec.Clock(g,tick~=18); g.timed=tick~=18; g.idle=0; g.hurryVisible=false
                 end
@@ -946,6 +952,39 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.Scores.Pending(entry),entry); eq(fb.game,game)
         ui.panels.replay.scripts.OnKeyDown(ui.panels.replay,"SPACE"); eq(ui.screen,"recordings")
         fb.Scores.Submit(entry,""); fb.Options.Set("shotClock",true); ui:ShowMenu(); env.GetMouseFoci=oldFocus
+    end)
+    test("the original training recording reproduces all 997 SDL frames in the local engine",function()
+        local file=assert(io.open("tests/demo1.record","rb")); local source=file:read("*a"); file:close()
+        local ui,r=fb.UI,fb.Recordings
+        r.Library(); r.OpenImport(); ui.levelCode:SetText(source:gsub("\n","\r\n")); ui.codeImport.scripts.OnClick()
+        eq(ui.screen,"recordings")
+        local record=fb.db.recordings[1]
+        eq(record.seed,120364); eq(record.frames,997); eq(record.mode,"training")
+        local cues={}
+        local play=r.NewPlayback(record,function(sound) cues[#cues+1]=sound end)
+        local expected=dofile("tests/reference_training.lua"); local checksum=0
+        for tick=1,record.frames do
+            assert(r.Step(play))
+            local g=play.right; local cells={}
+            for i=1,104 do cells[i]=g.grid[i] or 0 end
+            local shot=g.projectile; local flight=shot and string.format("%d,%d,%d",shot.color,math.floor(174+shot.x),math.floor(28+shot.y)) or "-"
+            local row=table.concat({table.concat(cells),g.current,g.next,flight,table.concat(cues,",")},"|").."\n"
+            for i=1,#row do checksum=(checksum*131+row:byte(i))%2147483647 end
+            if expected[tick] then eq(checksum,expected[tick],"SDL state through tick "..tick) end
+            cues={}
+        end
+        assert(not r.Step(play))
+        -- Network recordings carry remote-player events. Never accept those as local games.
+        for _,invalid in ipairs({source:gsub("players:p1","players:p1,rp1"),source:gsub("frame_action:17","frame_action:0"),
+            source:gsub("srand:120364","srand:bad"),source:gsub("record_protocol:0","record_protocol:1"),"frame_action:1|p2|fire|1"}) do
+            local count=#fb.db.recordings; assert(not r.Import(invalid)); eq(#fb.db.recordings,count)
+        end
+        local two="record_protocol:0\nplayers:p1,p2\ncurrent_level:\nsrand:7\nchainreaction:0\n"..
+            "frame_action:1|p1|fire|1\nframe_action:1|p2|fire|1\nframe_action:12|p2|left|1"
+        local split=r.NewPlayback(assert(r.Import(two)))
+        for _=1,12 do assert(r.Step(split)) end
+        eq(split.right.shots,1); eq(split.left.shots,1); eq(split.left.angle,-0.03)
+        ui:ShowMenu()
     end)
     test("desktop board reveals hold local clocks, cover the previous panel, and respect input and motion settings",function()
         local ui,t=fb.UI,fb.Transitions
@@ -1234,6 +1273,19 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.LocalVersus.match,m); eq(m.right.angle,math.pi/4)
         ui.board.shooter.SetPoint=nil
         fb.StartCampaign(1)
+    end)
+    test("full and miniature airborne bubbles draw on the desktop pixel grid",function()
+        local ui=fb.UI
+        local g=fb.Engine.New({"111....."},31); g:Shoot(0.47); g:Step(0.02)
+        for i,board in ipairs({ui.board,ui.miniBoards[1]}) do
+            local pixel=i; local seat=board.fbMiniSeat
+            if i==2 then board.fbMiniSeat=1 end
+            local x,y
+            board.projectile.SetPoint=function(_,_,_,_,px,py) x,y=px,py end
+            ui:RenderBoard(board,g)
+            eq(x,math.floor(g.projectile.x/pixel)*pixel); eq(y,-math.floor(g.projectile.y/pixel)*pixel)
+            board.projectile.SetPoint=nil; board.fbMiniSeat=seat
+        end
     end)
     test("low graphics hides pop and stick effects but keeps falling chains and the ceiling warning",function()
         local ui=fb.UI

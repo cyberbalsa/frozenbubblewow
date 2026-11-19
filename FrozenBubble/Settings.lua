@@ -24,6 +24,10 @@ function Options.Set(key,value)
         resetClock(FB.game)
         if FB.LocalVersus.match then resetClock(FB.LocalVersus.match.left) end
     end
+    if key=="graphicsLevel" and FB.game and FB.game.desktopRandom then
+        FB.Recordings.Graphics(FB.game,value==1)
+        if FB.LocalVersus.match then FB.Recordings.Graphics(FB.LocalVersus.match.left,value==1) end
+    end
     if key=="minimap" and Options.icon then Options.icon:SetShown(value) end
     if key=="graphicsLevel" or key=="reducedMotion" then FB.UI:ApplyGraphics() end
     if key=="colorblind" then

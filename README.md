@@ -42,6 +42,8 @@ Press **Print Screen** with the pointer over the board, or type `/fb record`, to
 
 Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a 2P game, both launchers play back together, including attacks and misses. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
 
+To watch a desktop recording, choose **Options → Recordings → Import**, paste the uncompressed text, then click **Import** and select the new entry. The importer reads Frozen Bubble’s protocol 0 random, training and shared-keyboard games. Desktop files omit the graphics level and command-line settings, so playback uses the desktop defaults for those. For a sample, copy the contents of the [original training recording](tests/demo1.record).
+
 ## Keys and match chat
 
 Choose **Keys** on the main menu to bind aim, fire and center for each player. The last two prompts set the full-window and chat keys. All ten bindings save together. Escape cancels a partial change. By default, F fits the addon to your screen and F again restores its size and position.
@@ -84,7 +86,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.23` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.24` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

@@ -22,17 +22,24 @@ function U:BuildEditorText(text,button,fill)
         if -y<offset then scroll:SetVerticalScroll(-y)
         elseif -y+h>offset+scroll:GetHeight() then scroll:SetVerticalScroll(-y+h-scroll:GetHeight()) end
     end)
-    box:SetScript("OnEscapePressed",function() box:ClearFocus(); self:Panel("editor") end)
-    p:SetScript("OnHide",function() box:ClearFocus() end)
+    local function back()
+        box:ClearFocus()
+        if self.importingRecording then FB.Recordings.Library() else self:Panel("editor") end
+    end
+    box:SetScript("OnEscapePressed",back)
+    p:SetScript("OnHide",function() box:ClearFocus(); self.importingRecording=nil end)
     self.codeNotice=text(p,"",28,282,14,465)
     self.codeFormat=button(p,"WoW code",24,309,125,function()
         self.fileExport=not self.fileExport; self:FillEditorText()
     end)
     self.codeImport=button(p,"Import",24,309,125,function()
-        if self:ImportEditor(box:GetText()) then self:Panel("editor")
+        if self.importingRecording then
+            local record,err=FB.Recordings.Import(box:GetText())
+            if record then FB.Recordings.Library() else self.codeNotice:SetText(err) end
+        elseif self:ImportEditor(box:GetText()) then self:Panel("editor")
         else self.codeNotice:SetText("Invalid layout. Check row widths, colors and empty boards.") end
     end)
-    button(p,"Back",364,309,124,function() self:Panel("editor") end)
+    button(p,"Back",364,309,124,back)
     self.levelCode=box
 end
 function U:FillEditorText()
@@ -43,6 +50,7 @@ function U:FillEditorText()
     self.levelCode:SetFocus(); self.levelCode:HighlightText()
 end
 function U:OpenEditorText(export)
+    self.importingRecording=nil; self.levelCode:SetMaxBytes(65535)
     self:Panel("editorText")
     self.codeFormat:SetShown(export); self.codeImport:SetShown(not export)
     if export then

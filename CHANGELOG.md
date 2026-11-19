@@ -1,3 +1,8 @@
+# 0.1.0-alpha.24
+
+- Local games now draw ammunition, incoming rows and pop velocities from the same seeded sequence as the desktop game. Moving bubbles use whole sprite pixels on the original playfield and miniature boards.
+- **Options → Recordings → Import** accepts plain-text Frozen Bubble solo and shared-keyboard recordings. Paste a recording, click Import, then select it to play. Recordings saved in alpha.23 still play with their original sequence.
+
 # 0.1.0-alpha.23
 
 - Press Print Screen or type `/fb record` to keep a random, training, endless or shared-keyboard round. The recording includes play from the start, even if you mark it later.

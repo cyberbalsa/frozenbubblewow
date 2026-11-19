@@ -47,7 +47,8 @@ function FB.StartCampaign(level,run)
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
-    FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound)
+    FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound,true)
+    FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     FB.Debug.Log("GAME","campaign",level)
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.UI.level:SetText(tostring(level))
@@ -75,7 +76,8 @@ function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     local seed=FB.GameSeed()
-    FB.game=FB.Engine.New(nil,seed,mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
+    FB.game=FB.Engine.New(nil,seed,mode,chainReaction,FB.Sound,true); FB.run=nil; FB.level=1
+    FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     FB.Recordings.Begin(seed,FB.game)
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
@@ -85,7 +87,8 @@ function FB.StartCustomBoard(set,index)
     local grid=not set.builtin and FB.Engine.Unpack(board)
     if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
     FB.LeaveBoard(); FB.LocalVersus.match=nil; FB.run=nil
-    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound)
+    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound,true)
+    FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     if grid then
         FB.game.grid=grid

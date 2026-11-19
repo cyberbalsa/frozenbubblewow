@@ -47,7 +47,10 @@ local function bubble(parent)
     local t=parent:CreateTexture(nil,"ARTWORK"); t:SetSize(32,32); return t
 end
 local function place(t,parent,x,y,color,size,alpha)
-    t:ClearAllPoints(); t:SetPoint("CENTER",parent,"TOPLEFT",x,-y)
+    -- SDL blits moving sprites at integer pixels; miniature boards have
+    -- their own half-size pixel grid. Keep the engine trajectory fractional.
+    local pixel=parent.fbMiniSeat and 2 or 1
+    t:ClearAllPoints(); t:SetPoint("CENTER",parent,"TOPLEFT",math.floor(x/pixel)*pixel,-math.floor(y/pixel)*pixel)
     t.fbMiniBubble=parent.fbMiniSeat
     t:SetSize(size or 32,size or 32); FB.SetBubbleTexture(t,color)
     t:SetAlpha(alpha or 1); t:Show()
@@ -697,7 +700,8 @@ function U:SelectSolo(index,silent)
 end
 function U:BuildRecordings()
     local list=self.panels.recordings
-    text(list,"RECORDINGS",0,0,20,250)
+    text(list,"RECORDINGS",0,0,20,184)
+    button(list,"Import",190,0,110,FB.Recordings.OpenImport)
     self.emptyRecords=text(list,"Press Print Screen during a random, training, endless or shared-keyboard game to keep a recording. You can also type /fb record.",0,65,14,340)
     self.recordButtons={}
     for i=1,10 do
@@ -996,6 +1000,7 @@ local function placeFrozen(texture,board,x,y,nextBubble)
     local info=FB.MediaInfo[asset]
     local scale=mini and 2 or 1
     local shift=nextBubble and 0 or scale
+    x,y=math.floor(x/scale)*scale,math.floor(y/scale)*scale
     texture:ClearAllPoints(); texture:SetPoint("CENTER",board,"TOPLEFT",x+1-shift,-(y+8-shift))
     texture:SetSize(info.w*scale,info.h*scale); FB.Animation.Frame(texture,asset,1)
 end

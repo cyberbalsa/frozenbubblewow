@@ -47,6 +47,8 @@ done
 python3 tools/demos/pack.py "$upstream" "$traces"
 ```
 
+The uncompressed `tests/demo1.record` is the original training recording. Its regression test runs the WoW engine from the recorded seed and held keys. The reference covers the board, ammunition, airborne projectile and sound cues at every tick. To regenerate it from the SDL capture, run `python3 tools/demos/reference_training.py "$traces/trace1/frames.jsonl" > tests/reference_training.lua`.
+
 The desktop engine iterates Perl hash keys when ejecting a group. Individual pop trajectories can vary between captures of the same recording.
 
 An optional `--reference` argument to the capture command writes desktop screenshots at frames 1, 500 and 950. Use a separate output directory for these.

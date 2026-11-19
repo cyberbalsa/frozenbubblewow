@@ -25,7 +25,20 @@ function E.Neighbors(key,offset)
     for _, p in ipairs(cells) do if E.Valid(p[1], p[2],offset) then out[#out+1] = E.Key(p[1],p[2]) end end
     return out
 end
+-- Perl's drand48 state is 48 bits. Multiplying two 24-bit halves keeps
+-- every intermediate exact on WoW's double-precision Lua 5.1 runtime.
+local half,range=16777216,281474976710656
+local function desktopRoll(game)
+    local stream=game.randomOwner or game
+    local low=stream.rng%half
+    local product=15525485*low+11
+    local high=(15525485*math.floor(stream.rng/half)+1502*low+math.floor(product/half))%half
+    stream.rng=high*half+product%half
+    return stream.rng/range
+end
+
 function E:Random(n)
+    if self.desktopRandom then return math.floor(desktopRoll(self)*n)+1 end
     self.rng = (self.rng * 16807) % 2147483647
     return self.rng % n + 1
 end
@@ -38,13 +51,20 @@ function E:Color()
     end
     for color = 1, 8 do if found[color] then colors[#colors+1] = color end end
     if #colors == 0 then return self:Random(8) end
+    if self.desktopRandom then
+        local color
+        repeat color=self:Random(8) until found[color]
+        return color
+    end
     return colors[self:Random(#colors)]
 end
 local function silent() end
-function E.New(level, seed, mode, chainReaction, sound)
+function E.New(level, seed, mode, chainReaction, sound, desktopRandom)
     local self = setmetatable({grid={}, sound=sound or silent, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
+    self.desktopRandom=desktopRandom
+    if desktopRandom then self.rng=((seed or 1)%4294967296)*65536+13070 end
     self.chains={}
     self.effectRng=self.rng
     self.chainReaction=chainReaction==true and (mode=="random" or mode=="training" or mode=="versus")
@@ -84,8 +104,14 @@ function E:Group(start, sameColor)
     end
     return queue
 end
--- Cosmetic draws use a separate stream so graphics cannot change the next shot.
+-- Local games use the desktop stream. Earlier recordings and the online
+-- protocol keep their original independent sequence for visual effects.
 local function burst(game,x,y,color)
+    if game.desktopRandom then
+        if game.lowGraphics then return end
+        local vx=3*desktopRoll(game)-1.5
+        return {x=x,y=y,vx=vx,vy=-2-4*desktopRoll(game),color=color,kind="pop",wait=0}
+    end
     game.effectRng=game.effectRng*16807%2147483647
     local vx=3*game.effectRng/2147483647-1.5
     game.effectRng=game.effectRng*16807%2147483647
@@ -108,7 +134,11 @@ function E:Resolve(key)
     self.sound(#group>=3 and "destroy_group" or "stick")
     self.boardChanged=true
     if #group >= 3 then
-        for _, k in ipairs(group) do self:Remove(k,"pop"); popped=popped+1 end
+        -- destroy_bubbles ejects attached neighbors first and the shot last.
+        local first=self.desktopRandom and 2 or 1
+        for i=first,#group do self:Remove(group[i],"pop") end
+        if first==2 then self:Remove(key,"pop") end
+        popped=#group
         local attached=self:RootDistances()
         local falling={}
         for k=1,E.ROWS*8 do if self.grid[k] and not attached[k] then falling[#falling+1]=k end end
@@ -223,10 +253,11 @@ function E:AdvanceRoot()
         self.grid=shifted
         self.offset=1-self.offset
         for col=1,E.Columns(1,self.offset) do
-            shifted[col]=self:Random(8)
+            shifted[col]=self.nextRow and self.nextRow[col] or self:Random(8)
             self.attachedOrder[#self.attachedOrder+1]=col
         end
     end
+    if self.penaltyRules then self.nextRow=nil end
     self.sound(self.penaltyRules and "newroot" or "newroot_solo")
 end
 function E:Attach(x,y,hit)
@@ -253,10 +284,16 @@ function E:Attach(x,y,hit)
     self.projectile=nil
     self:Resolve(best)
     if self.lastPop==0 then self.stick={key=best,ticks=0} end
-    self:CheckEnd()
-    if self.status=="playing" then
-        if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
+    local rootDue=self.shots%self.rootPeriod==0
+    if self.desktopRandom and self.mode~="endless" then
+        -- stick_bubble lowers the ceiling before verify_if_end judges the board.
+        if rootDue then self:AdvanceRoot() end
         self:CheckEnd()
+    else
+        self:CheckEnd()
+        if self.status=="playing" and rootDue then self:AdvanceRoot(); self:CheckEnd() end
+    end
+    if self.status=="playing" then
         if hit and self.penaltyRules and #self.chains==0 and self.status=="playing" then self:ApplyGarbage() end
     end
 end
@@ -287,8 +324,10 @@ function E:StepEnding()
         if self.projectile then
             local shot=self.projectile
             local fx=burst(self,shot.x,shot.y,shot.color)
-            fx.frozen=self.status~="won"
-            self.effects[#self.effects+1]=fx
+            if fx then
+                fx.frozen=self.status~="won"
+                self.effects[#self.effects+1]=fx
+            end
         end
         self.projectile,self.stick,self.chains,self.rising=nil,nil,{},{}
         -- cleanup_player_bubbles sorts bottom row first, right to left.
@@ -335,6 +374,10 @@ local function advanceGame(self,dt,input)
     p.x,p.y=p.x+p.vx*dt,p.y+p.vy*dt
     if p.x<E.R then p.x=2*E.R-p.x; p.vx=-p.vx; self.sound("rebound") end
     if p.x>E.W-E.R then p.x=2*(E.W-E.R)-p.x; p.vx=-p.vx; self.sound("rebound") end
+    if self.desktopRandom and not self.nextRow then
+        self.nextRow={}
+        for i=1,8 do self.nextRow[i]=self:Random(8) end
+    end
     if p.y<=E.R+self.ceiling then self:Attach(p.x,p.y); self:MoveChains(); return end
     local hit,nearest
     for key=1,E.ROWS*8 do
