@@ -1,3 +1,8 @@
+# 0.1.0-alpha.35
+
+- The level editor paints through the point where you release the mouse, even between frames. A held brush can leave the board and start painting again on the other side. Undo removes the whole stroke.
+- Editor dialogs use the original wooden button areas and bitmap lettering. Delete opens the original empty-library message when there are no custom sets.
+
 # 0.1.0-alpha.34
 
 - Duels, arena matches and their recordings show each character’s name and round wins on the wooden score plaques. The main board and the four miniature boards use the original game’s two lettering sizes. Duels show realm names when two characters share a name.

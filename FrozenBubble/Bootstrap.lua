@@ -1,7 +1,7 @@
 local addon, FB = ...
 _G.FrozenBubble = FB
 FB.name = addon
-FB.version = "0.1.0-alpha.34"
+FB.version = "0.1.0-alpha.35"
 FB.media = "Interface\\AddOns\\" .. addon .. "\\Media\\"
 FB.PREFIX = "FrozenBubble1"
 

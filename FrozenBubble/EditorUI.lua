@@ -108,13 +108,25 @@ function U:BuildEditor(text,button,input,fill)
     local d=CreateFrame("Frame",nil,shield); d:SetSize(341,280); d:SetPoint("CENTER")
     A.Image(d,"panel",0,0,341,280,"BACKGROUND")
     self.editorHelp=image(d,"help",0,0,nil,nil,"BORDER")
-    self.dialogSign=sign(d,10,5,321,text)
+    self.dialogSign=sign(d,0,5,341,text,"LEFT")
+    self.emptyLibrary=CreateFrame("Frame",nil,d); self.emptyLibrary:SetAllPoints()
+    sign(self.emptyLibrary,50,70,285,text,"LEFT"):SetText("THERE ARE NO CUSTOM")
+    sign(self.emptyLibrary,50,95,285,text,"LEFT"):SetText("LEVELSETS TO DELETE.")
+    sign(self.emptyLibrary,40,165,295,text,"LEFT"):SetText('PRESS "OK" TO CONTINUE')
     self.dialogMessage=text(d,"",23,69,16,295); self.dialogMessage:SetJustifyH("CENTER")
     self.dialogValue=input(d,41,115,259,""); self.dialogValue:SetMaxLetters(36)
     self.dialogValue:SetScript("OnEnterPressed",function() self:AcceptEditorDialog() end)
     self.dialogValue:SetScript("OnEscapePressed",function() self:CloseEditorDialog() end)
-    self.editorOK=button(d,"OK",21,239,107,function() self:AcceptEditorDialog() end)
-    self.editorBack=button(d,"Cancel",212,239,107,function() self:CloseEditorDialog() end)
+    self.editorOK=hit(d,0,236,150,40,function() self:AcceptEditorDialog() end)
+    self.editorBack=hit(d,191,236,150,40,function()
+        local quit=self.editorDialog=="quit"
+        self:CloseEditorDialog()
+        if quit then self:StoreEditorDraft(); self:ShowMenu() end
+    end)
+    -- SDL highlights the 150px plank but accepts the whole half-panel below y=240.
+    self.editorBack:SetHitRectInsets(-20,0,4,-4)
+    self.okCaption=sign(self.editorOK,60,4,142,text,"LEFT")
+    self.backCaption=sign(self.editorBack,30,4,142,text,"LEFT")
     self.editorTools=CreateFrame("Frame",nil,d); self.editorTools:SetAllPoints()
     local options={
         {"Test board",function() self:TestEditor() end},
@@ -222,43 +234,48 @@ end
 function U:BrowseEditorSet(delta)
     self.fileIndex=FB.Clamp(self.fileIndex+delta,1,math.max(1,#self.editorFiles))
     showSelection(self.editorBrowser,self.editorFiles,self.fileIndex,1)
-    self.editorOK:SetEnabled(#self.editorFiles>0)
-    self.dialogMessage:SetText(#self.editorFiles==0 and "No saved sets to delete." or "")
 end
 
-local titles={help="HELP - KEY SHORTCUTS", tools="EDITOR TOOLS", jump="JUMP TO LEVEL", rename="LEVELSET NAME",
-    new="NEW LEVELSET",open="OPEN LEVELSET",delete="DELETE LEVELSET",confirm="DELETE LEVELSET?",quit="SAVE CHANGES?"}
+local titles={help="HELP - KEY SHORTCUTS", tools="EDITOR TOOLS", jump="ENTER LEVEL TO JUMP TO", rename="LEVELSET NAME",
+    new="ENTER NEW LEVELSET NAME",open="SELECT LEVELSET TO OPEN",delete="SELECT LEVELSET TO DELETE",
+    empty="NO LEVELSET TO DELETE",confirm="DELETE LEVELSET?",quit="SAVE CHANGES?"}
 function U:EditorDialog(kind)
+    if kind=="open" or kind=="delete" then
+        self.editorFiles=savedSets(kind=="open",false,self)
+        if #self.editorFiles==0 then kind="empty" end
+    end
     self.editorDialog=kind; self.stroke=nil; self.editorPreview:Hide()
     self.dialogValue:ClearFocus()
     self.editorShield:Show(); self.editorHelp:SetShown(kind=="help"); self.editorTools:SetShown(kind=="tools")
-    self.dialogSign:SetText(titles[kind]); self.dialogMessage:SetText("")
+    self.emptyLibrary:SetShown(kind=="empty")
+    local title=titles[kind]
+    self.dialogSign:ClearAllPoints(); self.dialogSign:SetPoint("TOPLEFT",math.floor(341/2-6*#title),-5)
+    self.dialogSign:SetText(title); self.dialogMessage:SetText("")
     local entry=kind=="new" or kind=="rename" or kind=="jump"
     local browser=kind=="open" or kind=="delete"
     self.dialogValue:SetShown(entry); self.editorBrowser:SetShown(browser)
-    self.editorOK:ClearAllPoints(); self.editorOK:SetPoint("TOPLEFT",kind=="help" and 212 or 21,-239)
-    self.editorOK:SetEnabled(true); self.editorOK:SetShown(kind~="tools")
-    self.editorOK:SetText(kind=="confirm" and "Delete" or kind=="quit" and "Save and exit" or "OK")
-    self.editorBack:SetText(kind=="quit" and "Keep draft & exit" or kind=="tools" and "Back" or "Cancel")
-    self.editorBack:SetShown(kind~="help")
-    self.editorBack:SetScript("OnClick",function()
-        if InCombatLockdown() then return end
-        self:CloseEditorDialog()
-        if kind=="quit" then self:StoreEditorDraft(); self:ShowMenu() end
-    end)
+    local single=kind=="help" or kind=="empty"
+    self.editorOK:ClearAllPoints(); self.editorOK:SetPoint("TOPLEFT",single and 191 or 0,-236)
+    self.editorOK:SetHitRectInsets(single and -20 or 0,single and 0 or -21,4,-4)
+    self.okCaption:ClearAllPoints()
+    self.okCaption:SetPoint("TOPLEFT",single and 70 or kind=="quit" and 4 or kind=="confirm" and 30 or 60,-4)
+    self.okCaption:SetText(kind=="confirm" and "Delete" or kind=="quit" and "Save and exit" or "OK")
+    self.backCaption:ClearAllPoints(); self.backCaption:SetPoint("TOPLEFT",kind=="quit" and 4 or 30,-4)
+    self.backCaption:SetText(kind=="quit" and "Keep draft & exit" or kind=="tools" and "Back" or "Cancel")
+    self.editorOK:SetShown(kind~="tools"); self.editorBack:SetShown(not single)
     if entry then
-        self.dialogValue:SetText(kind=="jump" and tostring(self.editIndex) or kind=="rename" and self.levelTitle:GetText() or "")
+        self.dialogValue:SetMaxLetters(kind=="jump" and 3 or 36)
+        self.dialogValue:SetText(kind=="rename" and self.levelTitle:GetText() or "")
         self.dialogValue:SetFocus(); self.dialogValue:HighlightText()
         if kind=="jump" then self.dialogMessage:SetText("Choose a board from 1 to "..#self.editBoards..".") end
     elseif browser then
-        self.editorFiles=savedSets(kind=="open",false,self)
         self.fileIndex,self.editorBrowser.offset=1,0
         self:BrowseEditorSet(0)
     elseif kind=="confirm" then self.dialogMessage:SetText(self.deleteFile.title)
     elseif kind=="quit" then self.dialogMessage:SetText("Save this set to your library? Escape keeps the editor open.") end
 end
 function U:CloseEditorDialog()
-    self.editorDialog=nil; self.dialogValue:ClearFocus(); self.editorShield:Hide()
+    self.editorDirty=true; self.editorDialog=nil; self.dialogValue:ClearFocus(); self.editorShield:Hide()
 end
 function U:ExitEditor()
     if self:EditorModified() then self:EditorDialog("quit")

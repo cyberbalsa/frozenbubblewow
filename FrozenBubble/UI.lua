@@ -87,6 +87,15 @@ local function canPauseGame()
     return FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match)
 end
 local K=FB.Controls
+-- The desktop editor divides a row into rectangular hit areas, shifted by
+-- half a bubble on the seven-cell rows. The visible sprites overlap by 4 px.
+local function editorCell(x,y)
+    if y<0 or y>=280 then return end
+    local row=math.floor(y/E.STEP)+1
+    local col=math.floor((x-(row%2==0 and 16 or 0))/32)+1
+    if col>=1 and col<=E.Columns(row) then return E.Key(row,col) end
+end
+
 function U:Build()
     local A=FB.Animation
     local f=CreateFrame("Frame","FrozenBubbleWindow",UIParent,"BackdropTemplate")
@@ -98,6 +107,7 @@ function U:Build()
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart",function() if not self.fullWindow then f:StartMoving() end end); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
+        self.stroke=nil
         if FB.Recordings.playback then self:ShowMenu() end
         FB.Transitions.Interrupt()
         FB.Demos.idle=0
@@ -121,15 +131,24 @@ function U:Build()
     self.board:SetScript("OnEnter",function(b) if not self.editing and not InCombatLockdown() then b:EnableKeyboard(true); b:SetPropagateKeyboardInput(true) end end)
     self.board:SetScript("OnLeave",function(b)
         if not self.editing and not (FB.LocalVersus.match and self.screen=="opponent") then b:EnableKeyboard(false); self.keys={} end
-        self.stroke=nil
+        if self.stroke then self:SampleEditorStroke(false) end
     end)
     self.board:SetScript("OnMouseDown",function(_,which)
-        if InCombatLockdown() then return end
+        if InCombatLockdown() or self.editorDialog or self.inactive then return end
         if self.editing and (which=="LeftButton" or which=="RightButton") then
-            self.stroke={button=which}; self:Paint(which)
+            if self.stroke then return end
+            local x,y=self:Cursor()
+            if editorCell(x,y) then
+                self.stroke={button=which}; self:Paint(which,x,y)
+            end
         elseif not self.editing and not FB.LocalVersus.match and which=="LeftButton" then FB.Fire() end
     end)
-    self.board:SetScript("OnMouseUp",function() self.stroke=nil end)
+    self.board:SetScript("OnMouseUp",function(b,which)
+        if self.stroke and self.stroke.button==which then
+            self:SampleEditorStroke(b:IsMouseOver())
+            self.stroke=nil
+        end
+    end)
     self.board:SetScript("OnMouseWheel",function(_,delta)
         if self.editorDialog or self.inactive or InCombatLockdown() then return end
         if self.editing then self:SelectEditorColor((self.editorColor+delta)%9)
@@ -503,6 +522,7 @@ function U:SetCombatInput(blocked)
     self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
     self.panels.replay:EnableKeyboard(not blocked and self.screen=="replay")
     if blocked then
+        self.stroke=nil
         self.fbPickHold=nil
         if FB.Demos.scene then self:ShowMenu() end
         FB.MatchChat.Close()
@@ -544,7 +564,7 @@ function U:UpdateVisibility(dt)
     end
     if inactive~=self.inactive then
         self.inactive=inactive
-        if inactive then FB.Transitions.Interrupt() end
+        if inactive then self.stroke=nil; FB.Transitions.Interrupt() end
         self.keys={}; self.board:EnableKeyboard(false)
         if canPauseGame() then
             if inactive and not FB.game.paused then FB.game.paused=true; self.focusPausedGame=FB.game
@@ -951,14 +971,6 @@ function U:Cursor()
     local x,y=GetCursorPosition(); local scale=self.board:GetEffectiveScale()
     return x/scale-self.board:GetLeft(),self.board:GetTop()-y/scale
 end
--- The desktop editor divides a row into rectangular hit areas, shifted by
--- half a bubble on the seven-cell rows. The visible sprites overlap by 4 px.
-local function editorCell(x,y)
-    if y<0 or y>=280 then return end
-    local row=math.floor(y/E.STEP)+1
-    local col=math.floor((x-(row%2==0 and 16 or 0))/32)+1
-    if col>=1 and col<=E.Columns(row) then return E.Key(row,col) end
-end
 
 function U:Paint(which,x,y)
     if self.editorDialog then return end
@@ -991,19 +1003,30 @@ function U:Paint(which,x,y)
     end
     paintAt(x,y); stroke.x,stroke.y=x,y
 end
+-- Finish the segment to the edge, then start a fresh segment on re-entry.
+-- Both segments belong to the same physical press and share its undo entry.
+function U:SampleEditorStroke(over)
+    if self.editorDialog or self.inactive or InCombatLockdown() then self.stroke=nil; return end
+    local stroke=self.stroke
+    if not over and not (stroke and stroke.x) then return end
+    local x,y=self:Cursor()
+    local key=over and editorCell(x,y)
+    if stroke then
+        if key or stroke.x then self:Paint(stroke.button,x,y) end
+        if not key then stroke.x,stroke.y=nil,nil end
+    end
+    return key
+end
 function U:UpdateEditor()
-    local key
-    if not self.editorDialog and self.board:IsMouseOver() and not self.inactive and not InCombatLockdown() then
-        local x,y=self:Cursor()
-        key=editorCell(x,y)
-        if self.stroke then
-            if IsMouseButtonDown and not IsMouseButtonDown(self.stroke.button) then self.stroke=nil
-            else self:Paint(self.stroke.button,x,y) end
-        end
-    else self.stroke=nil end
+    if self.stroke and IsMouseButtonDown and not IsMouseButtonDown(self.stroke.button) then self.stroke=nil end
+    local key=self:SampleEditorStroke(self.board:IsMouseOver())
+    if self.stroke and self.editorColor~=0 then key=nil end
     if self.editorDirty then
         self:RenderBoard(self.board,self.editGame); self.editorDirty=false
+    elseif key==self.previewCell then
+        return
     end
+    self.previewCell=key
     if self.erasedPreview then self.board.bubbles[self.erasedPreview]:SetAlpha(1); self.erasedPreview=nil end
     if key and self.editorColor==0 and self.editGame.grid[key] then
         self.board.bubbles[key]:SetAlpha(0.4); self.erasedPreview=key

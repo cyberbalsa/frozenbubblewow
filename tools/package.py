@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def package(version: str) -> Path:
     if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?", version):
-        raise ValueError("Expected a semantic version such as v0.1.0-alpha.34")
+        raise ValueError("Expected a semantic version such as v0.1.0-alpha.35")
     version = version.removeprefix("v")
     addon = ROOT / "FrozenBubble"
     toc = (addon / "FrozenBubble.toc").read_text()
@@ -45,5 +45,5 @@ def package(version: str) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", nargs="?", default="0.1.0-alpha.34")
+    parser.add_argument("version", nargs="?", default="0.1.0-alpha.35")
     package(parser.parse_args().version)

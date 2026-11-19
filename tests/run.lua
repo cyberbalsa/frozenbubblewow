@@ -1933,6 +1933,38 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             end
         end
     end)
+    test("editor samples mouse-up and keeps a held brush across the board edge",function()
+        local ui=fb.UI
+        local cursor,down=ui.Cursor,env.IsMouseButtonDown
+        local x,y,over,held=16,16,true,true
+        ui.Cursor=function() return x,y end
+        ui.board.IsMouseOver=function() return over end
+        env.IsMouseButtonDown=function(button) return held and button=="LeftButton" end
+        ui:StartEditor(nil,true,1,true); ui:SelectEditorColor(3)
+        local board=ui.board
+        board.scripts.OnMouseDown(board,"LeftButton")
+        board.scripts.OnMouseDown(board,"RightButton"); board.scripts.OnMouseUp(board,"RightButton")
+        eq(ui.stroke.button,"LeftButton")
+        x=80; board.scripts.OnMouseUp(board,"LeftButton")
+        eq(ui.editGame:Count(),3); eq(#ui.editorHistory,1); eq(ui.stroke,nil)
+        ui:UndoEditor()
+        x=80; board.scripts.OnMouseDown(board,"LeftButton")
+        x,over=-10,false; board.scripts.OnLeave(board); ui:UpdateEditor()
+        eq(ui.editGame:Count(),3)
+        x,y,over=240,72,true; ui:UpdateEditor()
+        x=208; board.scripts.OnMouseUp(board,"LeftButton")
+        eq(ui.editGame:Count(),5); eq(#ui.editorHistory,1); eq(ui.stroke,nil)
+        eq(ui.editGame.grid[fb.Engine.Key(3,8)],3); eq(ui.editGame.grid[fb.Engine.Key(3,7)],3)
+        ui:UndoEditor(); eq(ui.editGame:Count(),0)
+        -- A release elsewhere can arrive without a board mouse-up callback.
+        board.scripts.OnMouseDown(board,"LeftButton")
+        held=false; x=16; ui:UpdateEditor(); eq(ui.stroke,nil); eq(ui.editGame:Count(),1)
+        ui:UndoEditor()
+        board.scripts.OnMouseDown(board,"LeftButton")
+        ui:EditorDialog("help"); x=240; board.scripts.OnMouseUp(board,"LeftButton")
+        eq(ui.editGame:Count(),1); ui:CloseEditorDialog()
+        ui.Cursor=cursor; ui.board.IsMouseOver=nil; env.IsMouseButtonDown=down
+    end)
     test("editor opens a private campaign copy, previews the brush and browses saved sets",function()
         local ui=fb.UI
         local oldFocus=env.GetMouseFoci
@@ -1973,6 +2005,10 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:AcceptEditorDialog(); eq(ui.editorDialog,"confirm")
         ui.editorBack.scripts.OnClick(); assert(fb.db.custom[id])
         ui:EditorDialog("delete"); ui:AcceptEditorDialog(); ui:AcceptEditorDialog(); eq(fb.db.custom[id],nil)
+        ui:EditorDialog("delete"); eq(ui.editorDialog,"empty"); assert(ui.emptyLibrary.shown)
+        eq(ui.dialogSign:GetText(),"NO LEVELSET TO DELETE")
+        assert(ui.editorOK.shown and not ui.editorBack.shown and not ui.editorBrowser.shown)
+        ui.editorOK.scripts.OnClick(); eq(ui.editorDialog,nil)
         env.GetMouseFoci=oldFocus
     end)
     test("starting level browser previews the selected board and repeats arrow presses",function()
