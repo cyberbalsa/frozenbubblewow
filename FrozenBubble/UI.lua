@@ -81,6 +81,8 @@ local function canPauseGame()
     return FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match)
 end
 local K=FB.Controls
+local editorKeys={LEFT="prev",H="prev",P="prev",RIGHT="next",L="next",N="next",UP="first",DOWN="last",
+    A="append",I="insert",D="remove",["["]="left",["]"]="right",LEFTBRACKET="left",RIGHTBRACKET="right"}
 function U:Build()
     local A=FB.Animation
     local f=CreateFrame("Frame","FrozenBubbleWindow",UIParent,"BackdropTemplate")
@@ -131,10 +133,18 @@ function U:Build()
             b:SetPropagateKeyboardInput(true); self.keys={}; return
         end
         if self.editing then
-            local color=tonumber(key)
-            local used=color and color>=1 and color<=8
+            local color=FB.Integer(key,1,8)
+            local action=editorKeys[key]
+            local used=color or action or key=="S" or key=="O" or key=="F"
             b:SetPropagateKeyboardInput(not used)
-            if used and not InCombatLockdown() then self:SelectEditorColor(color) end
+            if used and not self.keys[key] then
+                self.keys[key]=true
+                if color then self:SelectEditorColor(color)
+                elseif action then self:EditorAction(action)
+                elseif key=="S" then self:SaveEditor()
+                elseif key=="O" then self.marketRemote=false; self:ShowMarket()
+                else self:ToggleFullWindow() end
+            end
             return
         end
         local shared=FB.LocalVersus.match
@@ -174,6 +184,9 @@ function U:Build()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
         if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
         elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
+        elseif FB.game and FB.game.customSet then
+            local game=FB.game
+            FB.StartCustomBoard(game.customSet,game.status=="won" and not game.customSet.builtin and 1 or game.customIndex)
         elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
         elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
@@ -190,10 +203,10 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"keys","help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
+    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="keys" and name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="editorText" and name~="keys" and name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
@@ -281,7 +294,10 @@ function U:Build()
     FB.MatchChat.Build(self,text)
     self.menuControl=button(self.toolbar,"Menu",16,728,90,function() self:ShowMenu() end)
     self.pauseControl=button(self.toolbar,"Pause",115,728,90,function() FB.TogglePause() end)
-    self.editButton=button(self.toolbar,"Edit level",16,687,110,function() self:StartEditor(self.playingCustomID) end)
+    self.editButton=button(self.toolbar,"Edit level",16,687,110,function()
+        local set=FB.game.customSet
+        if set then self:StartEditor(set.id,false,set.draftIndex or FB.game.customIndex) end
+    end)
     self.editButton:Hide()
     local chrome=CreateFrame("Frame",nil,f); chrome:SetAllPoints(); chrome:SetFrameLevel(self.layers.chrome)
     button(chrome,"X",976,4,30,function() f:Hide() end)
@@ -474,9 +490,33 @@ function U:BuildSolo()
     end)
     local pick=self.panels.pick
     text(pick,"Pick a starting level",0,24,22,340)
-    text(pick,"Start at an unlocked level (practice)",0,94,14,340)
-    self.level=input(pick,0,139,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
-    button(pick,"Play level",100,137,220,function() FB.StartCampaign(tonumber(self.level:GetText()) or 1) end)
+    self.pickSetTitle=text(pick,"",0,70,16,340); self.pickSetTitle:SetJustifyH("CENTER")
+    button(pick,"Previous set",0,104,164,function() self:PickSet(-1) end)
+    button(pick,"Next set",176,104,164,function() self:PickSet(1) end)
+    self.pickRange=text(pick,"",0,161,14,340)
+    self.level=input(pick,0,193,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
+    self.pickPlay=button(pick,"Play level",100,191,220,function()
+        local index=FB.Clamp(tonumber(self.level:GetText()) or 1,1,self.pickCount)
+        self.level:ClearFocus()
+        if self.pickID then FB.PlayCustom(self.pickID,index)
+        else FB.StartCustomBoard({boards=FB.Levels,title="Campaign practice",builtin=true},index) end
+    end)
+end
+function U:PickSet(delta)
+    local ids={}
+    for id in pairs(FB.db.custom) do ids[#ids+1]=id end
+    table.sort(ids,function(a,b)
+        local left,right=FB.db.custom[a].title,FB.db.custom[b].title
+        if left==right then return a<b end
+        return left<right
+    end)
+    self.pickPosition=((delta and self.pickPosition or 0)+(delta or 0))%(#ids+1)
+    self.pickID=ids[self.pickPosition]
+    local item=self.pickID and FB.db.custom[self.pickID]
+    self.pickCount=item and #FB.Community.Boards(item) or #FB.Levels
+    self.pickSetTitle:SetText(item and item.title or "Frozen Bubble")
+    self.pickRange:SetText("Starting board (1–"..self.pickCount..")")
+    self.level:SetText("1")
 end
 function U:BackFromChain()
     if self.chainMode=="local" then self:ShowMenu() else self:Panel("solo") end
@@ -540,6 +580,7 @@ function U:Panel(name)
     self.panels.scores:EnableKeyboard(name=="scores" and not self.combatInput)
     if name=="solo" then self:SelectSolo(1,true) end
     if name=="scores" then self:RefreshScores() end
+    if name=="pick" then self:PickSet() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
@@ -569,7 +610,7 @@ function U:Panel(name)
         self.hud:SetShown(name~="editor"); self.penguin:SetShown(name~="editor")
     end
     if name=="opponent" then self.hud:Show() end
-    self.editButton:SetShown(FB.game and FB.game.mode=="custom" and name=="game" or false)
+    self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
     if not gameplay and canPauseGame() then FB.game.paused=true end
 end
 function U:BuildHelp()
@@ -650,15 +691,28 @@ function U:RefreshMarket()
     for i,row in ipairs(self.marketRows) do
         local key=keys[(self.marketPage-1)*6+i]; local item=key and source[key]
         row.key=key; row.button:SetShown(item~=nil); row.edit:SetShown(item~=nil and not self.marketRemote)
-        row.label:SetText(item and (item.title.."\n|cff8eacbe"..(item.peer or item.author).."|r") or (i==1 and "No levels found. Browse or create one." or ""))
+        local count=item and (item.count or (item.boards and #item.boards))
+        row.label:SetText(item and (item.title..(count and (" ("..count..")") or "").."\n|cff8eacbe"..(item.peer or item.author).."|r") or (i==1 and "No levels found. Browse or create one." or ""))
         row.button:SetText(self.marketRemote and "Download" or "Play")
     end
 end
 function U:BuildEditor()
+    local prompt=self.panels.editorPrompt
+    text(prompt,"Save your changes before opening another set?",0,54,20,340)
+    local function proceed(save)
+        local target=self.pendingEditor
+        if not target then return end
+        self.pendingEditor=nil
+        if save and not self:SaveEditor() then self:Panel("editor"); return end
+        self:StartEditor(target.id,target.fresh,target.index,true)
+    end
+    button(prompt,"Save and open",0,150,150,function() proceed(true) end)
+    button(prompt,"Discard edits",165,150,150,function() proceed(false) end)
+    button(prompt,"Keep editing",75,206,165,function() self.pendingEditor=nil; self:Panel("editor") end)
     local p=self.panels.editor
     p:ClearAllPoints(); p:SetScale(1.6); p:SetSize(640,480); p:SetPoint("TOPLEFT",self.frame,"TOPLEFT")
     p:EnableMouse(false)
-    local title=text(p,"Level editor",217,9,15,192); title:SetJustifyH("CENTER")
+    self.editorHeading=text(p,"Level editor",217,9,15,192); self.editorHeading:SetJustifyH("CENTER")
     self.editorPalette={}
     for i=1,8 do
         local color=i
@@ -676,25 +730,31 @@ function U:BuildEditor()
     button(p,"Clear",77,146,64,function()
         if next(self.editGame.grid) then self:RememberEditor(); self.editGame.grid={} end
     end)
-    text(p,"Drag to paint.\nRight-drag to erase.\n\nWheel or 1–8 changes color.",13,227,13,125)
-    text(p,"Level name",493,43,12,135)
+    text(p,"Drag to paint. Right-drag to erase.\nWheel or 1–8 changes color.",190,370,12,252):SetJustifyH("CENTER")
+    local actions={
+        {"Prev","prev","Next","next"},{"First","first","Last","last"},
+        {"Insert","insert","Append","append"},{"Move <","left","Move >","right"},
+    }
+    for row,action in ipairs(actions) do
+        for col=1,3,2 do
+            local command=action[col+1]
+            button(p,action[col],10+(col-1)*34,224+(row-1)*33,65,function() self:EditorAction(command) end)
+        end
+    end
+    button(p,"Remove board",10,356,133,function() self:EditorAction("remove") end)
+    text(p,"Set name",493,43,12,135)
     self.levelTitle=input(p,493,61,135,"My level"); self.levelTitle:SetMaxLetters(36)
     button(p,"Save",493,94,135,function() self:SaveEditor() end)
     button(p,"Test level",493,127,135,function() self:TestEditor() end)
     button(p,"Publish",493,160,135,function()
         local id=self:SaveEditor(); if id then FB.Community.Publish(id,FB.Community.state~="ready") end
     end)
-    button(p,"New level",493,193,135,function() self:StartEditor(nil,true) end)
-    text(p,"Level code",493,266,12,136)
-    self.levelCode=input(p,493,282,135,""); self.levelCode:SetMaxLetters(98)
-    button(p,"Export",493,314,65,function() self.levelCode:SetText(self.editGame:Pack()); self.levelCode:SetFocus(); self.levelCode:HighlightText() end)
-    button(p,"Import",563,314,65,function()
-        local grid=FB.Community.Validate(self.levelCode:GetText())
-        if grid then
-            self:RememberEditor(); self.editGame.grid=grid; self.levelCode:ClearFocus()
-        else self.editorStatus:SetText("Invalid code. Use ten rows connected to the ceiling.") end
-    end)
-    button(p,"Delete saved level",493,365,135,function()
+    button(p,"New set",493,193,135,function() self:StartEditor(nil,true) end)
+    button(p,"Open library",493,232,135,function() self.marketRemote=false; self:ShowMarket() end)
+    button(p,"Export",493,285,65,function() self:OpenEditorText(true) end)
+    button(p,"Import",563,285,65,function() self:OpenEditorText(false) end)
+    self:BuildEditorText(text,button,fill)
+    button(p,"Delete saved set",493,365,135,function()
         if self.editID then
             FB.db.custom[self.editID]=nil; self.editID=nil; self.editorStatus:SetText("Deleted from your library. Draft kept open.")
         end
@@ -720,42 +780,6 @@ function U:SelectEditorColor(color)
         FB.SetBubbleTexture(tile.icon,i); tile.ring:SetShown(i==color)
     end
     self.editorDirty=true
-end
-function U:StartEditor(id,fresh)
-    if not FB.CanStart() then return end
-    if FB.game then FB.game.paused=true end
-    if not self.editGame or fresh or id and self.editID~=id then
-        self.editID=id; self.editGame=E.New({},1,"custom"); self.editorHistory={}
-        local item=id and FB.db.custom[id]
-        if item then self.editGame.grid=E.Unpack(item.data) end
-        self.levelTitle:SetText(item and item.title or "My level"); self.levelCode:SetText("")
-        self.editorStatus:SetText("Connect the bubbles to the ceiling.")
-    end
-    self:Panel("editor"); self.frame:Show()
-end
-function U:RememberEditor()
-    local history=self.editorHistory
-    history[#history+1]=self.editGame:Pack()
-    if #history>32 then table.remove(history,1) end
-    self.editorDirty=true; self.editorStatus:SetText("")
-end
-function U:UndoEditor()
-    local previous=table.remove(self.editorHistory)
-    if previous then self.editGame.grid=E.Unpack(previous); self.editorDirty=true end
-end
-function U:TestEditor()
-    local data=self.editGame:Pack()
-    if not FB.Community.Validate(data) then
-        self.editorStatus:SetText("Connect at least one bubble to the ceiling, and attach every group."); return
-    end
-    FB.StartCustom(data)
-end
-function U:SaveEditor()
-    if not self.editGame then return end
-    local id,err=FB.Community.Save(self.levelTitle:GetText(),self.editGame:Pack())
-    self.editorStatus:SetText(id and "Saved. Publish to offer this level to the community." or err)
-    if id then self.editID=id end
-    return id
 end
 function U:Cursor()
     local x,y=GetCursorPosition(); local scale=self.board:GetEffectiveScale()
@@ -1030,7 +1054,7 @@ function U:Update(dt)
     if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
     if self.editing then self:UpdateEditor() else self:RenderBoard(self.board,game) end
     self.overlayText:SetText(""); self.overlaySub:SetText("")
-    local canAdvance=not self.editing and game and game.status=="won" and game.mode=="campaign" and FB.level<100
+    local canAdvance=not self.editing and game and game.status=="won" and (game.mode=="campaign" and FB.level<100 or game.customSet and game.customIndex<#game.customSet.boards)
     self.nextButton:SetShown(canAdvance or false)
     local ended=not self.editing and game and game.status~="playing"
     local shared=FB.LocalVersus.match
@@ -1057,7 +1081,7 @@ function U:Update(dt)
     local finished=ended and game.status=="finished"
     self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
     if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
-    self.retryButton:SetText(shared and "Next round" or versus and "Back to lobby" or "Try again")
+    self.retryButton:SetText(game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
     self.pauseArt:Hide()
     local training=game and game.mode=="training" and not self.editing
@@ -1071,6 +1095,7 @@ function U:Update(dt)
         self.footer:SetText("Paint your layout, then Save, Test, or Publish.")
     elseif game then
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
+        if game.customSet then label=game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards end
         self.hud:SetText(shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetShown(not training and game.mode~="versus")
@@ -1083,7 +1108,7 @@ function U:Update(dt)
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
             FB.Animation.Frame(self.resultArt,art,1)
-            self.resultDetail:SetText(shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
+            self.resultDetail:SetText(game.customSet and (game.status=="won" and (canAdvance and "Board cleared" or "Set cleared") or "Try this board again") or shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end

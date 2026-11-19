@@ -55,21 +55,28 @@ function FB.StartSolo(mode,chainReaction)
     FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction); FB.run=nil; FB.level=1
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
 end
-function FB.StartCustom(data,id)
-    local grid=FB.Engine.Unpack(data)
-    if not grid or not FB.CanStart() then return end
-    FB.LocalVersus.match=nil
-    FB.game=FB.Engine.New({},FB.GameSeed(),"custom"); FB.game.grid=grid
-    for key=1,FB.Engine.ROWS*8 do
-        if grid[key] then FB.game.attachedOrder[#FB.game.attachedOrder+1]=key end
+function FB.StartCustomBoard(set,index)
+    local board=set.boards[index]
+    local grid=not set.builtin and FB.Engine.Unpack(board)
+    if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
+    FB.LocalVersus.match=nil; FB.run=nil
+    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom")
+    if grid then
+        FB.game.grid=grid
+        for key=1,FB.Engine.ROWS*8 do
+            if grid[key] then FB.game.attachedOrder[#FB.game.attachedOrder+1]=key end
+        end
+        FB.game.current=FB.game:Color(); FB.game.next=FB.game:Color()
     end
-    FB.game.current=FB.game:Color(); FB.game.next=FB.game:Color(); FB.run=nil
-    FB.UI.playingCustomID=id
+    FB.game.customSet,FB.game.customIndex=set,index
     FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
 end
-function FB.PlayCustom(id)
+function FB.StartCustom(data,id)
+    FB.StartCustomBoard({boards={data},id=id,title="Custom level"},1)
+end
+function FB.PlayCustom(id,index)
     local item=FB.db.custom[id]
-    if item then FB.StartCustom(item.data,id) end
+    if item then FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1) end
 end
 function FB.StartVersus(matchSeed,chainReaction)
     FB.LocalVersus.match=nil
@@ -90,8 +97,11 @@ function FB.Fire()
     if FB.game:Shoot() then FB.Sound("launch") end
 end
 function FB.NextLevel()
-    if not FB.game or FB.game.mode~="campaign" or FB.game.status~="won" or FB.level>=100 then return end
-    FB.StartCampaign(FB.level+1,FB.run)
+    local game=FB.game
+    if not game or game.status~="won" then return end
+    if game.customSet and game.customIndex<#game.customSet.boards then
+        FB.StartCustomBoard(game.customSet,game.customIndex+1)
+    elseif game.mode=="campaign" and FB.level<100 then FB.StartCampaign(FB.level+1,FB.run) end
 end
 local function finishSolo()
     local game=FB.game
@@ -164,6 +174,7 @@ events:SetScript("OnEvent",function(_,event,...)
     elseif event=="PLAYER_REGEN_ENABLED" then
         FB.UI:SetCombatInput(false)
     elseif event=="PLAYER_LOGOUT" then
+        FB.UI:StoreEditorDraft()
         FB.StopGameMusic()
         if FB.db.checkpoint and FB.game and FB.game.mode=="campaign" and FB.game.status=="playing" then
             -- Restarting a partially played board is practice, preventing checkpoint score farming.

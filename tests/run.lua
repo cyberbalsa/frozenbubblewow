@@ -428,6 +428,50 @@ test("P2P catalog and requested level download persist without execution",functi
     eq(b.db.custom[id].data,g:Pack()); eq(b.db.custom[id].author,"Alice-TestRealm")
     assert(not b.db.custom[id].published)
 end)
+test("desktop level-file import preserves colors, row offsets, whitespace and board order",function()
+    local c=a.Community
+    local first=E.New({"12345678","8765432"},1):Pack()
+    local second=E.New({"...8...."},1):Pack()
+    local written=c.LevelText({first,second})
+    assert(written:find("0   1   2   3   4   5   6   7\n  7   6   5   4   3   2   1",1,true))
+    local read=c.Decode(written:gsub("\n","\r\n")); eq(#read,2); eq(read[1],first); eq(read[2],second)
+    eq(c.Decode("0 1 2 3 4 5 6 7\n  7 6 5 4 3 2 1")[1],first)
+    eq(c.Decode("0 1 2 3 4 5 6 8"),nil); eq(c.Decode("0 1 2 3 4 5 6 7\n0 1"),nil)
+end)
+test("ordered sets recover lost pages and commit only the requested complete set",function()
+    local host,guest=client("Levels"),client("Reader")
+    host.Community.Join(); guest.Community.Join(); tick(2)
+    local boards={}
+    for i=1,100 do
+        local board=E.New({},1); board.grid[1]=i%8+1; board.grid[2]=math.floor(i/8)%8+1
+        boards[i]=board:Pack()
+    end
+    local id=assert(host.Community.SaveSet("Long set",boards))
+    local key=host.PlayerName()..":"..id
+    host.Community.Publish(id,true); guest.Community.Chat(host.lastManual,host.PlayerName(),guest.Community.name)
+    eq(guest.Community.catalog[key].count,100)
+    drops.BOARDS=true; guest.Community.Request(key); tick(1)
+    assert(not guest.db.custom[id])
+    guest.Community.Receive("1|BOARDS|"..id.."|3|"..boards[3]..boards[4],"WHISPER",host.PlayerName())
+    guest.Community.Receive("1|BOARDS|"..id.."|1|"..boards[1]..boards[2],"WHISPER","Other-TestRealm")
+    eq(#guest.Community.pending[key].boards,0)
+    drops.GETBOARDS=true
+    for _=1,120 do
+        tick(1)
+        if guest.db.custom[id] then break end
+    end
+    assert(guest.db.custom[id]); eq(guest.Community.pending[key],nil)
+    eq(guest.db.custom[id].author,host.PlayerName()); eq(guest.db.custom[id].published,false)
+    for n,data in ipairs(guest.db.custom[id].boards) do eq(data,boards[n]) end
+    eq(#guest.db.custom[id].boards,100)
+    local imported=host.Community.Decode(host.Community.Code(boards))
+    eq(table.concat(imported),table.concat(boards))
+    local wrong="s123"; key=host.PlayerName()..":"..wrong
+    guest.Community.Receive("1|LEVELSET|"..wrong.."|Fake|2","CHANNEL",host.PlayerName())
+    guest.Community.Request(key)
+    guest.Community.Receive("1|BOARDS|"..wrong.."|1|"..boards[1]..boards[2],"WHISPER",host.PlayerName())
+    eq(guest.Community.pending[key],nil); eq(guest.db.custom[wrong],nil)
+end)
 test("unsolicited or corrupt level downloads cannot write the library",function()
     b.Community.Receive("1|LEVELDATA|12|"..string.rep("1",98),"WHISPER","Alice-TestRealm")
     eq(b.db.custom["12"],nil)
@@ -527,7 +571,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("UI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("UI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -854,6 +898,46 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         end
         fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),2)
         fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),1)
+    end)
+    test("edit, reorder, export and play a custom set through its final board",function()
+        local ui=fb.UI
+        ui:StartEditor(nil,true,nil,true); ui.levelTitle:SetText("Test set")
+        ui:SelectEditorColor(1); ui:Paint("LeftButton",16,16)
+        local first=ui.editGame:Pack()
+        ui:EditorAction("append"); eq(ui.editIndex,2); eq(ui.editGame:Count(),0)
+        ui:SelectEditorColor(2); ui:Paint("LeftButton",16,16); local second=ui.editGame:Pack()
+        ui:EditorAction("insert"); eq(ui.editIndex,2); eq(#ui.editBoards,3)
+        ui:SelectEditorColor(3); ui:Paint("LeftButton",16,16); local third=ui.editGame:Pack()
+        ui:EditorAction("right"); eq(ui.editIndex,3); eq(ui.editGame.grid[1],3)
+        ui:EditorAction("first"); eq(ui.editGame.grid[1],1)
+        ui:EditorAction("remove"); eq(ui.editGame.grid[1],2); ui:UndoEditor(); eq(ui.editIndex,1)
+        eq(fb.Community.Code(ui:EditorBoards()),"FBSET1:"..first..second..third)
+        ui:OpenEditorText(true); eq(ui.screen,"editorText")
+        eq(ui.levelCode:GetText(),fb.Community.LevelText({first,second,third}))
+        ui.codeFormat.scripts.OnClick(); eq(ui.levelCode:GetText(),fb.Community.Code({first,second,third}))
+        ui:OpenEditorText(false); ui.levelCode:SetText("not a level"); ui.codeImport.scripts.OnClick(); eq(ui.screen,"editorText")
+        ui.levelCode:SetText(fb.Community.LevelText({first,second,third})); ui.codeImport.scripts.OnClick(); eq(ui.screen,"editor")
+        ui:ImportEditor("FBSET1:"..first..string.rep("0",98)); eq(#ui.editBoards,3)
+        ui:StoreEditorDraft(); ui.editGame=nil; ui:StartEditor(); eq(#ui.editBoards,3)
+        ui:StartEditor(nil,true); eq(ui.screen,"editorPrompt"); assert(ui.pendingEditor.fresh)
+        ui:Panel("editor"); local id=assert(ui:SaveEditor())
+        local cp,unlocked=fb.db.checkpoint,fb.db.unlocked
+        fb.PlayCustom(id)
+        for i=1,3 do
+            eq(fb.game.grid[1],i); fb.game.status="won"; ui:Update(0.02)
+            if i<3 then assert(ui.nextButton.shown); ui.nextButton.scripts.OnClick() end
+        end
+        assert(not ui.nextButton.shown); eq(ui.retryButton.text,"Replay set")
+        ui.retryButton.scripts.OnClick(); eq(fb.game.grid[1],1)
+        ui:Panel("pick"); ui:PickSet(1); eq(ui.pickID,id)
+        ui.level:SetText("2"); ui.pickPlay.scripts.OnClick(); eq(fb.game.grid[1],2)
+        fb.game.status="lost"; ui.retryButton.scripts.OnClick(); eq(fb.game.customIndex,2)
+        ui.editButton.scripts.OnClick(); eq(ui.editIndex,2); eq(ui.editGame.grid[1],2)
+        ui:Panel("pick"); ui.level:SetText("99"); ui.pickPlay.scripts.OnClick()
+        eq(fb.game.customIndex,99); assert(fb.game.customSet.builtin and not ui.editButton.shown)
+        fb.game.status="won"; eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
+        eq(fb.game.customIndex,100); eq(fb.db.checkpoint,cp); eq(fb.db.unlocked,unlocked)
+        fb.db.custom[id]=nil; ui:StartEditor(nil,true,nil,true)
     end)
     test("editor strokes interpolate across cells, undo together, and survive testing",function()
         fb.UI:StartEditor(nil,true); fb.UI:SelectEditorColor(7)

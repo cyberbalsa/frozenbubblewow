@@ -1,3 +1,9 @@
+# 0.1.0-alpha.12
+
+- Build an ordered set of up to 100 boards in the editor. Insert, append, move and remove boards. Undo restores a deleted board or a paint stroke. Your open draft survives logout.
+- Import and export the desktop game’s level-file format. Existing WoW single-board codes still work. Publish shares a whole set, and downloads appear in the library after all boards arrive and pass validation. Both peers need alpha 12 or later for sets.
+- Pick a starting level opens any campaign board or saved set for practice. Next level advances through a set in order. Retry restarts the current board. Practice leaves campaign checkpoints and highscores intact.
+
 # 0.1.0-alpha.11
 
 - Click Graphics on the title screen to cycle the original three graphics levels. Full shows the shooter penguins. Medium keeps the cannon and bubble effects. Low replaces the cannon with the two-pixel aim marker and still shows returning chain bubbles.
