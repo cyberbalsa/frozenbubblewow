@@ -1,3 +1,7 @@
+# 0.1.0-alpha.49
+
+- Fixed the “Font not set” error when opening Multiplayer. Lobby and arena room rows now apply their font before displaying their labels.
+
 # 0.1.0-alpha.48
 
 - Added the original **Avoid instant-death penalties** option to training, shared-keyboard versus, duels and arenas. Incoming bubbles use a safe landing column when space allows. A volley can still end the round after the last safe space fills.

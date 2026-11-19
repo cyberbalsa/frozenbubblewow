@@ -1225,12 +1225,21 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     end
     methods.SetScript=function(f,event,fn) f.scripts[event]=fn end
     methods.GetScript=function(f,event) return f.scripts[event] end
-    methods.CreateFontString=function(f) return frame(nil,nil,f) end; methods.CreateTexture=methods.CreateFontString
+    methods.CreateFontString=function(f,_,_,template)
+        local region=frame(nil,nil,f)
+        region.fbIsFontString=true
+        region.fbFont=template
+        return region
+    end
+    methods.CreateTexture=function(f) return frame(nil,nil,f) end
     methods.SetSize=function(f,w,h) f.width=w; f.height=h end
     methods.SetTexCoord=function(f,...) f.fbCoords=table.concat({...},",") end
     methods.SetDrawLayer=function(f,layer,sub) f.fbLayer,f.fbSub=layer,sub end
     methods.SetFont=function(f,path,size) f.fbFont,f.fbFontSize=path,size end
-    methods.SetText=function(f,s) f.text=tostring(s) end
+    methods.SetText=function(f,s)
+        assert(not f.fbIsFontString or f.fbFont,"FontString:SetText(): Font not set")
+        f.text=tostring(s)
+    end
     methods.GetText=function(f) return f.text end
     methods.GetWidth=function(f) return f.width end; methods.GetHeight=function(f) return f.height end
     methods.SetFrameLevel=function(f,level) f.fbZ=level end

@@ -166,9 +166,9 @@ local function add(page,id,label,action,enabled)
     end
     page.count=index; page.byID[id]=row
     row.id,row.action,row.available=id,action,enabled~=false
-    row.caption:SetText(label)
     local face=row.available and font or italic
     if row.fbFace~=face then lettering(row.caption,face); row.fbFace=face end
+    row.caption:SetText(label)
     row:SetEnabled(row.available); row:Show()
 end
 local function listPlayers(page,rooms)
