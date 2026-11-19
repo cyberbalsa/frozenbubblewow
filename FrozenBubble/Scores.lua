@@ -5,6 +5,7 @@ function S.Label(mode)
     return mode=="training-chain" and "Training (chain)" or (mode:gsub("^%l",string.upper))
 end
 function S.Init(db)
+    if not FB.Series.Valid(db.versusLimit) then db.versusLimit=db.schema and 0 or 5 end
     db.schema=1
     db.scores=db.scores or {}; db.peers=db.peers or {}; db.custom=db.custom or {}
     db.unlocked=FB.Clamp(tonumber(db.unlocked) or 1,1,100)

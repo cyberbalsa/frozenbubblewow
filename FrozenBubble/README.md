@@ -10,6 +10,8 @@ Choose **Keys** on the main menu to rebind both players. F fits the game to the 
 
 Use Multiplayer → Join community channel for discovery. The channel is called `FrozenBubbleForever`. If automatic addon messages are blocked, use **Announce queue**, **Share my best**, **Browse community**, or **Publish** to send a discovery message directly from a click. Matches and requested level downloads use addon whispers. All players must have the addon installed, and Blizzard's channel visibility and message restrictions apply.
 
+In **Multiplayer**, left-click **Victory limit** to raise the target or right-click to lower it. New profiles start at first to five. Upgrades keep Unlimited. Matchmaking pairs players who chose the same limit and chain rules. After both boards finish animating, either player can choose **Next round**. If the other player has the result screen in focus, both start a fresh board with the series score carried over. **Back to lobby** leaves a finished round without a forfeit. Both players need alpha 13 or later for series. Choose Unlimited to play a single round against an older client.
+
 Type **/fb scores** to see campaign board previews and the two training rankings. Campaign clears rank first, followed by the furthest level reached and then the quickest time. Use the Personal button to switch to community scores. Hover over a score to see the character’s realm.
 
 Click **Graphics** on the title screen to cycle between Full, Low and Medium. Full shows the animated penguins, Medium keeps the cannon and bubble effects, and Low uses the original aiming dot. Use **Options** for sound and display controls.

@@ -235,8 +235,8 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
-    fb.db={}; fb.Scores.Init(fb.db); fb.Debug.Init()
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
+    fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
     if fullUI then return fb,env,loadModule end
@@ -380,6 +380,49 @@ test("manual chain challenge identifies rules and standard offers still use the 
     guest.Net.Receive(FB.PREFIX,"1|STATE|"..m.id.."|999|1|0|0|0|"..packed,"WHISPER","Faye-TestRealm")
     eq(m.remoteShots,1); eq(m.remote:Pack(),packed)
     host.Net.Leave(); guest.Net.Leave(); tick(1)
+end)
+test("victory limits match identical queues and both clients replay a fresh board after dropped readiness",function()
+    local h,j=client("Arena"),client("Basin")
+    h.db.versusChains,j.db.versusChains=true,true
+    h.db.versusLimit,j.db.versusLimit=2,3
+    h.Net.SetQueue(true); j.Net.SetQueue(true); tick(10)
+    assert(h.Net.queue and j.Net.queue and not h.Net.match and not j.Net.match)
+    j.Net.SetQueue(false); j.db.versusLimit=2; j.Net.SetQueue(true); tick(10)
+    local first=h.Net.match
+    assert(first.host and first.capable and j.Net.match.capable); eq(first.series.limit,2)
+    eq(first.round,1); eq(j.Net.match.series.limit,2)
+    local firstBoard=h.game:Pack()
+    j.game.status="lost"; tick(4)
+    eq(first.series.wins,1); eq(j.Net.match.series.losses,1)
+    local ready=false
+    j.UI={CanAutoRematch=function() return ready end,RefreshLobby=function() end}
+    drops.AGAIN=true; drops.ROUNDSTART=true; drops.READY=true; drops.GO=true
+    h.Series.Ready(); tick(5)
+    eq(h.Net.match,first); assert(j.Net.match.peerReady and not j.Net.match.ready)
+    ready=true; tick(10)
+    local m=h.Net.match
+    eq(m.phase,"playing"); eq(j.Net.match.phase,"playing"); eq(m.id,j.Net.match.id)
+    assert(m.id~=first.id and h.game:Pack()~=firstBoard and h.game.chainReaction)
+    eq(h.game:Pack(),j.game:Pack()); eq(m.round,2); eq(m.series.wins,1)
+    h.Net.Receive(h.PREFIX,"1|END|"..first.id.."|lost","WHISPER",j.PlayerName())
+    h.Net.Receive(h.PREFIX,"1|AGAIN|"..first.id.."|lost","WHISPER",j.PlayerName())
+    eq(h.db.wins,1); eq(h.game.status,"playing")
+    j.game.status="lost"; tick(4)
+    eq(m.series.wins,2); eq(j.Net.match.series.losses,2)
+    assert(h.Series.Complete(m) and not j.Series.CanContinue(j.Net.match))
+    eq(h.Series.Caption(m),"Series won · 2–0")
+    h.Series.Ready(); tick(3); eq(h.Net.match,m); eq(h.db.wins,2)
+end)
+test("a draw gives neither player a round and a departure closes a pending rematch",function()
+    local h,j=client("Cairn"),client("Dune")
+    h.db.versusLimit=1; h.Net.Challenge(j.PlayerName()); tick(2); j.Net.Accept(); tick(4)
+    h.Net.Finish("lost","finished",true); j.Net.Finish("lost","finished",true); tick(4)
+    eq(h.Net.match.result,"draw"); eq(j.Net.match.result,"draw")
+    eq(h.Net.match.series.losses,0); eq(j.Net.match.series.losses,0)
+    assert(h.Series.CanContinue(h.Net.match) and not h.Series.Complete(h.Net.match))
+    j.Series.Ready(); tick(2); assert(h.Net.match.peerReady)
+    h.Net.Leave(); tick(3)
+    assert(j.Net.match.departed and not j.Series.CanContinue(j.Net.match)); eq(j.db.wins,0); eq(h.db.losses,0)
 end)
 test("remote rising penalties round-trip all seven lanes; malformed frames are ignored",function()
     for offset=0,1 do
@@ -896,8 +939,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             if result=="lost" then eq(fb.UI.board.current.fbAsset,"frozen"); assert(not fb.UI.board.nextRim.shown) end
             fb.UI.retryButton.scripts.OnClick(); eq(fb.UI.screen,"lobby"); eq(fb.Net.match,nil)
         end
-        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),2)
-        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),1)
+        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),12)
+        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),11)
     end)
     test("edit, reorder, export and play a custom set through its final board",function()
         local ui=fb.UI
@@ -938,6 +981,29 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.game.status="won"; eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
         eq(fb.game.customIndex,100); eq(fb.db.checkpoint,cp); eq(fb.db.unlocked,unlocked)
         fb.db.custom[id]=nil; ui:StartEditor(nil,true,nil,true)
+    end)
+    test("series rematch controls use round victories and only auto-acknowledge a visible focused result",function()
+        local ui=fb.UI
+        local oldMouse=env.GetMouseFoci
+        fb.StartVersus(51,true)
+        local m={id="51-1",peer="Remote-TestRealm",host=true,phase="playing",capable=true,limit=5,
+            round=4,seed=51,series={id="51-1",limit=5,wins=1,losses=2},remote=fb.Engine.New(nil,51,"versus",true)}
+        fb.Net.match=m
+        fb.game.grid={} -- The loser still has a full board to freeze.
+        fb.Net.Finish("won","Round won",false)
+        fb.game:Update(0.02); m.remote:Update(0.02)
+        ui:Update(0.02); assert(not ui.result.shown)
+        for _=1,200 do fb.game:Update(0.02); m.remote:Update(0.02) end
+        ui:Update(0.02); assert(ui.result.shown and ui.leaveSeries.shown)
+        eq(ui.retryButton.text,"Next round"); eq(ui.hud.text,fb.PlayerName().."  ·  2")
+        eq(ui.remoteLabel.text,"Remote-TestRealm  ·  2"); eq(ui.resultDetail.text,"Round 4 · First to 5")
+        env.GetMouseFoci=function() return {} end
+        assert(not ui:CanAutoRematch()); ui:ShowMenu(); assert(not ui:CanAutoRematch())
+        ui:ShowGame(); env.GetMouseFoci=function() return {ui.board} end
+        assert(ui:CanAutoRematch()); ui.retryButton.scripts.OnClick(); assert(m.ready)
+        ui:Update(0.02); eq(ui.retryButton.text,"Waiting for opponent…")
+        ui.leaveSeries.scripts.OnClick(); eq(fb.Net.match,nil); eq(ui.screen,"lobby")
+        env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
     end)
     test("editor strokes interpolate across cells, undo together, and survive testing",function()
         fb.UI:StartEditor(nil,true); fb.UI:SelectEditorColor(7)

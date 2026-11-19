@@ -147,6 +147,12 @@ function U:Build()
             end
             return
         end
+        if self:CanAutoRematch() and FB.Series.CanContinue(FB.Net.match)
+            and (key=="ENTER" or key=="SPACE" or key==K.keys[3]) then
+            b:SetPropagateKeyboardInput(false)
+            if not self.keys[key] then self.keys[key]=true; FB.Series.Ready() end
+            return
+        end
         local shared=FB.LocalVersus.match
         local action=(shared and K.shared or K.solo)[key]
         if action==10 and (not FB.Net.match or FB.Net.match.phase~="playing") then action=nil end
@@ -188,9 +194,12 @@ function U:Build()
             local game=FB.game
             FB.StartCustomBoard(game.customSet,game.status=="won" and not game.customSet.builtin and 1 or game.customIndex)
         elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
+        elseif FB.Series.CanContinue(FB.Net.match) then FB.Series.Ready()
         elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
     end)
+    self.leaveSeries=button(self.result,"Back to lobby",140,317,246,function() FB.Net.Leave(); self:ShowLobby() end)
+    self.leaveSeries:Hide()
     self.resultScores=button(self.result,"View highscores",140,317,246,function()
         if FB.game and FB.game.scoreEntry then self:ShowScores(FB.game.scoreEntry) end
     end)
@@ -621,6 +630,10 @@ function U:BuildHelp()
     text(p,"Match 3 or more of the same color. Bubbles disconnected from the ceiling fall. The ceiling drops every 9 solo shots; after 10.5 seconds, the launcher fires automatically.",0,287,13,350)
     text(p,"In versus, large clears send bubbles to the other board. Keep yours above the danger line to win. P pauses shared-keyboard games. Online matches keep running when you hide the window.",0,363,13,350,muted)
 end
+function U:CanAutoRematch()
+    return self.screen=="opponent" and self.frame:IsShown() and self.result:IsShown() and self.resultGame==FB.game and not self.inactive
+        and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+end
 function U:BuildLobby()
     local p=self.panels.lobby
     text(p,"MULTIPLAYER",0,0,16,350)
@@ -641,7 +654,13 @@ function U:BuildLobby()
     self.accept=button(p,"Accept",0,260,105,function() FB.Net.Accept() end)
     button(p,"Leave / forfeit",118,260,130,function() FB.Net.Leave() end)
     button(p,"View match",255,260,90,function() self:Panel("opponent") end)
-    self.peerText=text(p,"",0,307,12,350,muted)
+    self.victoryLimit=button(p,"",0,300,345,function(_,which)
+        if FB.Net.queue or FB.Net.match then return end
+        FB.db.versusLimit=FB.Series.Cycle(FB.db.versusLimit,which=="RightButton" and -1 or 1)
+        self:RefreshLobby()
+    end)
+    self.victoryLimit:RegisterForClicks("LeftButtonUp","RightButtonUp")
+    self.peerText=text(p,"",0,339,12,350,muted)
 end
 function U:ShowLobby() self.frame:Show(); self:Panel("lobby"); self:RefreshLobby() end
 function U:RefreshLobby()
@@ -649,13 +668,16 @@ function U:RefreshLobby()
     self.lobbyNotice:SetText(FB.Net.notice or "Queue to match another player, or enter Player-Realm to challenge a friend.")
     local chains=FB.db.versusChains
     if FB.Net.match then chains=FB.Net.match.chainReaction end
+    local limit=FB.Net.match and FB.Net.match.limit or FB.db.versusLimit
+    self.victoryLimit:SetText("Victory limit: "..FB.Series.Label(limit))
+    self.victoryLimit:SetEnabled(not FB.Net.queue and not FB.Net.match)
     self.versusRules:SetText(chains and "Chain reactions on" or "Chain reactions off")
     self.versusRules:SetEnabled(not FB.Net.queue and not FB.Net.match)
     self.accept:SetEnabled(FB.Net.match and FB.Net.match.phase=="invite" or false)
     local labels={offline="Not joined",joining="Joining…",checking="Checking delivery…",ready="Addon channel delivery verified",manual="Addon channel blocked: use click-to-announce",unavailable="Channel unavailable: retry Join"}
     self.channelStatus:SetText("FrozenBubbleForever\n"..(labels[FB.Community.state] or FB.Community.state))
     local peers={}
-    for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name..(peer.chainReaction and " (chain)" or "") end end
+    for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name..(peer.chainReaction and " (chain)" or "")..(peer.limit and peer.limit>0 and (" · first to "..peer.limit) or "") end end
     table.sort(peers)
     self.peerText:SetText("Queued players seen: "..#peers.."\n"..table.concat(peers,"\n",1,math.min(5,#peers)).."\n\nChannel reach depends on your server / ruleset. Both players need this addon.")
 end
@@ -1064,12 +1086,20 @@ function U:Update(dt)
     local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and remote)
     local ready=ended
     if ended and not FB.db.reducedMotion then
-        if winner and FB.db.graphicsLevel==1 then
+        if winner then
             local loser=winner==game and remote or game
             ready=loser and loser.endOrder and loser.endIndex>=#loser.endOrder
-        elseif winner then ready=winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
-        elseif game.status=="lost" or game.status=="draw" then ready=game.endOrder and game.endIndex>=#game.endOrder end
+            if FB.db.graphicsLevel>1 then
+                ready=ready and winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
+            end
+        elseif game.status=="lost" or game.status=="draw" then
+            ready=game.endOrder and game.endIndex>=#game.endOrder
+            if game.status=="draw" and remote then
+                ready=ready and remote.endOrder and remote.endIndex>=#remote.endOrder
+            end
+        end
     end
+    self.resultGame=game
     self.result:SetShown(ready or false)
     self.resultScores:SetShown(ended and game.scoreEntry~=nil or false)
     self.winnerName:SetShown(winner and not shared or false)
@@ -1081,7 +1111,12 @@ function U:Update(dt)
     local finished=ended and game.status=="finished"
     self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
     if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
-    self.retryButton:SetText(game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or "Try again")
+    local series=match and match.series
+    local canRematch=FB.Series.CanContinue(match)
+    local restarting=match and (match.phase=="restart" or match.phase=="barrier" and match.parent~=nil)
+    self.leaveSeries:SetShown(ended and (canRematch or restarting) or false)
+    self.retryButton:SetEnabled(not restarting and not (canRematch and match.ready))
+    self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
     self.pauseArt:Hide()
     local training=game and game.mode=="training" and not self.editing
@@ -1096,7 +1131,7 @@ function U:Update(dt)
     elseif game then
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
         if game.customSet then label=game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards end
-        self.hud:SetText(shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
+        self.hud:SetText(shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetShown(not training and game.mode~="versus")
         self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
@@ -1108,7 +1143,7 @@ function U:Update(dt)
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
             FB.Animation.Frame(self.resultArt,art,1)
-            self.resultDetail:SetText(game.customSet and (game.status=="won" and (canAdvance and "Board cleared" or "Set cleared") or "Try this board again") or shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
+            self.resultDetail:SetText(game.customSet and (game.status=="won" and (canAdvance and "Board cleared" or "Set cleared") or "Try this board again") or shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and FB.Series.Caption(match) or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
@@ -1118,7 +1153,7 @@ function U:Update(dt)
         end
         self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)
-        self.remoteLabel:SetText(shared and tostring(shared.wins[2]) or match and (match.peer.."  ·  "..(match.remote and match.remote.score or 0)) or "No active match")
+        self.remoteLabel:SetText(shared and tostring(shared.wins[2]) or match and (match.peer.."  ·  "..(series and series.losses or match.remote and match.remote.score or 0)) or "No active match")
     end
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then

@@ -1,3 +1,9 @@
+# 0.1.0-alpha.13
+
+- Select a victory limit in Multiplayer before queuing or challenging a friend. Left-click to raise it or right-click to lower it. New players start at first to five. Existing profiles keep Unlimited so they can still play older opponents.
+- Either player can choose Next round once both boards finish animating. A focused opponent at the result screen joins automatically. The boards reset together, the score carries over, and a draw awards neither player a win. Back to lobby ends the series.
+- Both players need alpha 13 or later for rematches and victory limits. For a single round with an older client, choose Unlimited.
+
 # 0.1.0-alpha.12
 
 - Build an ordered set of up to 100 boards in the editor. Insert, append, move and remove boards. Undo restores a deleted board or a paint stroke. Your open draft survives logout.
