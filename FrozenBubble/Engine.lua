@@ -40,10 +40,12 @@ function E:Color()
     if #colors == 0 then return self:Random(8) end
     return colors[self:Random(#colors)]
 end
-function E.New(level, seed, mode)
+function E.New(level, seed, mode, chainReaction)
     local self = setmetatable({grid={}, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
+    self.chains={}
+    self.chainReaction=chainReaction==true and (mode=="random" or mode=="training")
     self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
     self.penaltyRules=mode=="versus" or mode=="training"
     self.hurryWarn = self.penaltyRules and 5 or 8
@@ -96,15 +98,10 @@ function E:Resolve(key)
     local popped, dropped=0,0
     if #group >= 3 then
         for _, k in ipairs(group) do self:Remove(k,"pop"); popped=popped+1 end
-        local attached={}
-        for col=1,8 do
-            local root=E.Key(1,col)
-            if self.grid[root] and not attached[root] then
-                for _, k in ipairs(self:Group(root,false)) do attached[k]=true end
-            end
-        end
+        local attached=self:RootDistances()
         local falling={}
         for k=1,E.ROWS*8 do if self.grid[k] and not attached[k] then falling[#falling+1]=k end end
+        local plans=self.chainReaction and #falling>0 and self:PlanChains(attached) or {}
         -- Original cascade order: bottom-to-top, right-to-left; five ticks per row,
         -- then one extra tick for each bubble on that row.
         table.sort(falling,function(a,b) return a>b end)
@@ -114,7 +111,15 @@ function E:Resolve(key)
             local row=E.Cell(k)
             if row~=lastRow then shift=0; lastRow=row end
             self:Remove(k,"fall"); dropped=dropped+1
-            self.effects[#self.effects].delay=((bottom-row)*5+shift)*0.02
+            local delay=(bottom-row)*5+shift
+            local chain=plans[k]
+            if chain then
+                -- The chain owns this sprite until its return flight lands.
+                local fx=table.remove(self.effects)
+                chain.x,chain.y,chain.color=fx.x,fx.y,fx.color
+                chain.wait,chain.speed=delay,0
+                self.chains[#self.chains+1]=chain
+            else self.effects[#self.effects].delay=delay*0.02 end
             shift=shift+1
         end
     end
@@ -195,6 +200,10 @@ function E:AdvanceRoot()
         -- Shift the grid indices while preserving every existing bubble's x coordinate.
         local shifted={}
         for key,color in pairs(self.grid) do shifted[key+8]=color end
+        for _,chain in ipairs(self.chains) do
+            chain.target=chain.target+8
+            for i,key in ipairs(chain.protected) do chain.protected[i]=key+8 end
+        end
         for i,key in ipairs(self.attachedOrder) do self.attachedOrder[i]=key+8 end
         if self.stick then self.stick.key=self.stick.key+8 end
         self.grid=shifted
@@ -233,12 +242,12 @@ function E:Attach(x,y,hit)
     if self.status=="playing" then
         if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
         self:CheckEnd()
-        if hit and self.penaltyRules and self.status=="playing" then self:ApplyGarbage() end
+        if hit and self.penaltyRules and #self.chains==0 and self.status=="playing" then self:ApplyGarbage() end
     end
     self.changed=true
 end
 function E:Shoot(angle)
-    if self.status~="playing" or self.projectile or #self.rising>0 or self.paused then return false end
+    if self.status~="playing" or self.projectile or #self.chains>0 or #self.rising>0 or self.paused then return false end
     self.angle=FB.Clamp(angle or self.angle,-E.MAX_ANGLE,E.MAX_ANGLE)
     self.projectile={x=128,y=self.launchY,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
     self.current=self.next
@@ -258,6 +267,7 @@ function E:Step(dt)
         if self:TrainingTimeLeft()==0 then self.status="finished"; self.projectile=nil; return end
         if self.pending==0 and #self.rising==0 and self:Random(1500)==1 then self:AddGarbage(self:Random(6)) end
     end
+    if #self.chains>0 then self:MoveChains(); return end
     self.idle=self.idle+dt
     if #self.rising>0 then self:MoveGarbage(); return end
     if not self.projectile then
@@ -269,7 +279,7 @@ function E:Step(dt)
     p.x,p.y=p.x+p.vx*dt,p.y+p.vy*dt
     if p.x<E.R then p.x=2*E.R-p.x; p.vx=-p.vx; self.bounced=true end
     if p.x>E.W-E.R then p.x=2*(E.W-E.R)-p.x; p.vx=-p.vx; self.bounced=true end
-    if p.y<=E.R+self.ceiling then self:Attach(p.x,p.y); return end
+    if p.y<=E.R+self.ceiling then self:Attach(p.x,p.y); self:MoveChains(); return end
     local hit,nearest
     for key=1,E.ROWS*8 do
         if self.grid[key] then
@@ -281,6 +291,7 @@ function E:Step(dt)
     if hit then
         self:Attach((previousX+p.x)/2,(previousY+p.y)/2,hit)
         self:MoveGarbage()
+        self:MoveChains()
     end
 end
 function E:Update(dt)

@@ -1,3 +1,9 @@
+# 0.1.0-alpha.6
+
+- Random levels and multiplayer training now ask whether to enable chain reactions. A falling bubble can fly back up to complete a match and set off another drop. The launcher waits until the last returning bubble lands.
+- Training keeps separate personal and community highscores for games played with chain reactions. Try again keeps your choice.
+- GitHub Actions publishes the tested ZIP and checksum to GitHub Releases. CurseForge packages the repository through its push webhook.
+
 # 0.1.0-alpha.5
 
 - Find Frozen Bubble Forever under WoW Settings → AddOns, or type `/fb settings`. The minimap button opens the game on left-click and settings on right-click. Drag it to move it.

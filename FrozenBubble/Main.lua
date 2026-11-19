@@ -48,9 +48,9 @@ function FB.ContinueCampaign()
     if cp then FB.StartCampaign(cp.level,{score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
     else FB.StartCampaign(FB.db.unlocked) end
 end
-function FB.StartSolo(mode)
+function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
-    FB.game=FB.Engine.New(nil,seed(),mode); FB.run=nil; FB.level=1
+    FB.game=FB.Engine.New(nil,seed(),mode,chainReaction); FB.run=nil; FB.level=1
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
 end
 function FB.StartCustom(data,id)
@@ -104,7 +104,7 @@ local function finishSolo()
             FB.db.checkpoint=nil
         end
     elseif game.mode=="endless" or game.mode=="training" and game.status=="finished" then
-        FB.Scores.Record(game.mode,game.score,1,game.elapsed)
+        FB.Scores.Record(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
     end
 end
 local events=CreateFrame("Frame")

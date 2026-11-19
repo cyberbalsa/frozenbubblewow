@@ -13,7 +13,7 @@ local function loadModule(name,fb,env)
     f("FrozenBubble",fb)
 end
 local FB={}
-loadModule("Bootstrap",FB); loadModule("Levels",FB); loadModule("Engine",FB)
+loadModule("Bootstrap",FB); loadModule("Levels",FB); loadModule("Engine",FB); loadModule("Chains",FB)
 local E=FB.Engine
 test("all 100 original levels have valid ten-row layouts",function()
     eq(#FB.Levels,100)
@@ -149,6 +149,45 @@ test("training uses solo ammunition, versus timing, and points for outgoing pena
     g.tick=6049; g.paused=true; g:Step(0.02); eq(g.tick,6049)
     g.paused=false; g:Step(0.02); eq(g.status,"finished"); assert(not g:Shoot())
 end)
+test("return flights match the upstream arc and can start another chain",function()
+    local layout={"111.2233","2..3..."}
+    local g=E.New(layout,71,"random",true)
+    local popped,dropped=g:Resolve(1)
+    eq(popped,3); eq(dropped,1); eq(g.chains[1].target,4)
+    g.paused=true; g:Update(0.02); eq(g.chains[1].speed,0)
+    g.paused=false
+    -- Coordinates from the original falling_bubble loop (20 ms, solo board origin 190,44).
+    local reference={[36]={32,359},[37]={34.205642268,375.5},[50]={62.878991748,453.5},[70]={106.991837102,78.5}}
+    for tick=1,144 do
+        assert(not g:Shoot()); g:Update(0.02)
+        if reference[tick] then
+            local c=g.chains[1]
+            assert(math.abs(c.x-reference[tick][1])<1e-6); eq(c.y,reference[tick][2])
+        end
+        if tick==72 then eq(g.chains[1].target,6); eq(g:Count(),2) end
+    end
+    eq(g.status,"won"); eq(g.score,130); eq(g.shots,0); eq(g.idle,0); eq(#g.chains,0)
+    local standard=E.New(layout,71,"random",false)
+    standard:Resolve(1); eq(#standard.chains,0); assert(standard:Shoot())
+end)
+test("two simultaneous chains reserve distinct groups and follow a new training row",function()
+    local g=E.New({"22.11133","...2...","....3..."},17,"training",true)
+    g:AddGarbage(3); g.tick=30
+    g:Resolve(4); eq(#g.chains,2)
+    local first,second=g.chains[1],g.chains[2]
+    eq(first.color,3); eq(first.target,6); eq(second.color,2); eq(second.target,9)
+    eq(first.wait,0); eq(second.wait,5)
+    g:AdvanceRoot(); eq(first.target,14); eq(second.target,17); eq(g.offset,1)
+    for _=1,200 do g:Update(0.02); if #g.chains==0 then break end end
+    eq(#g.chains,0); eq(g.grid[9],nil); eq(g.grid[15],nil); eq(g.pending,3); assert(g:Shoot())
+end)
+test("different frame rates produce the same chain outcome",function()
+    for _,step in ipairs({1/30,1/60,1/144}) do
+        local g=E.New({"111.2233","2..3..."},9,"random",true); g:Resolve(1)
+        for _=1,math.ceil(3/step) do g:Update(step) end
+        eq(g.tick,144); eq(g.status,"won"); eq(g.score,130)
+    end
+end)
 test("random play preserves board invariants across all levels",function()
     for i,level in ipairs(FB.Levels) do
         local g=E.New(level,999+i)
@@ -184,7 +223,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Scores","Network","Community","MediaInfo","Animation"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","Network","Community","MediaInfo","Animation"}) do loadModule(module,fb,env) end
     fb.db={}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed) fb.game=fb.Engine.New(nil,seed,"versus") end
     clients[name.."-TestRealm"]=fb
@@ -416,7 +455,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)
         fb.UI:SelectSolo(4); fb.UI:Update(0.10)
         eq(fb.UI.soloEntries[4].glow.fbFrame,6)
-        fb.UI.soloEntries[4].activate()
+        fb.UI.soloEntries[4].activate(); eq(fb.UI.screen,"chain"); fb.UI.chainNo.scripts.OnClick()
         eq(fb.game.mode,"training"); fb.UI:Update(0.02)
         eq(fb.UI.trainingTime.text,"2'00\""); assert(fb.UI.trainingClock.shown)
         fb.game.tick=6049; fb.game.score=14
@@ -424,7 +463,11 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.game.status,"finished"); eq(#fb.Scores.Rows(false,"training"),1)
         eq(fb.Scores.Best("training").score,14); assert(fb.UI.trainingResult.shown)
         fb.UI.retryButton.scripts.OnClick(); eq(fb.game.tick,0); eq(fb.game.status,"playing")
-        fb.UI:Panel("solo"); fb.UI.soloEntries[3].activate(); eq(fb.game.mode,"random")
+        fb.UI:Panel("solo"); fb.UI.soloEntries[3].activate(); eq(fb.UI.screen,"chain"); fb.UI.chainYes.scripts.OnClick(); eq(fb.game.mode,"random"); assert(fb.game.chainReaction)
+        fb.UI.retryButton.scripts.OnClick(); assert(fb.game.chainReaction)
+        fb.StartSolo("training",true); fb.game.tick=6049; fb.game.score=29
+        eventFrame.scripts.OnUpdate(eventFrame,0.02); eq(fb.Scores.Best("training-chain").score,29)
+        eq(fb.Scores.Best("training").score,14)
         fb.UI:Panel("solo"); fb.UI.soloEntries[2].activate(); eq(fb.UI.screen,"pick")
     end)
     test("versus draws the penalty stack, rising bubbles and both shooter penguins",function()

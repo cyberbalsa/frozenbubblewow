@@ -1,6 +1,9 @@
 local _, FB = ...
 local S = {}; FB.Scores = S
-S.modes={"campaign","endless","training"}
+S.modes={"campaign","endless","training","training-chain"}
+function S.Label(mode)
+    return mode=="training-chain" and "Training (chain)" or (mode:gsub("^%l",string.upper))
+end
 function S.Init(db)
     db.schema=1
     db.scores=db.scores or {}; db.peers=db.peers or {}; db.custom=db.custom or {}
@@ -29,7 +32,7 @@ function S.Best(mode)
 end
 function S.Receive(sender, fields)
     local mode=fields[3]
-    if mode~="campaign" and mode~="endless" and mode~="training" then return end
+    if mode~="campaign" and mode~="endless" and mode~="training" and mode~="training-chain" then return end
     local score=FB.Integer(fields[4],0,100000000)
     local level=FB.Integer(fields[5],1,100)
     local seconds=FB.Integer(fields[6],0,10000000)

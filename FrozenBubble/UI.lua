@@ -97,7 +97,7 @@ function U:Build()
         self.focusGrace=GetTime()+1.5; self.alpha=1; f:SetAlpha(1); self:Resize(); FB.Music()
     end)
     UISpecialFrames[#UISpecialFrames+1]="FrozenBubbleWindow"
-    self.gameLayer=CreateFrame("Frame",nil,f); self.gameLayer:SetAllPoints()
+    self.gameLayer=CreateFrame("Frame",nil,f); self.gameLayer:SetAllPoints(); self.gameLayer:SetClipsChildren(true)
     self.gameLayer:SetFrameLevel(self.layers.game)
     self.gameBackground=A.Image(self.gameLayer,"solo-background",0,0,1024,768,"BACKGROUND")
     self.board=makeBoard(self.gameLayer,0,0)
@@ -146,7 +146,7 @@ function U:Build()
     self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
         if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
-        elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode)
+        elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
         else self:ShowMenu() end
     end)
     self.result:Hide()
@@ -157,10 +157,10 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","pick","settings"}) do
+    for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="opponent" and name~="solo" and name~="editor" then
+        if name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
@@ -245,6 +245,7 @@ function U:SetCombatInput(blocked)
     if self.combatInput==blocked then return end
     self.combatInput=blocked
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
+    self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
     if blocked then
         self.mouseRestore={}
         local function disable(frame)
@@ -308,6 +309,7 @@ function U:ShowMenu()
     if FB.game and FB.game.mode~="versus" then FB.game.paused=true end
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.solo:EnableKeyboard(false)
+    self.panels.chain:EnableKeyboard(false)
     self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; FB.Music()
 end
 function U:ShowGame()
@@ -324,8 +326,8 @@ function U:BuildSolo()
     local actions={
         {"play_all_levels",function() FB.StartCampaign(1) end},
         {"pick_start_level",function() self:Panel("pick") end},
-        {"play_random_levels",function() FB.StartSolo("random") end},
-        {"multiplayer_training",function() FB.StartSolo("training") end},
+        {"play_random_levels",function() self:ChooseChainRules("random") end},
+        {"multiplayer_training",function() self:ChooseChainRules("training") end},
     }
     for index,choice in ipairs(actions) do
         local row=CreateFrame("Button",nil,p)
@@ -357,11 +359,35 @@ function U:BuildSolo()
             else self.soloEntries[self.soloIndex].activate() end
         end
     end)
+    local prompt=self.panels.chain
+    prompt:ClearAllPoints(); prompt:SetScale(1.6); prompt:SetSize(341,280); prompt:SetPoint("CENTER",self.frame,"CENTER")
+    FB.Animation.Image(prompt,"panel",0,0,nil,nil,"BACKGROUND")
+    self.chainTitle=text(prompt,"",0,12,14,341); self.chainTitle:SetJustifyH("CENTER")
+    text(prompt,"Enable chain-reaction?",0,66,14,341):SetJustifyH("CENTER")
+    self.chainYes=button(prompt,"Yes (Y)",56,114,105,function() FB.StartSolo(self.chainMode,true) end)
+    self.chainNo=button(prompt,"No (N)",180,114,105,function() FB.StartSolo(self.chainMode,false) end)
+    button(prompt,"Back",118,218,105,function() self:Panel("solo") end)
+    prompt:SetPropagateKeyboardInput(true)
+    prompt:SetScript("OnKeyDown",function(panel,key)
+        if InCombatLockdown() then return end
+        local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        local used=active and (key=="Y" or key=="N" or key=="ESCAPE")
+        panel:SetPropagateKeyboardInput(not used)
+        if used then
+            if key=="ESCAPE" then self:Panel("solo")
+            else FB.StartSolo(self.chainMode,key=="Y") end
+        end
+    end)
     local pick=self.panels.pick
     text(pick,"Pick a starting level",0,24,22,340)
     text(pick,"Start at an unlocked level (practice)",0,94,14,340)
     self.level=input(pick,0,139,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
     button(pick,"Play level",100,137,220,function() FB.StartCampaign(tonumber(self.level:GetText()) or 1) end)
+end
+function U:ChooseChainRules(mode)
+    self.chainMode=mode
+    self.chainTitle:SetText(mode=="training" and "Multiplayer training" or "Random level")
+    self:Panel("chain")
 end
 function U:SelectSolo(index,silent)
     self.soloIndex=index; self.soloTime=0
@@ -395,6 +421,7 @@ function U:Panel(name)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorSockets:SetShown(self.editing); self.editorDirty=true
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
+    self.panels.chain:EnableKeyboard(name=="chain" and not self.combatInput)
     if name=="solo" then self:SelectSolo(1,true) end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
@@ -471,7 +498,7 @@ function U:BuildScores()
     self.scoreSelector=button(p,"Campaign",0,34,160,function()
         self.scoreIndex=self.scoreIndex%#FB.Scores.modes+1
         self.scoreMode=FB.Scores.modes[self.scoreIndex]
-        self.scoreSelector:SetText((self.scoreMode:gsub("^%l",string.upper)))
+        self.scoreSelector:SetText(FB.Scores.Label(self.scoreMode))
         self:RefreshScores()
     end)
     button(p,"Personal / shared",174,34,168,function() self.shared=not self.shared; self:RefreshScores() end)
@@ -492,7 +519,7 @@ end
 function U:ShowScores() self:Panel("scores"); self:RefreshScores() end
 function U:RefreshScores()
     local rows=FB.Scores.Rows(self.shared,self.scoreMode)
-    local lines={(self.shared and "Community" or "Personal").." · "..self.scoreMode,""}
+    local lines={(self.shared and "Community" or "Personal").." · "..FB.Scores.Label(self.scoreMode),""}
     for i=1,math.min(8,#rows) do
         local row=rows[i]; lines[#lines+1]=i..". "..row.name.."\n    "..row.score.." pts"..(row.mode=="campaign" and ("  ·  Level "..row.level) or "")
     end
@@ -758,8 +785,10 @@ function U:RenderBoard(board,game,remote)
         height=height+info.h-1; pending=pending-(grouped and 7 or 1)
     end
     for i=used+1,#board.penalties do board.penalties[i]:Hide() end
+    local chains=game and game.chains
+    local chainCount=chains and #chains or 0
     for i,t in ipairs(board.fx) do
-        local fx=game and game.effects and game.effects[i]
+        local fx=(chains and chains[i]) or (game and game.effects and game.effects[i-chainCount])
         if fx then
             place(t,board,fx.drawX or fx.x,fx.drawY or fx.y,fx.color,32,1)
         else t:Hide() end
