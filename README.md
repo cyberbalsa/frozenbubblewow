@@ -46,6 +46,8 @@ To watch a desktop recording, choose **Options → Recordings → Import**, past
 
 ## Keys and match chat
 
+With the game focused, **F11** toggles its music and **F12** mutes or restores all addon audio. **Numpad +** and **Numpad −** move music and effects together to the next 10% mark. Your WoW sound-effects slider stays where you set it. Use **Options** or **Settings → AddOns → Frozen Bubble Forever** to set the two volumes separately. If you’ve assigned an audio key to a cannon control, that binding takes priority on the board.
+
 Choose **Keys** on the main menu to bind aim, fire and center for each player. The last two prompts set the full-window and chat keys. All ten bindings save together. Escape cancels a partial change. By default, F fits the addon to your screen and F again restores its size and position.
 
 In **Multiplayer**, left-click **Victory limit** to raise the target or right-click to lower it. New profiles start at first to five. Upgrades keep Unlimited. Matchmaking pairs players who chose the same limit and chain rules. After both boards finish animating, either player can choose **Next round**. If the other player has the result screen in focus, both start a fresh board with the series score carried over. **Back to lobby** leaves a finished round without a forfeit. Both players need alpha 13 or later for series. Choose Unlimited to play a single round against an older client.
@@ -86,7 +88,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.31` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.32` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

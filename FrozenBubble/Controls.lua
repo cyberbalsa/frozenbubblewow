@@ -9,6 +9,45 @@ K.questions={"Player 1, turn left?","Player 1, turn right?","Player 1, fire?","P
 K.defaults={"LEFT","RIGHT","UP","DOWN","X","V","C","D","F","ENTER"}
 local aliases={"A","D","SPACE"}
 
+local audioKeys={F11=true,F12=true,NUMPADPLUS=true,NUMPADMINUS=true}
+
+local function changeAudio(key)
+    if key=="F12" then FB.Options.Set("audioEnabled",FB.db.audioEnabled==false); return end
+    if FB.db.audioEnabled==false then return end
+    if key=="F11" then FB.Options.Set("music",not FB.db.music); return end
+    local current=(FB.db.musicVolume or 0.8)*10
+    local step=key=="NUMPADPLUS" and math.floor(current+0.000001)+1 or math.ceil(current-0.000001)-1
+    local volume=FB.Clamp(step,0,10)/10
+    FB.Options.Set("effectsVolume",volume); FB.Options.Set("musicVolume",volume)
+end
+
+-- Install on the frames that already own keyboard input. A shortcut cannot
+-- fire a cannon, dismiss a recording, or skip a board reveal on the same press.
+function K.InstallAudioKeys(frame)
+    local down,up=frame:GetScript("OnKeyDown"),frame:GetScript("OnKeyUp")
+    frame:SetScript("OnKeyDown",function(f,key)
+        local ui=FB.UI
+        if audioKeys[key] and not InCombatLockdown() and not ui.inactive and ui:HasFocus()
+            and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+            and not (IsAltKeyDown and IsAltKeyDown() or IsControlKeyDown and IsControlKeyDown() or IsShiftKeyDown and IsShiftKeyDown()) then
+            local bindings=FB.LocalVersus.match and K.shared or K.solo
+            local assigned=f==ui.board and (ui.editing or bindings[key]) or f==ui.menu and key==K.keys[9]
+            if not assigned then
+                f:SetPropagateKeyboardInput(false)
+                if not ui.keys[key] then
+                    ui.keys[key]=true; FB.Demos.idle=0; changeAudio(key)
+                end
+                return
+            end
+        end
+        if down then down(f,key) end
+    end)
+    frame:SetScript("OnKeyUp",function(f,key)
+        if up then up(f,key) end
+        if audioKeys[key] then FB.UI.keys[key]=nil end
+    end)
+end
+
 function K.Valid(key)
     return type(key)=="string" and #key>0 and #key<=24 and key~="ESCAPE" and key~="UNKNOWN"
         and key~="PAUSE" and not key:find("[%s%c|]") and key==key:upper()

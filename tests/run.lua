@@ -801,6 +801,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         frames[#frames+1]=f; return f
     end
     methods.SetScript=function(f,event,fn) f.scripts[event]=fn end
+    methods.GetScript=function(f,event) return f.scripts[event] end
     methods.CreateFontString=function(f) return frame(nil,nil,f) end; methods.CreateTexture=methods.CreateFontString
     methods.SetSize=function(f,w,h) f.width=w; f.height=h end
     methods.SetTexCoord=function(f,...) f.fbCoords=table.concat({...},",") end
@@ -2283,6 +2284,71 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(#board.pistons,3); assert(board.pistons[1].shown and board.pistons[3].shown)
         fb.game.ceiling=0; fb.UI:RenderBoard(board,fb.game)
         assert(not board.pistons[1].shown); assert(board.compressor.shown)
+    end)
+    test("desktop audio keys preserve preferences and use addon-only effect levels",function()
+        local ui,options=fb.UI,fb.Options
+        local oldMouse,oldKeyboard,oldCombat=env.GetMouseFoci,env.GetCurrentKeyBoardFocus,env.InCombatLockdown
+        local oldPlay,oldStop,oldGet,oldSet,oldFX=env.PlayMusic,env.StopMusic,env.GetCVar,env.SetCVar,env.PlaySoundFile
+        local musicVolume,effectsVolume=fb.db.musicVolume,fb.db.effectsVolume
+        local worldVolume,starts,stops,cues="0.37",0,0,{}
+        env.GetCVar=function(key) eq(key,"Sound_MusicVolume"); return worldVolume end
+        env.SetCVar=function(key,v) eq(key,"Sound_MusicVolume"); worldVolume=v end
+        env.PlayMusic=function() starts=starts+1; return true end
+        env.StopMusic=function() stops=stops+1 end
+        env.PlaySoundFile=function(path,channel) eq(channel,"SFX"); cues[#cues+1]=path end
+        env.GetMouseFoci=function() return {ui.frame} end
+        local function press(frame,key)
+            frame.scripts.OnKeyDown(frame,key); frame.scripts.OnKeyUp(frame,key)
+        end
+        fb.StartCampaign(1); ui.inactive=false; fb.StopGameMusic(); worldVolume="0.37"; fb.Music()
+        options.Set("musicVolume",0.65); eq(worldVolume,0.65); local started=starts
+        press(ui.board,"NUMPADPLUS"); eq(worldVolume,0.7); eq(fb.db.effectsVolume,0.7); eq(starts,started)
+        fb.Sound("launch"); eq(cues[#cues],fb.media.."Effects\\7\\launch.ogg")
+        ui.board.scripts.OnKeyDown(ui.board,"F12"); ui.board.scripts.OnKeyDown(ui.board,"F12")
+        assert(not fb.db.audioEnabled and fb.db.music and fb.db.sound); eq(worldVolume,"0.37")
+        ui.board.scripts.OnKeyUp(ui.board,"F12")
+        local before=#cues; fb.Sound("hurry"); eq(#cues,before)
+        press(ui.board,"F11"); press(ui.board,"NUMPADMINUS"); assert(fb.db.music); eq(fb.db.musicVolume,0.7)
+        press(ui.board,"F12"); eq(worldVolume,0.7); eq(starts,started+1)
+        press(ui.board,"F11"); assert(not fb.db.music and fb.db.sound); eq(worldVolume,"0.37")
+        fb.Sound("stick"); eq(cues[#cues],fb.media.."Effects\\7\\stick.ogg")
+        fb.TogglePause(); press(ui.pauseScreen,"F11"); assert(fb.game.paused and fb.db.music)
+        fb.TogglePause(); eq(fb.game.shots,0)
+        ui:ShowMenu(); ui:Panel("settings"); local panel=ui.panels.settings
+        for i=1,11 do press(panel,"NUMPADMINUS") end
+        eq(fb.db.musicVolume,0); eq(fb.db.effectsVolume,0); eq(worldVolume,0)
+        before=#cues; fb.Sound("cancel"); eq(#cues,before)
+        options.controls.effectsVolume.set(1)
+        fb.Sound("stick"); eq(cues[#cues],fb.media.."stick.ogg"); eq(worldVolume,0)
+        env.GetMouseFoci=function() return {} end
+        press(panel,"F12"); assert(fb.db.audioEnabled)
+        env.GetMouseFoci=function() return {ui.frame} end
+        env.GetCurrentKeyBoardFocus=function() return ui.level end
+        press(panel,"F12"); assert(fb.db.audioEnabled)
+        env.GetCurrentKeyBoardFocus=oldKeyboard
+        env.InCombatLockdown=function() return true end
+        press(panel,"F12"); assert(fb.db.audioEnabled)
+        env.InCombatLockdown=oldCombat
+        fb.StartCampaign(1); local bindings={env.unpack(fb.Controls.keys)}; local custom={env.unpack(bindings)}
+        custom[3]="F11"; fb.Controls.Load(custom)
+        press(ui.board,"F11"); eventFrame.scripts.OnUpdate(nil,0.02)
+        eq(fb.game.shots,1); assert(fb.db.music); fb.Controls.Load(bindings)
+        fb.Options.Set("boardTransitions",true); fb.StartCampaign(1)
+        local cover=fb.Transitions.frame
+        press(cover,"F11"); eq(fb.Transitions.target,"game"); assert(not fb.db.music)
+        fb.Transitions.Finish(); fb.Options.Set("boardTransitions",false)
+        ui:ShowMenu(); fb.Demos.Start(1); press(fb.Demos.panel,"F11")
+        assert(fb.Demos.scene and fb.db.music); ui:ShowMenu()
+        local saved=fb.db.recordings; fb.db.recordings={}
+        fb.StartSolo("random"); fb.Fire(); eventFrame.scripts.OnUpdate(nil,0.12)
+        fb.Recordings.Mark(); fb.Recordings.Play(1)
+        local replay=fb.Recordings.playback; assert(replay)
+        press(ui.panels.replay,"NUMPADPLUS"); eq(fb.Recordings.playback,replay); eq(ui.screen,"replay")
+        ui:ShowMenu(); fb.Recordings.CloseRound(); fb.db.recordings=saved
+        options.Set("musicVolume",musicVolume); options.Set("effectsVolume",effectsVolume)
+        fb.StopGameMusic()
+        env.GetMouseFoci,env.GetCurrentKeyBoardFocus,env.InCombatLockdown=oldMouse,oldKeyboard,oldCombat
+        env.PlayMusic,env.StopMusic,env.GetCVar,env.SetCVar,env.PlaySoundFile=oldPlay,oldStop,oldGet,oldSet,oldFX
     end)
     test("pause uses the desktop frame sequence, consumes resume input and holds the music stream",function()
         local ui=fb.UI

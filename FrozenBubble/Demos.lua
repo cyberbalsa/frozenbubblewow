@@ -111,6 +111,7 @@ local function build()
         f:SetPropagateKeyboardInput(not active)
         if active then dismiss() end
     end)
+    FB.Controls.InstallAudioKeys(panel)
     D.background=panel:CreateTexture(nil,"BACKGROUND",nil,-1)
     D.background:SetAllPoints()
     local coverLayer=CreateFrame("Frame",nil,panel)

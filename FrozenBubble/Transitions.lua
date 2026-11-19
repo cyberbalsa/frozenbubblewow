@@ -51,6 +51,7 @@ local function build()
         if skip and (not key or key~=ui.keys.resultKey) then T.Interrupt() end
     end)
     frame:SetScript("OnKeyUp",function(_,key) if ui.keys.resultKey==key then ui.keys.resultKey=nil end end)
+    FB.Controls.InstallAudioKeys(frame)
     T.frame=frame
     T.mask=frame:CreateMaskTexture(); T.mask:SetAllPoints(frame)
 end

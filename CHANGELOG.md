@@ -1,3 +1,8 @@
+# 0.1.0-alpha.32
+
+- F11 toggles game music. F12 mutes or restores Frozen Bubble while remembering your music and sound-effect preferences. These keys work in a focused game, at the title screen and during recordings.
+- Numpad + and − adjust both volumes. Options and WoW’s addon settings also let you change effects and music separately down to zero. Quieter effects use attenuated copies of the original cues and leave WoW’s effects volume alone.
+
 # 0.1.0-alpha.31
 
 - The campaign level, random-level sign, training score and clock, and both shared-keyboard round counters use the original game’s white lettering and black shadow. They appear on the wooden plaques as the board opens and during play and replays.

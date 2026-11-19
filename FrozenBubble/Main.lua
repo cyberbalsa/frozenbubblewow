@@ -18,7 +18,7 @@ function FB.StopGameMusic()
 end
 function FB.Music()
     if not FB.UI.frame then return end
-    if FB.db.music and FB.UI.frame:IsShown() and PlayMusic then
+    if FB.db.audioEnabled~=false and FB.db.music and FB.UI.frame:IsShown() and PlayMusic then
         local scene=FB.Transitions.demo and FB.DemoData.scenes[FB.Transitions.demo] or FB.Demos.scene
         local screen=FB.Transitions.target or FB.UI.screen
         local board=screen=="game" or screen=="opponent"

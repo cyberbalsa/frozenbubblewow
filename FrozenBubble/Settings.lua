@@ -4,11 +4,13 @@ FB.Options = Options
 
 local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
-    sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
+    audioEnabled=true, sound=true, effectsVolume=1, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
     autoRecord=false, shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
 }
 
 function Options.Set(key,value)
+    if key=="effectsVolume" then value=math.floor(FB.Clamp(tonumber(value) or 1,0,1)*10+0.5)/10 end
+    if key=="musicVolume" then value=FB.Clamp(tonumber(value) or 0.8,0,1) end
     if key=="graphicsLevel" then value=FB.Integer(value,1,3) or 3 end
     if FB.db[key]==value then return end
     FB.db[key]=value
@@ -37,8 +39,8 @@ function Options.Set(key,value)
     if key=="windowSize" then
         if FB.UI.fullWindow then FB.UI:ToggleFullWindow() else FB.UI:Resize() end
     end
-    if key=="music" or key=="musicVolume" then FB.Music() end
-    if key=="sound" or key=="music" or key=="musicVolume" then FB.UI:Options() end
+    if key=="audioEnabled" or key=="music" or key=="musicVolume" then FB.Music() end
+    if key=="audioEnabled" or key=="effectsVolume" or key=="sound" or key=="music" or key=="musicVolume" then FB.UI:Options() end
     if key=="flightPrompt" or key=="idlePrompt" or key=="idleSeconds" or key=="craftingPrompt" then
         FB.Invitations.SettingsChanged(key)
     end
@@ -92,9 +94,11 @@ local function registerPage()
     check("titleDemos","Play demos on the title screen","After 20 seconds on the title screen, play a recording from the original game. Click or press a key to return.")
     check("autoRecord","Automatically save recordings","Keep the ten most recent random, training, endless, shared-keyboard, duel and arena recordings.")
     check("shotClock","Use the local shot clock","Show the hurry warning and fire automatically in solo and shared-keyboard games. Online matches always use the clock.")
+    check("audioEnabled","Enable game audio","F12 mutes or restores Frozen Bubble music and effects together.")
     check("sound","Play sound effects")
+    slider("effectsVolume","Game sound effect volume",0,1,0.1,percent)
     check("music","Play game music")
-    slider("musicVolume","Game music volume",0.1,1,0.05,percent)
+    slider("musicVolume","Game music volume",0,1,0.05,percent)
     header("Community and diagnostics")
     check("community","Rejoin the community channel at login")
     check("debug","Save debug messages","View recent entries with /fb debug.")

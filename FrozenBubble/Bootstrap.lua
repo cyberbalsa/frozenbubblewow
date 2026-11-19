@@ -1,7 +1,7 @@
 local addon, FB = ...
 _G.FrozenBubble = FB
 FB.name = addon
-FB.version = "0.1.0-alpha.31"
+FB.version = "0.1.0-alpha.32"
 FB.media = "Interface\\AddOns\\" .. addon .. "\\Media\\"
 FB.PREFIX = "FrozenBubble1"
 
@@ -41,5 +41,9 @@ end
 function FB.Sound(name)
     if InCombatLockdown and InCombatLockdown() then return end
     if FB.UI and (FB.UI.inactive or FB.UI.frame and not FB.UI.frame:IsShown()) then return end
-    if FB.db and FB.db.sound and PlaySoundFile then PlaySoundFile(FB.media .. name .. ".ogg", "SFX") end
+    if not FB.db or FB.db.audioEnabled==false or not FB.db.sound or not PlaySoundFile then return end
+    local level=math.floor(FB.Clamp(tonumber(FB.db.effectsVolume) or 1,0,1)*10+0.5)
+    if level==0 then return end
+    local path=level==10 and FB.media or (FB.media.."Effects\\"..level.."\\")
+    PlaySoundFile(path..name..".ogg","SFX")
 end

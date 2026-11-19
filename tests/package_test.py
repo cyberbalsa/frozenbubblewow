@@ -40,6 +40,27 @@ class Packaging(unittest.TestCase):
         digest = hashlib.sha256(first).hexdigest()
         self.assertTrue(path.with_suffix(".zip.sha256").read_text().startswith(digest))
 
+    def test_all_effect_levels_have_the_original_channels_rate_and_sample_count(self):
+        media = ROOT / "FrozenBubble/Media"
+        music = {"introzik.ogg", "frozen-mainzik-1p.ogg", "frozen-mainzik-2p.ogg"}
+
+        def audio_format(path):
+            data = path.read_bytes()
+            self.assertEqual(data[:4], b"OggS")
+            header = 27 + data[26]
+            self.assertEqual(data[header:header+7], b"\x01vorbis")
+            channels, rate = struct.unpack_from("<BI", data, header+11)
+            end = data.rindex(b"OggS")
+            self.assertTrue(data[end+5] & 4)
+            frames, = struct.unpack_from("<Q", data, end+6)
+            return channels, rate, frames
+
+        originals = {p.name: audio_format(p) for p in media.glob("*.ogg") if p.name not in music}
+        self.assertIn("hurry.ogg", originals)
+        for level in range(1, 10):
+            clips = (media / "Effects" / str(level)).glob("*.ogg")
+            self.assertEqual({p.name: audio_format(p) for p in clips}, originals)
+
     def test_asset_references_exist(self):
         self.assertTrue((ROOT / "art/curseforge-icon.png").is_file())
         for color in range(1, 9):

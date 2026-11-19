@@ -64,3 +64,5 @@ Run `python3 tools/import_transitions.py /path/to/frozen-bubble` to regenerate t
 The nine title-logo effects follow the menu loop and pixel transforms in the pinned desktop source. Run `python3 tools/import_title_logo.py /path/to/frozen-bubble` to regenerate the native logo, lettering mask, spotlight patches, television noise, and snowflake. The WoW renderer interpolates the desktop displacement equations across textured quads. The sparkle particles and snow collisions run in Lua.
 
 The full-window pause scene uses `share/gfx/back_paused.png` and `pause_0001.png` through `pause_0035.png`. The animation timing, placement, and repeat point come from the pause loop in `bin/frozen-bubble`. All three music tracks and all seventeen effects called by desktop `play_sound` are the original Ogg files.
+
+The lower-volume effects in `FrozenBubble/Media/Effects` come from the full-volume Ogg Vorbis files in `FrozenBubble/Media`. Run `python3 tools/import_sound_levels.py` with FFmpeg and ffprobe to regenerate them. The generator preserves each clip’s channel count, sample rate and end granule.
