@@ -36,6 +36,12 @@ New boards and title demos open with a randomly chosen desktop transition. Click
 
 Press **P** or **Pause** during a solo or shared-keyboard round to see the original animated pause screen. Click it or press Pause, P, Escape, Enter, or Space to resume. Pausing or losing focus silences the current track. Playback continues underneath so returning to the game never sends the song back to its opening bars.
 
+## Recordings
+
+Press **Print Screen** with the pointer over the board, or type `/fb record`, to keep the round from its first shot. You can do this partway through a random, endless, training or shared-keyboard game. To keep every round, enable **Automatically save local recordings** in the addon settings. The ten most recent recordings stay in your account’s SavedVariables.
+
+Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a 2P game, both launchers play back together, including attacks and misses. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
+
 ## Keys and match chat
 
 Choose **Keys** on the main menu to bind aim, fire and center for each player. The last two prompts set the full-window and chat keys. All ten bindings save together. Escape cancels a partial change. By default, F fits the addon to your screen and F again restores its size and position.
@@ -78,7 +84,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.22` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.23` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

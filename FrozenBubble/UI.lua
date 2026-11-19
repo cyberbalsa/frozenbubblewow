@@ -94,6 +94,7 @@ function U:Build()
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart",function() if not self.fullWindow then f:StartMoving() end end); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
+        if FB.Recordings.playback then self:ShowMenu() end
         FB.Transitions.Interrupt()
         FB.Demos.idle=0
         if FB.Demos.scene then self:ShowMenu() end
@@ -140,6 +141,11 @@ function U:Build()
         end
         if self.pauseScreen and self.pauseScreen:IsShown() then self:PauseKey(b,key); return end
         if self.editing then self:EditorKey(b,key); return end
+        if key=="PRINTSCREEN" and FB.Recordings.capture and (self.screen=="game" or self.screen=="opponent") then
+            b:SetPropagateKeyboardInput(true)
+            if not self.keys[key] then FB.Recordings.Mark(); self.keys[key]=true end
+            return
+        end
         if self:SoloResultKey(b,key) then return end
         local room=FB.Net.match
         if self.screen=="opponent" and room and room.arena then
@@ -225,17 +231,17 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings"}) do
+    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="editorText" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="replay" and name~="editorText" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
     K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
-    self:BuildSolo(); self:BuildSettings()
+    self:BuildSolo(); self:BuildSettings(); self:BuildRecordings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
     self.remoteLabel=text(self.gameLayer,"",131,17.6,16,250); self.remoteLabel:SetJustifyH("CENTER")
@@ -353,6 +359,25 @@ function U:HasFocus()
     if GetMouseFocus then return self:OwnsFocus(GetMouseFocus()) end
     return self.frame:IsMouseOver()
 end
+function U:ResultReady(game,remote,winner)
+    if not FB.db.reducedMotion then
+        local ready=true
+        if winner then
+            local loser=winner==game and remote or game
+            ready=loser and loser.endOrder and loser.endIndex>=#loser.endOrder
+            if FB.db.graphicsLevel>1 then
+                ready=ready and winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
+            end
+        elseif game.status=="lost" or game.status=="draw" then
+            ready=game.endOrder and game.endIndex>=#game.endOrder
+            if game.status=="draw" and remote then
+                ready=ready and remote.endOrder and remote.endIndex>=#remote.endOrder
+            end
+        end
+        return ready
+    end
+    return true
+end
 function U:ShowTrainingResult(show)
     if self.trainingResult:IsShown()==show then return end
     self.trainingResult:SetShown(show)
@@ -450,6 +475,7 @@ function U:SetCombatInput(blocked)
     self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
     self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
+    self.panels.replay:EnableKeyboard(not blocked and self.screen=="replay")
     if blocked then
         if FB.Demos.scene then self:ShowMenu() end
         FB.MatchChat.Close()
@@ -522,7 +548,7 @@ function U:Resize()
 end
 function U:PlaceBoard(board,x,y,scale)
     board:SetScale(scale); board:ClearAllPoints(); board:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",x/scale,-y/scale)
-    local versus=self.screen=="opponent"
+    local versus=self.screen=="opponent" or self.screen=="replay" and FB.Recordings.playback.left
     board.hurry:ClearAllPoints(); board.hurry:SetPoint("TOPLEFT",10,versus and -225 or -221)
     local progressX=versus and board==self.board and -9 or 257
     for i,dot in ipairs(board.progress) do
@@ -535,6 +561,7 @@ function U:WindowControls(arena)
     self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or 976,-4)
 end
 function U:ShowMenu()
+    FB.Recordings.playback=nil
     FB.Transitions.Cancel()
     self:WindowControls(false)
     FB.Demos.Close()
@@ -542,6 +569,7 @@ function U:ShowMenu()
     self.focusPausedGame=nil
     self.keys={}; self.board:EnableKeyboard(false)
     if canPauseGame() then FB.game.paused=true end
+    self.panels.replay:EnableKeyboard(false)
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.solo:EnableKeyboard(false)
     self.panels.keys:EnableKeyboard(false); FB.MatchChat.Close()
@@ -667,6 +695,28 @@ function U:SelectSolo(index,silent)
     end
     if not silent then FB.Sound("menu_change") end
 end
+function U:BuildRecordings()
+    local list=self.panels.recordings
+    text(list,"RECORDINGS",0,0,20,250)
+    self.emptyRecords=text(list,"Press Print Screen during a random, training, endless or shared-keyboard game to keep a recording. You can also type /fb record.",0,65,14,340)
+    self.recordButtons={}
+    for i=1,10 do
+        self.recordButtons[i]=button(list,"",0,45+(i-1)*38,345,function() FB.Recordings.Play(i) end)
+    end
+    local shield=self.panels.replay
+    shield:ClearAllPoints(); shield:SetAllPoints(self.frame)
+    shield:SetFrameLevel(self.layers.panel+1)
+    shield:SetScript("OnMouseDown",function() if not InCombatLockdown() then FB.Recordings.Library() end end)
+    shield:SetScript("OnKeyDown",function(f,key)
+        if InCombatLockdown() then return end
+        local used=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        f:SetPropagateKeyboardInput(not used)
+        if used then FB.Recordings.Library() end
+    end)
+    shield:SetPropagateKeyboardInput(true)
+    self.replayBack=button(shield,"Recordings",15,728,118,function() FB.Recordings.Library() end)
+    self.replayTime=text(shield,"",144,738,16,170)
+end
 function U:BuildSettings()
     local p=self.panels.settings
     text(p,"SOUND & DISPLAY",0,0,24,350)
@@ -679,7 +729,8 @@ function U:BuildSettings()
     text(p,"The music slider is applied while this game is open. Your previous WoW music volume is restored when you close it.",0,210,13,350)
     button(p,"Fit game to screen",0,282,338,function() FB.Options.Set("windowSize",1) end)
     button(p,"Animation: full / reduced",0,330,338,function() FB.Options.Set("reducedMotion",not FB.db.reducedMotion) end)
-    button(p,"WoW AddOns settings",0,382,338,function() FB.Options.Open() end)
+    button(p,"WoW AddOns settings",0,382,190,function() FB.Options.Open() end)
+    button(p,"Recordings",199,382,139,function() FB.Recordings.Library() end)
 end
 function U:ApplyGraphics()
     local item=self.menuHover[6]
@@ -696,6 +747,7 @@ function U:Options()
     if self.musicValue then self.musicValue:SetText(math.floor((FB.db.musicVolume or 0.8)*100+0.5).."%") end
 end
 function U:Panel(name)
+    if name~="replay" then FB.Recordings.playback=nil end
     FB.Transitions.Cancel()
     FB.Demos.Close()
     if name=="editor" and not self.editGame then self:StartEditor(); return end
@@ -720,22 +772,24 @@ function U:Panel(name)
     self.arenaHUD:Hide(); self.board.fbPenaltyX,self.board.fbPenaltyY,self.board.fbNextY=nil,nil,nil
     for _,board in ipairs(self.miniBoards) do board:Hide() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
-    local gameplay=name=="game" or name=="opponent" or name=="editor" or name=="scoreEntry" and FB.game and FB.game.scoreEntry==self.namingScore
-    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and name~="scoreEntry")
-    self.remoteBoard:SetShown(name=="opponent")
-    self.remoteLabel:SetShown(name=="opponent")
-    self.remotePenguin:SetShown(name=="opponent")
-    self.footer:SetShown(name~="opponent" and name~="editor")
+    local replay=name=="replay" and FB.Recordings.playback
+    local versusLayout=name=="opponent" or replay and replay.left~=nil
+    local gameplay=name=="replay" or name=="game" or name=="opponent" or name=="editor" or name=="scoreEntry" and FB.game and FB.game.scoreEntry==self.namingScore
+    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and not replay and name~="scoreEntry")
+    self.remoteBoard:SetShown(versusLayout or false)
+    self.remoteLabel:SetShown(versusLayout or false)
+    self.remotePenguin:SetShown(versusLayout or false)
+    self.footer:SetShown(not replay and name~="opponent" and name~="editor")
     local shared=name=="opponent" and FB.LocalVersus.match~=nil
     self.pauseControl:SetShown(name=="game" or shared)
     self.pauseControl:ClearAllPoints(); self.pauseControl:SetPoint("TOPLEFT",shared and 467 or 115,shared and -688 or -728)
     self:ShowTrainingResult(false)
-    self.result:ClearAllPoints(); self.result:SetPoint("TOPLEFT",name=="opponent" and 244.8 or 238.4,-304)
+    self.result:ClearAllPoints(); self.result:SetPoint("TOPLEFT",versusLayout and 244.8 or 238.4,-304)
     self.menuControl:ClearAllPoints()
     self.menuControl:SetPoint("TOPLEFT",name=="opponent" and 467 or 16,-728)
     self.penguin:ClearAllPoints()
     self.panels.opponent:Hide()
-    if name=="opponent" then
+    if versusLayout then
         FB.Animation.Frame(self.gameBackground,"versus-background",1)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
         self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",648,-17.6); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
@@ -750,7 +804,17 @@ function U:Panel(name)
         self.hud:SetFont("Fonts\\ARIALN.TTF",22,"OUTLINE"); self.hud:SetJustifyH("CENTER"); self.hud:SetWidth(230)
         self.hud:SetShown(name~="editor"); self.penguin:SetShown(name~="editor")
     end
-    if name=="opponent" then self.hud:Show() end
+    if versusLayout then self.hud:Show() end
+    self.panels.replay:EnableKeyboard(name=="replay" and not self.combatInput)
+    if replay then
+        self.replayBack:ClearAllPoints(); self.replayTime:ClearAllPoints()
+        self.replayBack:SetPoint("TOPLEFT",versusLayout and 67 or 15,versusLayout and -6 or -728)
+        self.replayTime:SetPoint("TOPLEFT",versusLayout and 305 or 144,versusLayout and -16 or -738)
+        self.result:Hide(); self.resultBadge:Hide(); self.winnerName:Hide(); self.resultDetail:Hide()
+        self.nextButton:Hide(); self.retryButton:Hide(); self.resultScores:Hide(); self.leaveSeries:Hide()
+        local training=replay.record.mode=="training"
+        self.trainingClock:SetShown(training); self.trainingTime:SetShown(training)
+    end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
     if not gameplay and canPauseGame() then FB.game.paused=true end
     self:UpdatePause(0); FB.Music()
@@ -1184,6 +1248,7 @@ end
 
 function U:Update(dt)
     if FB.Transitions.target or not self.frame or not self.frame:IsShown() then return end
+    if FB.Recordings.playback then FB.Recordings.Render(); return end
     FB.Demos.Update(dt)
     if FB.Demos.scene then return end
     FB.MatchChat.Refresh()
@@ -1205,21 +1270,7 @@ function U:Update(dt)
     local remote=shared and shared.left or match and match.remote
     local versus=game and game.mode=="versus"
     local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and remote)
-    local ready=ended
-    if ended and not FB.db.reducedMotion then
-        if winner then
-            local loser=winner==game and remote or game
-            ready=loser and loser.endOrder and loser.endIndex>=#loser.endOrder
-            if FB.db.graphicsLevel>1 then
-                ready=ready and winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
-            end
-        elseif game.status=="lost" or game.status=="draw" then
-            ready=game.endOrder and game.endIndex>=#game.endOrder
-            if game.status=="draw" and remote then
-                ready=ready and remote.endOrder and remote.endIndex>=#remote.endOrder
-            end
-        end
-    end
+    local ready=ended and self:ResultReady(game,remote,winner)
     if game and game.status=="finished" and self.trainingGame~=game then
         self.trainingReadyAt=GetTime()+1; self.trainingGame=game
     elseif not game or game.status~="finished" then self.trainingGame=nil end

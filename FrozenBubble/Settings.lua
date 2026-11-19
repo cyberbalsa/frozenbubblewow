@@ -5,7 +5,7 @@ FB.Options = Options
 local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
     sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
-    shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
+    autoRecord=false, shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
 }
 
 function Options.Set(key,value)
@@ -18,6 +18,7 @@ function Options.Set(key,value)
     end
     if key=="shotClock" and FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match) then
         local function resetClock(game)
+            if game.recordTrack then FB.Recordings.Clock(game,value) end
             game.timed=value; game.idle=0; game.hurryVisible=false
         end
         resetClock(FB.game)
@@ -85,6 +86,7 @@ local function registerPage()
     check("reducedMotion","Reduce menu and penguin animation")
     check("boardTransitions","Animate the start of a round","Reveal new boards with the original game’s transitions. Click to skip.")
     check("titleDemos","Play demos on the title screen","After 20 seconds on the title screen, play a recording from the original game. Click or press a key to return.")
+    check("autoRecord","Automatically save local recordings","Keep the ten most recent random, training, endless and shared-keyboard recordings.")
     check("shotClock","Use the local shot clock","Show the hurry warning and fire automatically in solo and shared-keyboard games. Online matches always use the clock.")
     check("sound","Play sound effects")
     check("music","Play game music")

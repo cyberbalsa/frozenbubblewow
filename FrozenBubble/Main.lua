@@ -37,13 +37,14 @@ function FB.Music()
         if muted then return end
         local track="introzik.ogg"
         if scene then track=scene.background=="solo-background" and "frozen-mainzik-1p.ogg" or "frozen-mainzik-2p.ogg"
+        elseif screen=="replay" and FB.Recordings.playback then track=FB.Recordings.playback.left and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg"
         elseif board or namingBoard then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
         if FB.musicTrack~=track and PlayMusic(FB.media..track)~=false then FB.musicTrack=track end
     else FB.StopGameMusic() end
 end
 function FB.StartCampaign(level,run)
     if not FB.CanStart() then return end
-    FB.LocalVersus.match=nil
+    FB.LeaveBoard(); FB.LocalVersus.match=nil
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
     FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound)
@@ -61,7 +62,8 @@ function FB.ContinueCampaign()
     elseif cp then FB.StartCampaign(cp.level,{score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
     else FB.StartCampaign(FB.db.unlocked) end
 end
-function FB.LeaveCampaignBoard()
+function FB.LeaveBoard()
+    FB.Recordings.CloseRound()
     local cp,game=FB.db.checkpoint,FB.game
     if cp and game and game.mode=="campaign" and game.status=="playing" and (game.shots>0 or game.elapsed>0) then
         -- The checkpoint has the board's opening state. Replaying it cannot
@@ -71,16 +73,18 @@ function FB.LeaveCampaignBoard()
 end
 function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
-    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil
-    FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
+    FB.LeaveBoard(); FB.LocalVersus.match=nil
+    local seed=FB.GameSeed()
+    FB.game=FB.Engine.New(nil,seed,mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
     FB.game.timed=FB.db.shotClock~=false
+    FB.Recordings.Begin(seed,FB.game)
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
 end
 function FB.StartCustomBoard(set,index)
     local board=set.boards[index]
     local grid=not set.builtin and FB.Engine.Unpack(board)
     if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
-    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil; FB.run=nil
+    FB.LeaveBoard(); FB.LocalVersus.match=nil; FB.run=nil
     FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound)
     FB.game.timed=FB.db.shotClock~=false
     if grid then
@@ -101,7 +105,7 @@ function FB.PlayCustom(id,index)
     if item then FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1) end
 end
 function FB.StartVersus(matchSeed,chainReaction)
-    FB.LeaveCampaignBoard(); FB.LocalVersus.match=nil
+    FB.LeaveBoard(); FB.LocalVersus.match=nil
     FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
     FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction,FB.Sound); FB.run=nil
@@ -185,6 +189,9 @@ events:SetScript("OnEvent",function(_,event,...)
         SLASH_FROZENBUBBLE1="/fb"; SLASH_FROZENBUBBLE2="/frozenbubble"
         SlashCmdList.FROZENBUBBLE=function(command)
             if command:match("^debug") then FB.Debug.Command(command:match("^debug%s*(.*)$"))
+            elseif command=="record" then FB.Recordings.Mark()
+            elseif command=="replays" then FB.Recordings.Library()
+            elseif command=="replay" then FB.Recordings.Play(1)
             elseif command=="settings" then FB.Options.Open()
             elseif command=="queue" then FB.UI:ShowLobby(); FB.Net.SetQueue(true)
             elseif command=="scores" then FB.UI.frame:Show(); FB.UI:ShowScores()
@@ -227,7 +234,7 @@ events:SetScript("OnEvent",function(_,event,...)
     elseif event=="PLAYER_LOGOUT" then
         FB.UI:StoreEditorDraft()
         FB.StopGameMusic()
-        FB.LeaveCampaignBoard()
+        FB.LeaveBoard()
     end
 end)
 events:SetScript("OnUpdate",function(_,dt)
@@ -235,7 +242,9 @@ events:SetScript("OnUpdate",function(_,dt)
     FB.Invitations.Update()
     FB.UI:UpdateVisibility(dt)
     local playTime=FB.Transitions.Advance(dt)
-    if FB.LocalVersus.match and not FB.UI.editing then
+    if FB.Recordings.playback then
+        FB.Recordings.Update(playTime)
+    elseif FB.LocalVersus.match and not FB.UI.editing then
         FB.LocalVersus.Update(playTime,FB.UI.keys)
     elseif FB.game and not FB.UI.editing then
         local game=FB.game

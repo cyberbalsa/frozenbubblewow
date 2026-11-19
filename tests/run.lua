@@ -832,7 +832,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
     loadModule("LogoData",fb,env); loadModule("TitleLogo",fb,env)
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Recordings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -848,6 +848,104 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(fb.UI.frame.shown)
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(not fb.UI.frame.shown)
         fb.Options.controls.musicVolume.set(0.65); eq(fb.db.musicVolume,0.65)
+    end)
+    test("personal recordings reproduce both shot phases, clock changes, sound and poses at 50 Hz",function()
+        local rec=fb.Recordings
+        local function compare(actual,replay)
+            for _,key in ipairs({"tick","status","angle","turning","shots","lockedShots","current","next","rng","effectRng",
+                "score","pending","idle","hurryVisible","ceiling","offset","attack","endIndex"}) do
+                if key=="turning" then eq(actual.turning or 0,replay.turning or 0)
+                else eq(actual[key],replay[key],key.." at "..actual.tick) end
+            end
+            eq(actual:Pack(),replay:Pack()); eq(#actual.effects,#replay.effects)
+            eq(#actual.rising,#replay.rising); eq(#actual.chains,#replay.chains)
+            eq(not not actual.projectile,not not replay.projectile)
+            if actual.projectile then
+                for _,k in ipairs({"x","y","vx","vy","color"}) do eq(actual.projectile[k],replay.projectile[k]) end
+            end
+        end
+        for _,mode in ipairs({"random","endless","training","versus"}) do
+            local seed=34164
+            local soundA,soundB={},{}
+            local emit=function(cue) soundA[#soundA+1]=cue end
+            local match=mode=="versus" and fb.LocalVersus.New(seed,true,{2,1},emit)
+            local g=match and match.right or fb.Engine.New(nil,seed,mode,true,emit)
+            local left=match and match.left
+            g.timed=true
+            rec.Begin(seed,g,match); local data=rec.capture.record
+            local play=rec.NewPlayback(data,function(cue) soundB[#soundB+1]=cue end)
+            for tick=1,1500 do
+                local angle=math.sin(tick*0.017)*1.2
+                if tick==18 or tick==740 then
+                    rec.Clock(g,tick~=18); g.timed=tick~=18; g.idle=0; g.hurryVisible=false
+                end
+                if tick%300==1 and tick<600 then g:Shoot(angle) end
+                if left and tick%140==1 then left:Shoot(-angle) end
+                local function input(game,launchTick)
+                    game.angle=angle; game.turning=angle<0 and -1 or 1
+                    if tick%85==3 and tick<600 then game:Shoot(nil,launchTick) end
+                end
+                local status=g.status
+                if match then fb.LocalVersus.Step(match,input)
+                else
+                    g:Step(0.02,input)
+                    if g.status=="lost" and status~=g.status then emit("lose") end
+                end
+                assert(rec.Step(play)); compare(g,play.right)
+                if left then compare(left,play.left); eq(play.wins[1],match.wins[1]); eq(play.wins[2],match.wins[2]) end
+                eq(table.concat(soundA,","),table.concat(soundB,",")); soundA={}; soundB={}
+            end
+            assert(not rec.Step(play)); assert(g.shots>2)
+            rec.CloseRound()
+        end
+    end)
+    test("marked recordings survive leaving a board and playback leaves the live game and scores alone",function()
+        local r,ui=fb.Recordings,fb.UI
+        fb.StartSolo("random",true)
+        local live=fb.game; fb.Fire(); live:Update(0.12)
+        env.SlashCmdList.FROZENBUBBLE("record")
+        local item=fb.db.recordings[1]; eq(item.frames,6); assert(item.tracks[1].before[1])
+        live:Update(0.08); eq(item.frames,10)
+        fb.StartCampaign(1); local campaign,checkpoint=fb.game,fb.db.checkpoint
+        local count=#fb.db.scores
+        env.SlashCmdList.FROZENBUBBLE("replays"); eq(ui.screen,"recordings"); assert(ui.recordButtons[1].shown)
+        ui.recordButtons[1].scripts.OnClick(); eq(ui.screen,"replay"); eq(r.playback.right.mode,"random")
+        local viewer=r.playback
+        eventFrame.scripts.OnUpdate(nil,0.06); eq(viewer.frame,3)
+        ui.inactive=true; r.Update(0.12); eq(viewer.frame,3); ui.inactive=false
+        eventFrame.scripts.OnUpdate(nil,0.2); eq(ui.screen,"recordings"); eq(r.playback,nil)
+        eq(#fb.db.scores,count); eq(fb.game,campaign); eq(fb.game.tick,0); eq(fb.db.checkpoint,checkpoint)
+        fb.ContinueCampaign(); assert(not campaign.paused); eq(r.capture,nil)
+        fb.Options.controls.autoRecord.set(true)
+        fb.LocalVersus.Start(true); live=fb.game; live:Shoot(0.3); fb.LocalVersus.Update(0.06,{})
+        fb.StartCampaign(1); eq(fb.db.recordings[1].mode,"versus"); eq(#fb.db.recordings,2)
+        env.SlashCmdList.FROZENBUBBLE("replay"); assert(ui.remoteBoard.shown and r.playback.left)
+        ui:ShowMenu(); eq(r.playback,nil)
+        fb.Options.controls.autoRecord.set(false)
+    end)
+    test("the Print Screen recording survives logout and replays the whole two-minute training result",function()
+        local ui,r=fb.UI,fb.Recordings
+        local oldFocus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        fb.Options.Set("shotClock",false); fb.StartSolo("training",true)
+        ui.board.scripts.OnKeyDown(ui.board,"PRINTSCREEN"); ui.board.scripts.OnKeyUp(ui.board,"PRINTSCREEN")
+        assert(r.capture.marked)
+        fb.Fire()
+        local game=fb.game
+        game:Update(0.02)
+        for i=2,6050 do game:Step(0.02) end
+        eventFrame.scripts.OnUpdate(nil,0.02)
+        eq(game.status,"finished"); local entry=game.scoreEntry
+        assert(entry and fb.Scores.Pending(entry))
+        eventFrame.scripts.OnEvent(nil,"PLAYER_LOGOUT"); eq(r.capture,nil)
+        env.SlashCmdList.FROZENBUBBLE("replay"); local play=r.playback
+        eq(play.record.mode,"training"); assert(ui.trainingClock.shown)
+        while play.frame<play.record.frames do r.Update(0.02) end
+        r.Render(); assert(ui.trainingResult.shown and ui.result.shown); eq(ui.trainingScore.text,tostring(game.score))
+        eq(play.right:Pack(),game:Pack()); eq(play.right.status,game.status); eq(play.right.tick,game.tick)
+        eq(fb.Scores.Pending(entry),entry); eq(fb.game,game)
+        ui.panels.replay.scripts.OnKeyDown(ui.panels.replay,"SPACE"); eq(ui.screen,"recordings")
+        fb.Scores.Submit(entry,""); fb.Options.Set("shotClock",true); ui:ShowMenu(); env.GetMouseFoci=oldFocus
     end)
     test("desktop board reveals hold local clocks, cover the previous panel, and respect input and motion settings",function()
         local ui,t=fb.UI,fb.Transitions

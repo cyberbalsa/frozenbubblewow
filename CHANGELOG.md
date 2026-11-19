@@ -1,3 +1,9 @@
+# 0.1.0-alpha.23
+
+- Press Print Screen or type `/fb record` to keep a random, training, endless or shared-keyboard round. The recording includes play from the start, even if you mark it later.
+- Open **Options → Recordings** to watch either launcher aim, fire and react, with the original board sounds. Both players appear together in 2P recordings.
+- Enable **Automatically save local recordings** to keep the ten most recent rounds. Watching a recording pauses the current local game and keeps its score intact.
+
 # 0.1.0-alpha.22
 
 - A lost campaign board can be retried in the same run. The clock includes every attempt. Choose **Finish run** on the pause or result screen to record how far you got.

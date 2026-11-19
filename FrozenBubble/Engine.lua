@@ -271,7 +271,7 @@ function E:Shoot(angle,launchTick)
     self.next=self:Color()
     self.shots=self.shots+1; self.idle=0; self.hurryVisible=false
     self.sound("launch")
-    if self.onShoot then self.onShoot(self,launchTick or self.tick) end
+    if self.onShoot then self.onShoot(self,launchTick or self.tick,launchTick~=nil) end
     return true
 end
 function E:TrainingTimeLeft()
@@ -365,6 +365,7 @@ function E:Step(dt,input)
             if fx.y>bottom then table.remove(self.effects,i) end
         end
     end
+    if self.recordTrack then FB.Recordings.EndTick(self) end
     if self.stick then
         self.stick.ticks=self.stick.ticks+1
         if self.stick.ticks>14 then self.stick=nil end
