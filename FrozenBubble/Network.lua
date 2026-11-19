@@ -112,10 +112,11 @@ function N.Leave()
     if m then
         FB.Series.Leave(m)
         if m.phase=="playing" then N.Finish("lost","You forfeited.",true)
-        elseif m.phase~="done" then N.Whisper("CANCEL",m.id); N.match=nil
-        else FB.Recordings.CloseOnline(m); N.match=nil end
+        elseif m.phase~="done" then N.Whisper("CANCEL",m.id) end
+        FB.Recordings.CloseOnline(m); N.match=nil
     end
     notify("Left multiplayer.")
+    if m then FB.Series.Report(m) end
 end
 function N.WaitForStart(m)
     m.phase="barrier"; m.since=now(); m.lastRetry=now()
@@ -124,11 +125,15 @@ end
 function N.Begin()
     local m=N.match
     if not m or m.phase=="playing" or m.phase=="done" then return end
-    if InCombatLockdown() then N.Whisper("CANCEL",m.id); N.match=nil; return end
+    if InCombatLockdown() then
+        N.Whisper("CANCEL",m.id); N.match=nil; FB.Series.Report(m); return
+    end
     m.phase="playing"; m.since=now(); m.lastSeen=now(); m.lastState=-100
     if m.capable and not m.series then
         m.round=1; m.series={id=m.id,wins=0,losses=0,limit=m.limit or 0}
     end
+    local session=m.series or m
+    session.startedAt=session.startedAt or now()
     m.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.onShoot=N.Fire; FB.game.onRise=N.Rise
@@ -159,6 +164,7 @@ function N.Finish(result,reason,send)
     FB.DuelReplay.Result(m)
     if FB.Series.Complete(m) then reason=reason.." Victory limit reached." end
     notify(reason)
+    if m.departed or result=="aborted" then FB.Series.Report(m) end
 end
 function N.Fire(g,launchTick)
     local m=N.match
@@ -309,6 +315,7 @@ function N.Receive(prefix,message,channel,sender)
                 FB.db[counter]=math.max(0,FB.db[counter]-1); finished.result="draw"
                 if finished.series then finished.series[counter]=math.max(0,finished.series[counter]-1) end
                 FB.DuelReplay.Result(finished,true)
+                FB.Series.Report(finished,true)
                 finished.peerReady=nil
                 if m==finished then
                     FB.game.status="draw"; m.remote.status="draw"; notify("Draw — both players finished together.")
@@ -337,7 +344,7 @@ function N.Receive(prefix,message,channel,sender)
     elseif kind=="GO" and not m.host and m.phase=="barrier" then N.Begin()
     elseif kind=="CANCEL" and m.phase~="done" then
         if m.phase=="playing" then N.Finish("aborted","Opponent left; match canceled.",false)
-        else N.match=nil; notify("Challenge declined or canceled.") end
+        else N.match=nil; notify("Challenge declined or canceled."); FB.Series.Report(m) end
     elseif kind=="END" and (p[4]=="won" or p[4]=="lost") then
         if m.phase=="barrier" or m.host and (m.phase=="restart" or m.phase=="start") then N.Begin() end
         N.Whisper("ENDACK",m.id)

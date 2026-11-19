@@ -599,6 +599,13 @@ test("victory limits match identical queues and both clients replay a fresh boar
     assert(h.Series.Complete(m) and not j.Series.CanContinue(j.Net.match))
     eq(h.Series.Caption(m),"Series won · 2–0")
     h.Series.Ready(); tick(3); eq(h.Net.match,m); eq(h.db.wins,2)
+    h.Net.Leave(); tick(4); j.Net.Leave()
+    for _,client in ipairs({h,j}) do
+        local log=table.concat(client.Community.log,"\n")
+        assert(log:find("*** Game finished, because victories limit of 2 was reached.",1,true))
+        assert(log:find("*** Winner: Arena\n*** Scores: Arena: 2, Basin: 0",1,true))
+        local _,count=log:gsub("Addicted for:",""); eq(count,1)
+    end
 end)
 test("a draw gives neither player a round and a departure closes a pending rematch",function()
     local h,j=client("Cairn"),client("Dune")
@@ -686,7 +693,61 @@ test("room departures retain the other seats and all remaining players can draw 
     for _,fb in ipairs({h,j,long}) do
         local m=fb.Net.match; eq(m.round,2); eq(m.phase,"playing"); assert(m.players[gone].left and m.players[gone].lost)
     end
+    local room=h.Net.match
+    -- A winner can leave before the host closes. Their victory still counts.
+    h.game.status="lost"; j.game.status="lost"; tick(8)
+    eq(room.names[room.winner],long.PlayerName())
+    long.Arena.Leave(); tick(5); assert(room.players[long.PlayerName()].left)
+    assert(room.mask~=room.finalMask)
     h.Arena.Leave(); tick(4); eq(j.Net.match,nil); eq(long.Net.match,nil)
+    for _,fb in ipairs({h,j}) do
+        local scores=table.concat(fb.Community.log,"\n"):match("%*%*%* Scores: ([^\n]+)")
+        assert(scores:find("Oak: 1",1,true)==1 and scores:find("Ash: 0",1,true))
+    end
+end)
+test("the host's final standings survive a lost result and close, with older guests still seeing their lobby",function()
+    local h,j,k=client("Glacier"),client("Snowcap"),client("Drift")
+    local host,guest,older=h.PlayerName(),j.PlayerName(),k.PlayerName()
+    local legacySend=k.Net.Send
+    k.Net.Send=function(kind,channel,to,...)
+        local args={...}
+        if kind=="AJOIN" then args[4]=nil end
+        return legacySend(kind,channel,to,(unpack or table.unpack)(args))
+    end
+    h.db.versusLimit=1; h.Arena.Host(); j.Arena.Join(host); k.Arena.Join(host)
+    tick(8); h.Arena.Start(); tick(10)
+    local room=h.Net.match; assert(room.players[guest].canFinal and not room.players[older].canFinal)
+    local send=h.Net.Send
+    local lostClose,final,legacy
+    h.Net.Send=function(kind,channel,to,...)
+        local args={...}
+        if kind=="AHOST" and to==guest and args[5]>=0 then return true end
+        if kind=="ACLOSE" then
+            if to==guest then
+                eq(args[2],"final")
+                if not lostClose then lostClose=true; return true end
+                final=table.concat(args,"|")
+            elseif to==older then legacy=#args==1 end
+        end
+        return send(kind,channel,to,...)
+    end
+    h.game.status="lost"; k.game.status="lost"; tick(8)
+    eq(room.phase,"done"); eq(room.names[room.winner],guest); eq(j.Net.match.phase,"playing")
+    -- Only the host of this room can close it, and its winner must agree with the loss mask.
+    local forged="1|ACLOSE|"..room.room.."|final|1|0|1|0|Closed."
+    j.Net.Receive(j.PREFIX,forged,"WHISPER",host); j.Net.Receive(j.PREFIX,forged,"WHISPER",older)
+    eq(j.Net.match.phase,"playing")
+    h.Arena.Leave(); tick(10); assert(lostClose and final and legacy)
+    eq(j.Net.match,nil); eq(k.Net.match,nil); eq(j.db.wins,1); eq(h.db.losses,1)
+    for _,side in ipairs({h,j,k}) do
+        local log=table.concat(side.Community.log,"\n")
+        assert(log:find("*** Winner: Snowcap",1,true))
+        local rows=log:match("%*%*%* Scores: ([^\n]+)")
+        assert(rows:find("Snowcap: 1, ",1,true)==1 and rows:find("Drift: 0",1,true) and rows:find("Glacier: 0",1,true))
+    end
+    local logSize=#j.Community.log
+    j.Net.Receive(j.PREFIX,"1|ACLOSE|"..final,"WHISPER",host); eq(#j.Community.log,logSize); eq(j.db.wins,1)
+    tick(41); eq(h.Arena.closedRooms[room.room],nil)
 end)
 test("remote rising penalties round-trip all seven lanes; malformed frames are ignored",function()
     for offset=0,1 do
@@ -748,6 +809,11 @@ test("lost end packets and a simultaneous loss settle after leaving the result s
     tick(5)
     eq(h.db.losses,0); eq(j.db.losses,0); eq(h.db.wins,0); eq(j.db.wins,0)
     eq(h.game.status,"playing"); eq(j.game.status,"playing")
+    for _,side in ipairs({h,j}) do
+        local log=table.concat(side.Community.log,"\n")
+        assert(log:find("*** A round was corrected to a draw.\n*** Draw game!\n*** Scores: June: 0, Heidi: 0",1,true))
+        local _,count=log:gsub("Addicted for:",""); eq(count,1)
+    end
     tick(21); assert(not next(h.Net.results) and not next(j.Net.results))
 end)
 test("unanswered direct challenge expires",function()
@@ -2723,7 +2789,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local oldMouse=env.GetMouseFoci
         fb.StartVersus(51,true)
         local m={id="51-1",peer="Remote-TestRealm",host=true,phase="playing",capable=true,limit=5,
-            round=4,seed=51,series={id="51-1",limit=5,wins=1,losses=2},remote=fb.Engine.New(nil,51,"versus",true)}
+            round=4,seed=51,series={id="51-1",limit=5,wins=1,losses=2,startedAt=env.GetTime()-3723},remote=fb.Engine.New(nil,51,"versus",true)}
         fb.Net.match=m
         fb.game.grid={} -- The loser still has a full board to freeze.
         fb.Net.Finish("won","Round won",false)
@@ -2738,7 +2804,13 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:ShowGame(); env.GetMouseFoci=function() return {ui.board} end
         assert(ui:CanAutoRematch()); ui.retryButton.scripts.OnClick(); assert(m.ready)
         ui:Update(0.02); eq(ui.retryButton.text,"Waiting for opponent…")
+        local messages={}
+        local log=ui.panels.lobby.log
+        local addMessage=log.AddMessage
+        log.AddMessage=function(_,text) messages[#messages+1]=text end
         ui.leaveSeries.scripts.OnClick(); eq(fb.Net.match,nil); eq(ui.screen,"lobby")
+        log.AddMessage=addMessage
+        assert(table.concat(messages,"\n"):find("*** Addicted for: 1h 02m 03s\n*** Draw game!\n*** Scores: Remote: 2, UITester: 2",1,true))
         env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
     end)
     test("online winner sign precedes rematch input and falling clusters cross the sign",function()

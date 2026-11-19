@@ -35,6 +35,59 @@ function S.Caption(m)
     if m.departed then return "Series closed" end
     return "Round "..m.round.." · "..S.Label(m.series.limit)
 end
+local function duration(seconds)
+    local h=math.floor(seconds/3600)
+    local m=math.floor(seconds/60)%60
+    local s=seconds%60
+    if h>0 then return string.format("%dh %02dm %02ds",h,m,s) end
+    if m>0 then return string.format("%dm %02ds",m,s) end
+    return s.."s"
+end
+
+-- show_mp_scores prints the elapsed session time, then ranks every seat,
+-- including players who left. The desktop reverses seat order within ties.
+function S.Report(m,correction)
+    local session=m.series or m
+    if not session.startedAt then return end
+    if correction then
+        if not session.reported then return end
+    elseif session.reported then return end
+    local log=FB.Community.Log
+    local rows={}
+    local function add(name,score)
+        rows[#rows+1]={name=name,score=score,seat=#rows+1}
+    end
+    if m.arena then
+        for _,name in ipairs(m.names) do
+            local player=m.players[name]
+            add(player.label,player.wins)
+        end
+    else
+        local own,other=FB.Plaques.DuelNames(FB.PlayerName(),m.peer)
+        local wins=m.series and m.series.wins or (m.result=="won" and 1 or 0)
+        local losses=m.series and m.series.losses or (m.result=="lost" and 1 or 0)
+        if m.host then add(own,wins); add(other,losses)
+        else add(other,losses); add(own,wins) end
+    end
+    table.sort(rows,function(a,b)
+        if a.score==b.score then return a.seat>b.seat end
+        return a.score>b.score
+    end)
+    if correction then log("A round was corrected to a draw.")
+    else
+        session.reported=true
+        if (session.limit or 0)>0 and rows[1].score>=session.limit then
+            log("Game finished, because victories limit of "..session.limit.." was reached.")
+        end
+        log("Addicted for: "..duration(math.floor(GetTime()-session.startedAt)))
+    end
+    if rows[1].score>rows[2].score then log("Winner: "..rows[1].name)
+    else log("Draw game!") end
+    local scores={}
+    for i,row in ipairs(rows) do scores[i]=row.name..": "..row.score end
+    log("Scores: "..table.concat(scores,", "))
+end
+
 function S.Ready()
     local m=N.match
     if not S.CanContinue(m) or m.ready or InCombatLockdown() or not N.Available() then return end
@@ -45,6 +98,7 @@ end
 function S.Leave(m)
     if m and (m.series or m.capable) then
         m.departed=true
+        if m.phase~="playing" then S.Report(m) end
         N.Whisper("SERIESBYE",m.id)
         if m.parent and (m.phase=="restart" or m.phase=="barrier") then
             N.Whisper("SERIESBYE",m.parent)
@@ -69,10 +123,14 @@ end
 function S.Receive(kind,p,sender)
     local m=N.match
     if kind=="SERIESBYE" then
-        if m and sender==m.peer and (p[3]==m.id or m.phase=="restart" and p[3]==m.parent) then
+        local restarting=m and m.parent and (m.phase=="restart" or m.phase=="barrier")
+        if m and not m.departed and sender==m.peer and (p[3]==m.id or restarting and p[3]==m.parent) then
             m.departed=true
-            if m.phase=="restart" then N.match=nil end
-            if m.phase=="done" or m.phase=="restart" then N.Notify("Your opponent left the series.") end
+            if restarting then N.match=nil end
+            if m.phase=="done" or restarting then
+                N.Notify("Your opponent left the series.")
+                S.Report(m)
+            end
         end
         return true
     end

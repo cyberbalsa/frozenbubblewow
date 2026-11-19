@@ -2,7 +2,7 @@
 -- simulates their own shots and sends cumulative penalties to each opponent.
 local _, FB=...
 local N=FB.Net
-local A={rooms={},autoKick={}}
+local A={rooms={},autoKick={},closedRooms={}}
 FB.Arena=A
 local unpackFields=unpack or table.unpack
 local function validName(s)
@@ -104,11 +104,12 @@ function A.Join(host)
     local listing=A.rooms[host]
     local m=room(host,listing and listing.id or "*")
     m.nonce=serial()
-    send(host,"AJOIN",m.room,m.nonce,1); m.pulse=GetTime()
+    send(host,"AJOIN",m.room,m.nonce,1,1); m.pulse=GetTime()
     N.Notify("Joining "..host.."'s room…")
 end
 function A.Expire(t)
     for host,v in pairs(A.rooms) do if t-v.seen>24 then A.rooms[host]=nil end end
+    for id,room in pairs(A.closedRooms) do if t>=room.expires then A.closedRooms[id]=nil end end
 end
 local function seats(m,name)
     local words={}
@@ -165,14 +166,34 @@ local function close(m,reason)
     FB.Recordings.CloseOnline(m)
     if m.played and FB.game and FB.game.mode=="versus" then FB.game=nil end
     N.match=nil
-    if FB.UI and FB.UI.screen=="opponent" then FB.UI:ShowLobby() end
+    if FB.UI and FB.UI.screen=="opponent" then FB.UI:Panel("lobby") end
     N.Notify(reason)
+    FB.Series.Report(m)
+end
+
+-- A close can overtake the last host heartbeat. Include its outcome and
+-- resend it if a seated guest keeps polling for the room after it closes.
+local function sendClose(room,name,guest)
+    if guest.final then
+        send(name,"ACLOSE",room.id,"final",room.round,room.mask,room.winner,room.left,room.reason)
+    else send(name,"ACLOSE",room.id) end
+    guest.retryAt=GetTime()+2
 end
 function A.Leave(reason)
     local m=N.match
     if not m or not m.arena then return end
     if m.host then
-        A.Fan("ACLOSE",m.room)
+        local closed={id=m.room,round=m.round,mask=m.phase=="done" and m.finalMask or m.mask or 0,left=m.leftMask,
+            winner=m.phase=="done" and m.winner or -1,reason=reason or "The host closed the room.",
+            guests={},expires=GetTime()+40}
+        for _,v in pairs(m.players) do
+            if v.name~=m.me and not v.left then
+                local guest={nonce=v.nonce,final=m.played and v.canFinal}
+                closed.guests[v.name]=guest
+                sendClose(closed,v.name,guest)
+            end
+        end
+        if next(closed.guests) then A.closedRooms[m.room]=closed end
         N.Broadcast("AROOM",m.room,0,FB.Series.Code(m.chainReaction,m.limit))
     else
         send(m.peer,"ALEAVE",m.room,m.nonce)
@@ -266,6 +287,7 @@ function A.StepBoards(m,lowGraphics)
 end
 local function begin(m)
     if InCombatLockdown() then A.Leave("Combat started."); return false end
+    m.startedAt=m.startedAt or GetTime()
     m.phase="playing"; m.winner=nil; m.seq=0; m.lastState=-100; m.played=true
     A.BuildBoards(m,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
@@ -328,7 +350,7 @@ local function syncDepartures(m,mask)
     end
 end
 function A.ApplyWinner(m,winner,localGame)
-    m.phase="done"; m.winner=winner; m.pulse=-100
+    m.phase="done"; m.finalMask=m.mask; m.winner=winner; m.pulse=-100
     local name=m.names[winner]
     if name then m.players[name].wins=m.players[name].wins+1 end
     for _,v in pairs(m.players) do
@@ -357,7 +379,7 @@ local function pulse(m)
                 else send(v.name,"AHOST",m.room,m.revision,m.round,m.mask or 0,m.winner or -1,(m.requested or m.wantNext) and 1 or 0,m.leftMask) end
             end
         end
-    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce,1)
+    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce,1,1)
     else
         send(m.peer,"APULSE",m.room,m.nonce,m.revision,m.round,m.phase,
             m.players[m.me].lost and 1 or 0,m.mask or 0,m.wantNext and 1 or 0)
@@ -375,6 +397,14 @@ function A.Receive(kind,p,channel,sender)
     end
     if channel~="WHISPER" or not kind or kind:sub(1,1)~="A" or kind=="ACCEPT" or kind=="AGAIN" then return false end
     local m=N.match
+    if kind=="APULSE" and p[3] then
+        local closed=A.closedRooms[p[3]]
+        if closed then
+            local guest=closed.guests[sender]
+            if guest and guest.nonce==p[4] and GetTime()>=guest.retryAt then sendClose(closed,sender,guest) end
+            return true
+        end
+    end
     if not m or not m.arena or not p[3] then return true end
     if m.phase=="joining" and (kind=="ASEATS" or kind=="AFULL") and sender:lower()==m.peer:lower() then m.peer=sender end
     if kind=="AJOIN" and m.host and m.phase=="room" and (p[3]=="*" or m.room==p[3]) then
@@ -389,7 +419,7 @@ function A.Receive(kind,p,channel,sender)
         if not v and #m.names>=5 then send(sender,"AFULL",p[4]); return true end
         if not v then
             seat(m,sender); v=m.players[sender]; m.revision=m.revision+1; m.advert=-100
-            v.canChat=p[5]=="1"
+            v.canChat=p[5]=="1"; v.canFinal=p[6]=="1"
             N.Notify(sender.." joined the room.")
         end
         v.nonce=p[4]; v.seen=GetTime(); seats(m,sender); m.pulse=-100
@@ -398,7 +428,24 @@ function A.Receive(kind,p,channel,sender)
         if p[4]=="KICK" and p[5] and (m.room=="*" or m.room==p[5]) then m.room=p[5]; kicked(m,table.concat(p,"|",6))
         else close(m,"That room is full.") end
     elseif kind=="ACLOSE" and not m.host and sender==m.peer and p[3]==m.room then
-        if not p[4] then close(m,"The host closed the room.")
+        if p[4]=="final" then
+            local round=FB.Integer(p[5],1,1000000)
+            local maxMask=2^#m.names-1
+            local mask,winner,left=FB.Integer(p[6],0,maxMask),FB.Integer(p[7],-1,#m.names),FB.Integer(p[8],0,maxMask)
+            if #p~=9 or not round or not mask or not winner or not left or not FB.Community.ValidChat(p[9]) then return true end
+            if round~=m.round and not (m.phase=="done" and round==m.round+1 and winner==-1) then return true end
+            if winner>=0 then
+                local expected=winner==0 and maxMask or maxMask-2^(winner-1)
+                if mask~=expected then return true end
+                if m.phase=="seating" and not begin(m) then return true end
+            end
+            if m.phase=="playing" and winner>=0 then
+                for _,v in pairs(m.players) do if math.floor(mask/2^(v.index-1))%2==1 then lost(m,v) end end
+                finish(m,winner)
+            end
+            if m.keepRoom then syncDepartures(m,left) end
+            close(m,p[9])
+        elseif not p[4] then close(m,"The host closed the room.")
         elseif p[4]==m.nonce then kicked(m,table.concat(p,"|",5)) end
     elseif kind=="ARSAY" and m.host and m.phase=="room" and p[3]==m.room then
         local v=m.players[sender]; local message=table.concat(p,"|",5)

@@ -1,3 +1,9 @@
+# 0.1.0-alpha.42
+
+- The multiplayer lobby now shows how long you played, who won or tied, and the round wins for everyone who took a seat. Players who left still appear in the final scores.
+- Arena guests can recover the last round result if they miss the host’s update or the first room-close message. The host and guest both need alpha.42 for this.
+- Leaving an active duel forfeits and exits in one click. If both boards lose together and the other result arrives after you leave, the lobby prints the corrected standings.
+
 # 0.1.0-alpha.41
 
 - Duels and arenas send incoming penalty bubbles as soon as they launch. You can watch a volley rise on an opponent’s board even when it lands between board updates. Both players need alpha.41 or later for the live volley.
