@@ -15,6 +15,10 @@ end
 local FB={}
 loadModule("Bootstrap",FB); loadModule("Levels",FB); loadModule("Engine",FB); loadModule("Chains",FB)
 local E=FB.Engine
+loadModule("Controls",FB)
+test("100 campaign boards match the desktop shot, piston, fall and freeze timelines",function()
+    dofile("tests/campaign_trace.lua")(FB,eq)
+end)
 test("all 100 original levels have valid ten-row layouts",function()
     eq(#FB.Levels,100)
     for _,level in ipairs(FB.Levels) do
@@ -804,7 +808,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.SetText=function(f,s) f.text=tostring(s) end
     methods.GetText=function(f) return f.text end
     methods.GetWidth=function(f) return f.width end; methods.GetHeight=function(f) return f.height end
-    methods.GetFrameLevel=function() return 1 end
+    methods.SetFrameLevel=function(f,level) f.fbZ=level end
+    methods.GetFrameLevel=function(f) return f.fbZ or 1 end
     methods.SetShown=function(f,v) if not not v~=not not f.shown then if v then methods.Show(f) else methods.Hide(f) end end end
     methods.Show=function(f) f.shown=true end
     methods.Hide=function(f) f.hideCalls=f.hideCalls+1; f.shown=false; if f.scripts.OnHide then f.scripts.OnHide(f) end end
@@ -1882,6 +1887,23 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(ui.leftSigns[seat]:IsShown() and not ui.miniBoards[seat]:IsShown())
         ui:ShowMenu(); fb.Options.Set("boardTransitions",menus); env.GetMouseFoci=oldFocus
         for _,peer in ipairs(guests) do clients[peer.PlayerName()]=nil end
+    end)
+    test("an editor test and a saved copy of the campaign draw the original ammunition",function()
+        local ui,oldSeed=fb.UI,fb.GameSeed
+        fb.GameSeed=function() return 4 end
+        local function verify()
+            local game=fb.game
+            eq(game.current,6); assert(game:Shoot(-18*0.03))
+            for i=1,38 do game:Step(0.02) end
+            eq(game.status,"won"); eq(game.lastPop,3); eq(game.lastDrop,7)
+            ui:Update(0.02)
+            assert(ui.result:IsShown() and ui.board.fx[1]:GetParent()==ui.board.fxLayer)
+            assert(ui.result:GetFrameLevel()<ui.board.fxLayer:GetFrameLevel())
+            assert(ui.board.fxLayer:GetFrameLevel()<ui.nextButton:GetFrameLevel())
+        end
+        ui:StartEditor("default-levelset",false,17,true); ui:TestEditor(); verify()
+        fb.StartCustom(ui:DefaultEditorBoards()[17]); verify()
+        fb.GameSeed=oldSeed; ui:ShowMenu()
     end)
     test("room controls render live miniature boards, targeting, chat, spectating and combat cancellation",function()
         local ui=fb.UI

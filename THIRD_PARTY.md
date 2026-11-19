@@ -32,6 +32,8 @@ The eight colored bubbles retain their original GIF interiors. The importer rend
 
 The highscore background, frame, headings and menu credit strips come from the pinned checkout. The 100 level thumbnails use the four-by-four pixel average in `CStuff.xs::shrink_`, with separate sheets for the standard and colorblind sprites.
 
+The campaign regression uses the pinned desktop executable with SDL’s dummy drivers. It checks 84,570 simulation frames across all 100 boards, including wall rebounds, ammunition, falling clusters, ceiling advances, frozen cells and sounds. Regenerate the per-level checksums in an environment with the desktop dependencies using `perl tools/demos/reference_campaign.pl /path/to/frozen-bubble > tests/reference_campaign.lua`.
+
 The live arena uses the original multiplayer backdrop, miniature bubbles and penguin animations, targeting marks, chat panels, and result badges. The miniature cannon uses the same rotation routine with the original 50-pixel shooter.
 
 ## Title-screen recordings

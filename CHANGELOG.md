@@ -1,3 +1,9 @@
+# 0.1.0-alpha.28
+
+- When you clear a board, falling clusters and bursting bubbles pass in front of the wooden winner sign as they do in the desktop game. The buttons stay above the moving bubbles.
+- Campaign losses now freeze the first and last bubbles on the same frames as the desktop game. The loss sound plays as the last shot lands, even when WoW draws several simulation frames at once.
+- A level opened from the editor or your shared library now draws its opening ammunition from the same sequence as the campaign when given the same seed.
+
 # 0.1.0-alpha.27
 
 - Press **Print Screen** or type `/fb record` during a three-to-five-player arena round to save it. Leave multiplayer and open **Options → Recordings** to watch all the boards together. The replay includes incoming penalties, targeting arrows, departures and the round result.

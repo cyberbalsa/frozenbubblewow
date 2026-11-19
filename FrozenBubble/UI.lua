@@ -60,6 +60,7 @@ local function makeBoard(parent,x,y)
     b:SetSize(256,400); b:SetPoint("TOPLEFT",x,-y)
     -- The original background already contains the playfield. Do not cover it.
     b.bubbles={}; b.fx={}; b.boardOverlays={}
+    b.fxLayer=CreateFrame("Frame",nil,b); b.fxLayer:SetAllPoints(b); b.fxLayer:EnableMouse(false)
     for key=1,104 do b.bubbles[key]=bubble(b) end
     b.rising={}; b.penalties={}
     for i=1,7 do
@@ -215,7 +216,8 @@ function U:Build()
     self.trainingScore=text(self.trainingResult,"",0,126,14,341); self.trainingScore:SetJustifyH("CENTER")
     text(self.trainingResult,"Press any key.",0,158,14,341):SetJustifyH("CENTER")
     self.trainingResult:Hide()
-    self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end); self.nextButton:Hide()
+    self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end)
+    self.nextButton:SetFrameLevel(self.layers.panel+2); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
         self:RetryRound()
     end)
@@ -1096,13 +1098,18 @@ function U:RenderBoard(board,game,remote)
         height=height+(info.h-1)*factor; pending=pending-(grouped and 7 or 1)
     end
     for i=used+1,#board.penalties do board.penalties[i]:Hide() end
+    -- The solo winner sign is part of the desktop backdrop. Falling and
+    -- bursting bubbles keep moving across it until they leave the screen.
+    local overSign=winner and game.mode~="versus" and (self.screen=="game" or self.screen=="replay")
+    local fxLevel=overSign and self.layers.panel+1 or self.layers.board+1
+    if board.fxLevel~=fxLevel then board.fxLayer:SetFrameLevel(fxLevel); board.fxLevel=fxLevel end
     local chains=game and game.chains
     local chainCount=chains and #chains or 0
     local count=chainCount+(game and game.effects and #game.effects or 0)
     for i=1,count do
         local fx=(chains and chains[i]) or game.effects[i-chainCount]
         local t=board.fx[i]
-        if not t then t=bubble(board); board.fx[i]=t end
+        if not t then t=bubble(board.fxLayer); board.fx[i]=t end
         if not low or i<=chainCount or game.chainReaction and fx.kind=="fall" then
             local order=fx.kind=="pop" and 4 or 3
             if t.fbFxOrder~=order then t:SetDrawLayer("OVERLAY",order); t.fbFxOrder=order end

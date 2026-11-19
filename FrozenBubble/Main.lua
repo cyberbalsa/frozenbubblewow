@@ -84,19 +84,12 @@ function FB.StartSolo(mode,chainReaction)
 end
 function FB.StartCustomBoard(set,index)
     local board=set.boards[index]
-    local grid=not set.builtin and FB.Engine.Unpack(board)
-    if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
-    FB.LeaveBoard(); FB.LocalVersus.match=nil; FB.run=nil
-    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound,true)
-    FB.game.lowGraphics=FB.db.graphicsLevel==1
-    FB.game.timed=FB.db.shotClock~=false
-    if grid then
-        FB.game.grid=grid
-        for key=1,FB.Engine.ROWS*8 do
-            if grid[key] then FB.game.attachedOrder[#FB.game.attachedOrder+1]=key end
-        end
-        FB.game.current=FB.game:Color(); FB.game.next=FB.game:Color()
-    end
+    if not board or not set.builtin and type(board)~="string" then return end
+    local game=FB.Engine.New(board,FB.GameSeed(),"custom",nil,FB.Sound,true)
+    if not game or not FB.CanStart() then return end
+    FB.LeaveBoard(); FB.LocalVersus.match=nil; FB.run=nil; FB.game=game
+    game.lowGraphics=FB.db.graphicsLevel==1
+    game.timed=FB.db.shotClock~=false
     FB.game.customSet,FB.game.customIndex=set,index
     FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
 end
@@ -159,7 +152,7 @@ local function finishSolo()
     if not game or game.mode=="versus" or game.status=="playing" or game.recorded then return end
     game.recorded=true
     if game.status=="finished" then FB.Sound("cancel")
-    elseif game.status=="lost" then FB.Sound("lose") end
+    elseif game.status=="lost" and not game.lossSoundPlayed then FB.Sound("lose") end
     if game.mode=="campaign" then
         FB.run.score=FB.run.score+game.score; game.score=0
         FB.run.seconds=FB.run.seconds+game.elapsed

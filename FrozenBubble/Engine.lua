@@ -73,7 +73,10 @@ function E.New(level, seed, mode, chainReaction, sound, desktopRandom)
     self.hurryWarn = self.penaltyRules and 5 or 8
     self.hurryMax = self.penaltyRules and 7.5 or 10.5
     self.rootPeriod = self.penaltyRules and 12 or 9
-    if level then
+    if type(level)=="string" then
+        self.grid=E.Unpack(level)
+        if not self.grid then return end
+    elseif level then
         for r, row in ipairs(level) do
             for c = 1, #row do
                 local color = tonumber(row:sub(c,c))
@@ -321,7 +324,10 @@ end
 function E:StepEnding()
     if self.endingStatus~=self.status then
         if self.endingStatus then self.effects={} end
-        self.endingStatus,self.endIndex,self.endCells,self.endTick=self.status,0,{},self.tick
+        self.endingStatus,self.endIndex,self.endCells=self.status,0,{}
+        -- The first displayed campaign frame is frame zero in update_lost.
+        self.endTick=self.tick
+        if self.mode=="campaign" or self.mode=="custom" then self.endTick=self.tick-1 end
         if self.projectile then
             local shot=self.projectile
             local fx=burst(self,shot.x,shot.y,shot.color)
@@ -396,7 +402,13 @@ local function advanceGame(self,dt,input)
 end
 function E:Step(dt,input)
     if self.paused then return end
+    local wasPlaying=self.status=="playing"
     advanceGame(self,dt,input)
+    if wasPlaying and self.status=="lost" and (self.mode=="campaign" or self.mode=="custom") then
+        self.stick=nil; self.hurryVisible=false
+        self.lossSoundPlayed=true
+        self.sound("lose")
+    end
     -- update_game moves sprites after collisions and end-of-round actions, even
     -- on the tick they are created. Speeds here are pixels per desktop frame.
     local bottom=self.effectFloor or self.launchY+80
