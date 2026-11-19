@@ -31,7 +31,7 @@ local sequences={
 function A.Penguin(texture,game,player,dt)
     player=player or "p1"
     if texture.fbGame~=game then
-        texture.fbGame=game; texture.fbState="normal"; texture.fbIndex=20; texture.fbTime=0; texture.fbShots=0
+        texture.fbGame=game; texture.fbState="normal"; texture.fbIndex=20; texture.fbTime=0; texture.fbShots=0; texture.fbIdle=0
     end
     local function state(name)
         if texture.fbState~=name then texture.fbState=name; texture.fbIndex=sequences[name][2]; texture.fbTime=0 end
@@ -41,16 +41,26 @@ function A.Penguin(texture,game,player,dt)
         if game.status=="won" then state("win")
         elseif game.status=="lost" then
             if texture.fbState~="lose" and texture.fbState~="lose_to" then state("lose_to") end
-        elseif game.shots~=texture.fbShots then state("action"); texture.fbShots=game.shots
-        elseif texture.fbState~="action" then
-            local turning=game.turning or 0
-            if turning<0 then
-                if texture.fbState~="left" and texture.fbState~="left_to" then state("left_to") end
-            elseif turning>0 then
-                if texture.fbState~="right" and texture.fbState~="right_to" then state("right_to") end
-            elseif texture.fbState=="left" or texture.fbState=="left_to" then state("left_from")
-            elseif texture.fbState=="right" or texture.fbState=="right_to" then state("right_from")
-            elseif (game.idle or 0)>=4 and texture.fbState=="normal" then state("wait_to") end
+        elseif not game.paused then
+            local direction=game.turning and (game.turning<0 and "left" or game.turning>0 and "right")
+            if game.shots~=texture.fbShots then
+                state("action"); texture.fbIndex=21; texture.fbTime=0
+                texture.fbShots=game.shots; texture.fbIdle=0
+            elseif direction then
+                texture.fbIdle=0
+                if texture.fbState==direction.."_from" then state(direction)
+                elseif texture.fbState~=direction then state(direction.."_to") end
+            else
+                texture.fbIdle=(texture.fbIdle or 0)+dt
+                local previous=texture.fbState
+                if previous=="left_to" or previous=="right_to" then
+                    -- Continue the return motion from the pose reached before release.
+                    local frame=texture.fbIndex
+                    state(previous=="left_to" and "left_from" or "right_from")
+                    texture.fbIndex=frame
+                elseif previous=="left" or previous=="right" then state(previous.."_from")
+                elseif texture.fbIdle>4 and previous~="wait" and previous~="wait_to" then state("wait_to") end
+            end
         end
     end
     texture.fbTime=(texture.fbTime or 0)+(game and game.paused and 0 or dt)

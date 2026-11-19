@@ -162,7 +162,7 @@ events:SetScript("OnUpdate",function(_,dt)
             if game.mode=="versus" then FB.Net.State() end
         end
         if game.bounced then FB.Sound("rebound"); game.bounced=false end
-        if game.lowered then FB.Sound("newroot_solo"); game.lowered=false end
+        if game.lowered then FB.Sound(game.mode=="versus" and "newroot" or "newroot_solo"); game.lowered=false end
         finishSolo()
     end
     FB.Community.Update(); FB.Net.Update(dt); FB.UI:Update(dt)

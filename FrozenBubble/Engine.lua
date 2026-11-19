@@ -9,20 +9,20 @@ E.LAUNCH_Y, E.LIMIT = 362, 350
 E.SPEED, E.GRAVITY = 500, 1250
 E.MAX_ANGLE = math.pi/2 - 0.1
 
-function E.Columns(row) return row % 2 == 1 and 8 or 7 end
-function E.Position(row, col, ceiling)
-    return 16 + (col - 1) * 32 + (row % 2 == 0 and 16 or 0),
+function E.Columns(row,offset) return (row+(offset or 0)) % 2 == 1 and 8 or 7 end
+function E.Position(row, col, ceiling, offset)
+    return 16 + (col - 1) * 32 + (E.Columns(row,offset)==7 and 16 or 0),
         16 + (row - 1) * E.STEP + (ceiling or 0)
 end
 function E.Key(row, col) return (row - 1) * 8 + col end
 function E.Cell(key) return math.floor((key - 1) / 8) + 1, (key - 1) % 8 + 1 end
-function E.Valid(row, col) return row >= 1 and row <= E.ROWS and col >= 1 and col <= E.Columns(row) end
-function E.Neighbors(key)
+function E.Valid(row, col, offset) return row >= 1 and row <= E.ROWS and col >= 1 and col <= E.Columns(row,offset) end
+function E.Neighbors(key,offset)
     local r, c = E.Cell(key)
-    local side = r % 2 == 0 and 1 or -1
+    local side = E.Columns(r,offset)==7 and 1 or -1
     local cells = {{r,c-1},{r,c+1},{r-1,c},{r-1,c+side},{r+1,c},{r+1,c+side}}
     local out = {}
-    for _, p in ipairs(cells) do if E.Valid(p[1], p[2]) then out[#out+1] = E.Key(p[1],p[2]) end end
+    for _, p in ipairs(cells) do if E.Valid(p[1], p[2],offset) then out[#out+1] = E.Key(p[1],p[2]) end end
     return out
 end
 function E:Random(n)
@@ -30,6 +30,7 @@ function E:Random(n)
     return self.rng % n + 1
 end
 function E:Color()
+    if self.mode=="versus" then return self:Random(8) end
     local colors, found = {}, {}
     for key = 1, E.ROWS * 8 do
         local color = self.grid[key]
@@ -42,7 +43,7 @@ end
 function E.New(level, seed, mode)
     local self = setmetatable({grid={}, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
-        attack=0, effects={}, angle=0, accumulator=0}, E)
+        attack=0, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
     self.hurryWarn = mode=="versus" and 5 or 8
     self.hurryMax = mode=="versus" and 7.5 or 10.5
     self.rootPeriod = mode=="versus" and 12 or 9
@@ -50,12 +51,13 @@ function E.New(level, seed, mode)
         for r, row in ipairs(level) do
             for c = 1, #row do
                 local color = tonumber(row:sub(c,c))
-                if color and color >= 1 and color <= 8 and E.Valid(r,c) then self.grid[E.Key(r,c)] = color end
+                if color and color >= 1 and color <= 8 and E.Valid(r,c,self.offset) then self.grid[E.Key(r,c)] = color end
             end
         end
     else
-        for r = 1, 5 do for c = 1, E.Columns(r) do self.grid[E.Key(r,c)] = self:Random(6) end end
+        for r = 1, 5 do for c = 1, E.Columns(r) do self.grid[E.Key(r,c)] = self:Random(8) end end
     end
+    for key=1,E.ROWS*8 do if self.grid[key] then self.attachedOrder[#self.attachedOrder+1]=key end end
     self.current, self.next = self:Color(), self:Color()
     return self
 end
@@ -67,7 +69,7 @@ function E:Group(start, sameColor)
     local color = self.grid[start]
     local index=1
     while queue[index] do
-        for _, key in ipairs(E.Neighbors(queue[index])) do
+        for _, key in ipairs(E.Neighbors(queue[index],self.offset)) do
             if not visited[key] and self.grid[key] and (not sameColor or self.grid[key] == color) then
                 visited[key]=true; queue[#queue+1]=key
             end
@@ -78,13 +80,14 @@ function E:Group(start, sameColor)
 end
 function E:Remove(key, kind)
     local row,col=E.Cell(key)
-    local x,y=E.Position(row,col,self.ceiling)
+    local x,y=E.Position(row,col,self.ceiling,self.offset)
     -- Cosmetic randomness is separate from the deterministic ammunition generator.
     local variation=(key*7919+self.shots*101)%1000/1000
     self.effects[#self.effects+1]={x=x,y=y,color=self.grid[key],kind=kind,age=0,
         vx=kind=="pop" and (variation*3-1.5)*50 or 0,
         vy=kind=="pop" and -(2+(key*31%100)/100*4)*50 or 0,delay=0}
     self.grid[key]=nil
+    for i,k in ipairs(self.attachedOrder) do if k==key then table.remove(self.attachedOrder,i); break end end
 end
 function E:Resolve(key)
     local group=self:Group(key,true)
@@ -131,7 +134,7 @@ function E:CheckEnd()
         else self.status="won"; return end
     end
     for key in pairs(self.grid) do
-        local r,c=E.Cell(key); local _,y=E.Position(r,c,self.ceiling)
+        local r,c=E.Cell(key); local _,y=E.Position(r,c,self.ceiling,self.offset)
         if y+E.R >= E.LIMIT then self.status="lost"; return end
     end
 end
@@ -147,11 +150,11 @@ function E:ApplyGarbage()
         for c=1,8 do
             local candidate
             for r=1,E.ROWS do
-                if E.Valid(r,c) then
+                if E.Valid(r,c,self.offset) then
                     local key=E.Key(r,c)
                     if not self.grid[key] then
                         local supported=r==1
-                        for _, n in ipairs(E.Neighbors(key)) do if self.grid[n] then supported=true end end
+                        for _, n in ipairs(E.Neighbors(key,self.offset)) do if self.grid[n] then supported=true end end
                         if supported then candidate=key end
                     end
                 end
@@ -159,26 +162,48 @@ function E:ApplyGarbage()
             if candidate then options[#options+1]=candidate end
         end
         if #options==0 then self.status="lost"; return end
-        self.grid[options[self:Random(#options)]]=self:Random(8)
+        local slot=options[self:Random(#options)]
+        self.grid[slot]=self:Random(8)
+        self.attachedOrder[#self.attachedOrder+1]=slot
     end
+end
+function E:AdvanceRoot()
+    if self.mode~="versus" then
+        self.ceiling=self.ceiling+E.STEP
+    else
+        -- Shift the grid indices while preserving every existing bubble's x coordinate.
+        local shifted={}
+        for key,color in pairs(self.grid) do shifted[key+8]=color end
+        for i,key in ipairs(self.attachedOrder) do self.attachedOrder[i]=key+8 end
+        if self.stick then self.stick.key=self.stick.key+8 end
+        self.grid=shifted
+        self.offset=1-self.offset
+        for col=1,E.Columns(1,self.offset) do
+            shifted[col]=self:Random(8)
+            self.attachedOrder[#self.attachedOrder+1]=col
+        end
+    end
+    self.lowered=true
 end
 function E:Attach(x,y,hit)
     local candidates={}
-    if hit then candidates=E.Neighbors(hit) else for c=1,8 do candidates[#candidates+1]=E.Key(1,c) end end
+    if hit then candidates=E.Neighbors(hit,self.offset) else for c=1,E.Columns(1,self.offset) do candidates[#candidates+1]=E.Key(1,c) end end
     local row = math.max(1, math.floor((y-self.ceiling-16+14)/28)+1)
-    local shift = row%2==0 and 16 or 0
+    local shift = E.Columns(row,self.offset)==7 and 16 or 0
     local col = math.floor((x-shift)/32)+1
-    local snapped = E.Valid(row,col) and E.Key(row,col)
+    local snapped = E.Valid(row,col,self.offset) and E.Key(row,col)
     local best, distance
     for _, key in ipairs(candidates) do
         if not self.grid[key] then
             if key==snapped then best=key; break end
-            local r,c=E.Cell(key); local cx,cy=E.Position(r,c,self.ceiling)
+            local r,c=E.Cell(key); local cx,cy=E.Position(r,c,self.ceiling,self.offset)
             local d=(x-cx)^2+(y-cy)^2
             if not distance or d<distance then best,distance=key,d end
         end
     end
     if not best then self.status="lost"; self.projectile=nil; return end
+    self.attachedOrder[#self.attachedOrder+1]=best
+    self.lockedShots=self.lockedShots+1
     self.grid[best]=self.projectile.color
     self.projectile=nil
     self:Resolve(best)
@@ -186,21 +211,17 @@ function E:Attach(x,y,hit)
     self:CheckEnd()
     if self.status=="playing" then
         if self.mode=="versus" then self:ApplyGarbage() end
-        if self.shots%self.rootPeriod==0 then self.ceiling=self.ceiling+E.STEP; self.lowered=true end
+        if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
         self:CheckEnd()
     end
-    self.current=self.next
-    -- Do not offer an extinct color after a clear.
-    local exists=false
-    for _, color in pairs(self.grid) do if color==self.current then exists=true end end
-    if not exists then self.current=self:Color() end
-    self.next=self:Color()
     self.changed=true
 end
 function E:Shoot(angle)
     if self.status~="playing" or self.projectile or self.paused then return false end
     self.angle=FB.Clamp(angle or self.angle,-E.MAX_ANGLE,E.MAX_ANGLE)
     self.projectile={x=128,y=E.LAUNCH_Y,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
+    self.current=self.next
+    self.next=self:Color()
     self.shots=self.shots+1; self.idle=0
     return true
 end
@@ -221,7 +242,7 @@ function E:Step(dt)
     local hit,nearest
     for key=1,E.ROWS*8 do
         if self.grid[key] then
-            local r,c=E.Cell(key); local x,y=E.Position(r,c,self.ceiling)
+            local r,c=E.Cell(key); local x,y=E.Position(r,c,self.ceiling,self.offset)
             local d=(p.x-x)^2+(p.y-y)^2
             if d<(32*0.82)^2 and (not nearest or d<nearest) then hit,nearest=key,d end
         end
@@ -247,13 +268,13 @@ function E:Update(dt)
 end
 function E:Pack()
     local out={}
-    for r=1,E.ROWS do for c=1,E.Columns(r) do out[#out+1]=tostring(self.grid[E.Key(r,c)] or 0) end end
+    for r=1,E.ROWS do for c=1,E.Columns(r,self.offset) do out[#out+1]=tostring(self.grid[E.Key(r,c)] or 0) end end
     return table.concat(out)
 end
-function E.Unpack(data)
-    if type(data)~="string" or #data~=98 or data:find("[^0-8]") then return nil end
+function E.Unpack(data,offset)
+    if type(data)~="string" or #data~=(offset==1 and 97 or 98) or data:find("[^0-8]") then return nil end
     local grid,index={},1
-    for r=1,E.ROWS do for c=1,E.Columns(r) do
+    for r=1,E.ROWS do for c=1,E.Columns(r,offset) do
         local color=tonumber(data:sub(index,index)); index=index+1
         if color>0 then grid[E.Key(r,c)]=color end
     end end

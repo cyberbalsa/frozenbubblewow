@@ -94,6 +94,30 @@ test("original bubble speed, ballistic clears, cascade delays, and sticking flas
     stick:Update(0.25); assert(stick.stick)
     stick:Update(0.04); eq(stick.stick,nil)
 end)
+test("63 upstream shot traces match the collision tick and snapped cell",function()
+    local cases=dofile("tests/reference_shots.lua")
+    eq(#cases,63)
+    for _,case in ipairs(cases) do
+        local level,angle,tick,key=case[1],case[2],case[3],case[4]
+        local game=E.New(FB.Levels[level],1)
+        local captured
+        game.Resolve=function(_,slot) captured=slot end
+        game:Shoot(angle)
+        for step=1,tick-1 do game:Step(0.02); assert(game.projectile) end
+        game:Step(0.02)
+        eq(captured,key,"level "..level.." angle "..angle)
+    end
+end)
+test("versus new rows alternate widths and retain original world coordinates",function()
+    local game=E.New(nil,17,"versus")
+    local original=game.grid[8]
+    game:AdvanceRoot()
+    eq(game.offset,1); eq(game.grid[16],original); eq(game.grid[8],nil)
+    eq(E.Position(2,8,0,1),E.Position(1,8,0,0))
+    eq(#game:Pack(),97); eq(E.Unpack(game:Pack(),1)[16],original)
+    game:AdvanceRoot()
+    eq(game.offset,0); eq(game.grid[24],original); eq(#game:Pack(),98)
+end)
 test("random play preserves board invariants across all levels",function()
     for i,level in ipairs(FB.Levels) do
         local g=E.New(level,999+i)
@@ -167,6 +191,15 @@ test("original penguin frame sequences advance, transition, and loop at 50 FPS",
     g=E.New({},1); a.Animation.Penguin(texture,g,"p1",0)
     g.shots=1; a.Animation.Penguin(texture,g,"p1",0.1); eq(texture.fbState,"action")
     a.Animation.Penguin(texture,g,"p1",0.6); eq(texture.fbState,"normal")
+    g.turning=-1; a.Animation.Penguin(texture,g,"p1",0.1)
+    local turnFrame=texture.fbFrame
+    g.turning=0; a.Animation.Penguin(texture,g,"p1",0)
+    eq(texture.fbState,"left_from"); eq(texture.fbFrame,turnFrame)
+    a.Animation.Penguin(texture,g,"p1",0.5)
+    for i=1,210 do a.Animation.Penguin(texture,g,"p1",0.02) end
+    eq(texture.fbState,"wait_to")
+    g.turning=1; a.Animation.Penguin(texture,g,"p1",0.02)
+    eq(texture.fbState,"right_to")
 end)
 test("queue handshake survives dropped offer, accept, start and ready",function()
     drops={OFFER=true,ACCEPT=true,START=true,READY=true}

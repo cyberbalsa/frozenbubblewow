@@ -55,7 +55,7 @@ local function makeBoard(parent,x,y)
     local b=CreateFrame("Frame",nil,parent)
     b:SetSize(256,400); b:SetPoint("TOPLEFT",x,-y)
     -- The original background already contains the playfield. Do not cover it.
-    b.bubbles={}; b.fx={}; b.dots={}
+    b.bubbles={}; b.fx={}
     for key=1,104 do b.bubbles[key]=bubble(b) end
     for i=1,100 do b.fx[i]=bubble(b); b.fx[i]:Hide() end
     b.limit=b:CreateTexture(nil,"OVERLAY"); b.limit:SetColorTexture(1,0.3,0.4,0)
@@ -66,8 +66,11 @@ local function makeBoard(parent,x,y)
     b.shooter=b:CreateTexture(nil,"ARTWORK",nil,1); b.shooter:SetTexture(FB.media.."shooter.tga"); b.shooter:SetSize(128,128)
     b.shooter:SetPoint("CENTER",b,"TOPLEFT",128,-E.LAUNCH_Y)
     b.stick=FB.Animation.Image(b,"stick",0,0,32,32,"OVERLAY"); b.stick:Hide()
-    for i=1,10 do
-        local dot=b:CreateTexture(nil,"OVERLAY"); dot:SetColorTexture(0.8,0.94,1,0.55); dot:SetSize(3,3); b.dots[i]=dot
+    b.nextRim=FB.Animation.Image(b,"next-rim",109,393,nil,nil,"OVERLAY")
+    b.hurry=FB.Animation.Image(b,"hurry",10,221,nil,nil,"OVERLAY")
+    b.progress={}
+    for i=1,12 do
+        b.progress[i]=FB.Animation.Image(b,"progress-green",257,-16+(i-1)*(FB.MediaInfo["progress-green"].h+1))
     end
     return b
 end
@@ -500,15 +503,30 @@ function U:Paint(which)
     end
 end
 function U:RenderBoard(board,game,remote)
+    local phase=game and game.rootPeriod and game.lockedShots%game.rootPeriod or 0
+    local sweep
+    if game and game.rootPeriod and phase>=game.rootPeriod-2 then
+        sweep=math.floor((game.elapsed or 0)*50)%(phase==game.rootPeriod-1 and 31 or 61)
+    end
+    local frozen={}
+    if game and game.status=="lost" then
+        for i=1,math.min(#game.attachedOrder,math.floor((self.endAge or 0)*25)) do frozen[game.attachedOrder[i]]=true end
+    end
     for key=1,104 do
         local color=game and game.grid[key]
-        if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling); place(board.bubbles[key],board,x,y,color)
-            if game.status=="lost" and r<=(self.endAge or 0)*10 then FB.Animation.Frame(board.bubbles[key],"frozen",1) end
+        if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
+            if sweep==c-1 then FB.Animation.Frame(board.bubbles[key],"prelight",1) end
+            if frozen[key] then FB.Animation.Frame(board.bubbles[key],"frozen",1) end
         else board.bubbles[key]:Hide() end
     end
     board.roof:ClearAllPoints(); board.roof:SetPoint("TOPLEFT",0,-(game and game.ceiling or 0))
-    if game and game.ceiling>=51 then
-        board.compressor:ClearAllPoints(); board.compressor:SetPoint("TOPLEFT",2,-game.ceiling+51); board.compressor:Show()
+    if game and not remote and not self.editing and game.mode~="versus" then
+        local height=math.min(51,44+game.ceiling)
+        board.compressor:ClearAllPoints(); board.compressor:SetPoint("TOPLEFT",2,height-game.ceiling)
+        board.compressor:SetHeight(height)
+        local info=FB.MediaInfo.compressor
+        board.compressor:SetTexCoord(0,info.w/info.tw,(51-height)/info.th,51/info.th)
+        board.compressor:Show()
     else board.compressor:Hide() end
     for i,t in ipairs(board.fx) do
         local fx=game and game.effects and game.effects[i]
@@ -518,16 +536,27 @@ function U:RenderBoard(board,game,remote)
     end
     board.projectile:Hide(); board.current:Hide(); board.next:Hide(); board.shooter:Hide()
     board.stick:Hide()
-    for _,dot in ipairs(board.dots) do dot:Hide() end
+    board.nextRim:Hide(); board.hurry:Hide()
+    for i,dot in ipairs(board.progress) do
+        if game and game.rootPeriod and i<=game.rootPeriod and not self.editing then
+            FB.Animation.Frame(dot,i==phase+1 and "progress-red" or "progress-green",1)
+        else dot:Hide() end
+    end
     if not game or remote or self.editing or game.status~="playing" then return end
     if game.stick then
-        local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling)
+        local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
         FB.Animation.Frame(board.stick,"stick",math.floor(game.stick.age/0.04)+1)
     end
     if game.projectile then place(board.projectile,board,game.projectile.x,game.projectile.y,game.projectile.color)
-    else place(board.current,board,128,E.LAUNCH_Y,game.current) end
+    end
+    place(board.current,board,128,E.LAUNCH_Y,game.current)
     place(board.next,board,128,412,game.next,32)
+    board.nextRim:Show()
+    local warning=game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
+    if warning and not board.wasWarning then FB.Sound("hurry") end
+    board.wasWarning=warning
+    board.hurry:SetShown(warning)
     board.shooter:Show(); board.shooter:SetRotation(-game.angle)
     -- The original game aims with the rotating cannon, without a dotted guide.
 end
@@ -553,8 +582,7 @@ function U:Update(dt)
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game
     self.endAge=game and game.status~="playing" and ((self.endAge or 0)+dt) or 0
-    if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
-    if game and not self.editing and game.status=="playing" then
+    if game and not self.editing and not game.paused and game.status=="playing" then
         local oldAngle=game.angle
         if self.keys.LEFT or self.keys.A then game.angle=FB.Clamp(game.angle-dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
         elseif self.keys.RIGHT or self.keys.D then game.angle=FB.Clamp(game.angle+dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
@@ -567,6 +595,7 @@ function U:Update(dt)
         end
         game.turning=game.angle<oldAngle and -1 or game.angle>oldAngle and 1 or 0
     end
+    if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
     self:RenderBoard(self.board,game)
     self.overlayText:SetText(""); self.overlaySub:SetText("")
     local canAdvance=not self.editing and game and game.status=="won" and game.mode=="campaign" and FB.level<100
@@ -589,7 +618,7 @@ function U:Update(dt)
             FB.Animation.Frame(self.resultArt,game.status=="won" and "win-panel" or "lose-panel",1)
             self.resultDetail:SetText(game.mode=="versus" and (FB.Net.notice or "") or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
-        elseif game.idle>game.hurryWarn then self.overlaySub:SetText("HURRY! Auto-fire in "..math.ceil(game.hurryMax-game.idle)) end
+        end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     local match=FB.Net.match
     if self.screen=="opponent" then

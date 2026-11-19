@@ -1,3 +1,10 @@
+# 0.1.0-alpha.2
+
+- The launcher loads the next bubble when you fire. In 63 reference shots across seven campaign boards, the Lua engine lands on the same cell and simulation tick as the upstream collision routines.
+- The shooter penguin returns from the pose it reached when you release an aim key. Aiming wakes it from its idle animation.
+- Versus adds alternating seven- and eight-bubble rows every twelve shots. The opponent preview follows the same stagger.
+- Restored the original hurry sign, next-bubble rim, shot indicators, and bubble freeze order.
+
 # 0.1.0-alpha.1
 
 First playable WoW Forever port. This is an alpha release for in-client testing.

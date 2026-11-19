@@ -194,12 +194,13 @@ function N.Receive(prefix,message,channel,sender)
         local score=FB.Integer(p[6],0,100000000)
         local ceiling=FB.Integer(p[7],0,40000)
         local attack=FB.Integer(p[8],0,10000000)
-        local grid=FB.Engine.Unpack(p[9])
+        local offset=p[9] and #p[9]==97 and 1 or 0
+        local grid=FB.Engine.Unpack(p[9],offset)
         if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
         if attack<m.remoteAttack or attack-m.remoteAttack>12*math.max(0,shots-(m.remoteShots or 0)) then return end
         m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=now()
         FB.game:AddGarbage(attack-m.remoteAttack); m.remoteAttack=attack
-        m.remote={grid=grid,ceiling=ceiling/100,score=score,shots=shots}
+        m.remote={grid=grid,offset=offset,ceiling=ceiling/100,score=score,shots=shots}
     end
 end
 function N.Update(dt)
