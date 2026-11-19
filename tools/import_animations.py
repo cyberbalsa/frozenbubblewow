@@ -3,6 +3,7 @@
 import argparse
 import json
 import math
+import random
 from pathlib import Path
 import shutil
 from PIL import Image
@@ -39,6 +40,28 @@ def pack_images(name, images):
     metadata[name] = dict(w=w, h=h, tw=tw, th=th, columns=columns, frames=len(images))
 
 
+def campaign_previews():
+    # display_highscores aligns the SDL source rectangle to four pixels before
+    # shrinking it. shrink_ takes the integer mean of each 4 x 4 RGB block.
+    crop = (188, 44, 444, 380)
+    background = Image.open(src / "back_one_player.png").convert("RGBA").crop(crop)
+    levels = (args.upstream / "share/data/levels").read_text().strip().split("\n\n")
+    assert len(levels) == 100
+    for name, prefix in (("score-boards", "bubble-"), ("score-boards-symbol", "bubble-colourblind-")):
+        balls = [Image.open(src / f"balls/{prefix}{n}.gif").convert("RGBA") for n in range(1, 9)]
+        previews = []
+        for level in levels:
+            board = background.copy()
+            for row, line in enumerate(level.splitlines()):
+                for col, value in enumerate(line.split()):
+                    if value != "-":
+                        x = 190 - crop[0] + 32 * col + 16 * (row % 2)
+                        board.alpha_composite(balls[int(value)], (x, 28 * row))
+            channels = [channel.convert("F").reduce(4).convert("L") for channel in board.convert("RGB").split()]
+            previews.append(Image.merge("RGB", channels).convert("RGBA"))
+        pack_images(name, previews)
+
+
 def solo_glow(source, pivot):
     """Port overlook_ from CStuff.xs. Each frame retains the previous white trail."""
     alpha = Image.open(source).convert("RGBA").getchannel("A")
@@ -72,6 +95,8 @@ def solo_glow(source, pivot):
 
 
 static = {
+    "scores-background": "back_hiscores.png", "scores-frame": "hiscore_frame.png",
+    "scores-campaign": "hiscore-levelset.png", "scores-training": "hiscore-mptraining.png",
     "editor-background": "level_editor.png",
     "solo-panel": "menu/1p_panel.png", "training-clock": "void_mp_training.png",
     "solo-off": "menu/txt_menu_1p_off.png", "solo-over": "menu/txt_menu_1p_over.png",
@@ -89,6 +114,8 @@ static = {
     "penalty-one": "banane.png", "penalty-seven": "tomate.png",
     "progress-red": "dot_red.png", "progress-green": "dot_green.png",
 }
+for credit in ("artwork", "soundtrack", "cpucontrol", "leveleditor"):
+    static["banner-" + credit] = f"menu/banner_{credit}.png"
 for color in ("green", "purple"):
     for side in ("left", "right"):
         static[f"blink-{color}-{side}"] = f"menu/backgrnd-closedeye-{side}-{color}.png"
@@ -98,10 +125,22 @@ for key in ("1pgame", "2pgame", "langame", "netgame", "editor", "graphics", "key
 for name, pivot in (("play_all_levels", 90), ("pick_start_level", 135), ("play_random_levels", 82), ("multiplayer_training", 105)):
     static["solo-" + name] = f"menu/txt_{name}_outlined_text.png"
     pack_images("glow-" + name, solo_glow(src / f"menu/txt_{name}_text.png", pivot))
+campaign_previews()
+# CStuff::pixelize multiplies each inactive icon pixel's half-opacity alpha by
+# (0.2 + rand(100)/100). A 60% opacity sprite times this mask gives that range.
+noise = random.Random(2002)
+masks = []
+for _ in range(30):
+    mask = Image.new("RGBA", (40, 30), "white")
+    mask.putalpha(Image.frombytes("L", mask.size, bytes(round(255 * (20 + noise.randrange(100)) / 120)
+                                                       for _ in range(40 * 30))))
+    masks.append(mask)
+pack_images("menu-static", masks)
 for name, path in static.items():
     atlas(name, [src / path])
 for name in ("1pgame", "p1p2", "langame", "netgame", "editor", "gfx-l1", "gfx-l2", "gfx-l3", "keys", "highscore"):
-    atlas("hover-" + name, sorted((src / "menu/anims").glob(name + "_*.png")))
+    frames = sorted((src / "menu/anims").glob(name + "_*.png"))
+    atlas("hover-" + name, frames[:70] if name == "langame" else frames)
 for player in ("p1", "p2"):
     for animation in ("anime-shooter", "wait", "win", "loose"):
         atlas(animation + "-" + player, sorted((src / "pinguins").glob(animation + "_" + player + "_*.png")))

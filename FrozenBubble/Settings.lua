@@ -12,7 +12,10 @@ function Options.Set(key,value)
     if FB.db[key]==value then return end
     FB.db[key]=value
     if key=="minimap" and Options.icon then Options.icon:SetShown(value) end
-    if key=="colorblind" then FB.UI:SelectEditorColor(FB.UI.editorColor) end
+    if key=="colorblind" then
+        FB.UI:SelectEditorColor(FB.UI.editorColor)
+        if FB.UI.screen=="scores" then FB.UI:RefreshScores() end
+    end
     if key=="windowSize" then FB.UI:Resize() end
     if key=="music" or key=="musicVolume" then FB.Music() end
     if key=="sound" or key=="music" or key=="musicVolume" then FB.UI:Options() end

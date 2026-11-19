@@ -19,3 +19,5 @@ Automated tests cannot prove that Blizzard will deliver messages or that every t
 14. During a solo game, let the window fade and return to it. Listen for the same place in the track. After several ceiling drops, inspect the piston shafts from the screen edge down to the compressor.
 
 14. Queue with chain reactions selected on one client and standard rules on the other. Then select chains on both and play a round. Follow a shot from launch on the left board, watch a return flight hit another group, and check penalties after each clear. At the end, compare the freeze order, winning penguin, and winner’s name on both clients.
+
+15. Open Highscores with the main menu arrow keys and Enter. Check the thumbnail and time of a campaign entry, toggle colorblind symbols, view both training columns, and use Share best from each column. On a second account, refresh the shared table and compare the level and clear marker.

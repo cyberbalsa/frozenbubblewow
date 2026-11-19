@@ -27,3 +27,5 @@ The main menu and both board backgrounds, menu logo, and wooden button use the o
 [Compare the original and upscaled textures](art/upscayl-comparison.png).
 
 The eight colored bubbles retain their original GIF interiors. The importer renders each on a 128×128 texture, using nearby sprite colors and fractional transparency around the circumference. [Bubble edge comparison](art/bubble-rims.png).
+
+The highscore background, frame, headings and menu credit strips come from the pinned checkout. The 100 level thumbnails use the four-by-four pixel average in `CStuff.xs::shrink_`, with separate sheets for the standard and colorblind sprites.

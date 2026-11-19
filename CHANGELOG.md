@@ -1,3 +1,9 @@
+# 0.1.0-alpha.8
+
+- Campaign highscores rank a full clear first, then the furthest level reached, then the fastest time. The gallery shows each run’s level, time and board. Older scores keep their recorded level and time.
+- Regular and chain-reaction training scores appear side by side on the original wooden highscore screen. View highscores at the end of a run jumps to your entry. Community sharing uses the signed-in character’s best.
+- Use the arrow keys and Enter or Space on the main menu. The selection icons run at the original speed, the penguins blink independently, and the original credits scroll below the logo.
+
 # 0.1.0-alpha.7
 
 - Choose chain reactions in the multiplayer lobby before joining the queue or challenging a friend. Direct invitations show the rules. Standard and chain games have separate queues.

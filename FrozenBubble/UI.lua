@@ -138,7 +138,7 @@ function U:Build()
     self.pauseArt=A.Image(self.overlay,"pause",33,130,190,143); self.pauseArt:Hide()
     self.overlayText=text(self.overlay,"",14,145,20,228)
     self.overlaySub=text(self.overlay,"",14,185,12,228)
-    self.result=CreateFrame("Frame",nil,self.gameLayer); self.result:SetSize(526.4,320)
+    self.result=CreateFrame("Frame",nil,self.gameLayer); self.result:SetSize(526.4,350)
     self.result:SetPoint("TOPLEFT",238.4,-304); self.result:SetFrameLevel(self.layers.panel)
     self.resultArt=A.Image(self.result,"win-panel",0,0,526.4,254.4)
     self.resultBadge=A.Image(self.result,"net-lose-remote",318.4,118.4,64,49.6,"OVERLAY"); self.resultBadge:Hide()
@@ -152,6 +152,10 @@ function U:Build()
         elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
     end)
+    self.resultScores=button(self.result,"View highscores",140,317,246,function()
+        if FB.game and FB.game.scoreEntry then self:ShowScores(FB.game.scoreEntry) end
+    end)
+    self.resultScores:Hide()
     self.result:Hide()
     self.hud=text(self.gameLayer,"",30,113,23,245,{1,0.93,0.58})
     self.footer=text(self.gameLayer,"",20,235,14,225,{0.16,0.1,0.22})
@@ -163,13 +167,13 @@ function U:Build()
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    self:BuildHelp(); self:BuildLobby(); self:BuildScores(); self:BuildMarket(); self:BuildEditor()
+    self:BuildHelp(); self:BuildLobby(); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -196,20 +200,48 @@ function U:Build()
         local b=CreateFrame("Button",nil,menu); b:SetSize(202,46); b:SetPoint("TOPLEFT",89,-(14+(i-1)*56))
         local label=A.Image(b,"menu-"..key.."-off",0,0)
         local cursor=A.Image(menu,"hover-"..animation,248,22+(i-1)*56)
-        self.menuHover[i]={texture=cursor,name="hover-"..animation}
-        b:SetScript("OnEnter",function() self.menuSelection=i; FB.Sound("menu_change"); A.Frame(label,"menu-"..key.."-over",1) end)
-        b:SetScript("OnLeave",function() A.Frame(label,"menu-"..key.."-off",1) end)
-        b:SetScript("OnClick",function() FB.Sound("menu_selected"); action() end)
+        local mask=menu:CreateMaskTexture()
+        mask:SetAllPoints(cursor)
+        A.Frame(mask,"menu-static",1)
+        local function activate()
+            if self.screen=="menu" and not InCombatLockdown() then FB.Sound("menu_selected"); action() end
+        end
+        self.menuHover[i]={texture=cursor,name="hover-"..animation,label=label,key=key,mask=mask,index=1,activate=activate}
+        b:SetScript("OnEnter",function() if self.screen=="menu" then self:SelectMain(i) end end)
+        b:SetScript("OnClick",activate)
         self.menuButtons[i]=b
     end
     self.blinkEyes={
         A.Image(menu,"blink-green-left",411,385),A.Image(menu,"blink-green-right",434,378),
         A.Image(menu,"blink-purple-left",522,356),A.Image(menu,"blink-purple-right",535,356),
     }
-    self.menuSelection=1
-    button(menu,"Level marketplace",335,246,172,function() self:ShowMarket() end)
-    button(menu,"Resume game",335,280,172,function() self:ShowGame() end)
-    text(menu,"WoW Forever",500,244,10,100,{1,1,1})
+    self:SelectMain(1,true)
+    menu:SetPropagateKeyboardInput(true)
+    menu:SetScript("OnKeyDown",function(panel,key)
+        if InCombatLockdown() then return end
+        local active=self.screen=="menu" and not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        local used=active and (key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
+            key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" or key=="ESCAPE")
+        panel:SetPropagateKeyboardInput(not used)
+        if not used then return end
+        if key=="UP" or key=="LEFT" then self:SelectMain((self.menuSelection-2)%#entries+1)
+        elseif key=="DOWN" or key=="RIGHT" then self:SelectMain(self.menuSelection%#entries+1)
+        elseif key=="ESCAPE" then self.frame:Hide()
+        else self.menuHover[self.menuSelection].activate() end
+    end)
+    local strip=CreateFrame("Frame",nil,menu)
+    strip:SetSize(292,30); strip:SetPoint("TOPLEFT",304,-243); strip:SetClipsChildren(true)
+    self.creditStrip=strip; self.banners={}; self.bannerPos=670
+    local pos=1000
+    for _,name in ipairs({"artwork","soundtrack","cpucontrol","leveleditor"}) do
+        local asset="banner-"..name
+        local banner=A.Image(strip,asset,0,0); banner:Hide()
+        self.banners[#self.banners+1]={texture=banner,start=pos,width=FB.MediaInfo[asset].w}
+        pos=pos+FB.MediaInfo[asset].w+80
+    end
+    self.bannerPeriod=self.banners[4].start-(640-292)+80
+    button(menu,"Levels",6,18,70,function() self:ShowMarket() end)
+    button(menu,"Resume",6,50,70,function() self:ShowGame() end)
     local versionCover=menu:CreateTexture(nil,"OVERLAY"); versionCover:SetColorTexture(0.47,0.035,0.27,1)
     versionCover:SetSize(38,154); versionCover:SetPoint("BOTTOMRIGHT",-2,0)
     -- A compact in-game menu/toolbar, like the Peggle addon, instead of an app sidebar.
@@ -247,8 +279,10 @@ end
 function U:SetCombatInput(blocked)
     if self.combatInput==blocked then return end
     self.combatInput=blocked
+    self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
+    self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
     if blocked then
         self.mouseRestore={}
         local function disable(frame)
@@ -314,7 +348,8 @@ function U:ShowMenu()
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.solo:EnableKeyboard(false)
     self.panels.chain:EnableKeyboard(false)
-    self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; FB.Music()
+    self.panels.scores:EnableKeyboard(false)
+    self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; self.menu:EnableKeyboard(not self.combatInput); FB.Music()
 end
 function U:ShowGame()
     if not FB.game then self:Panel("solo"); return end
@@ -422,11 +457,14 @@ function U:Options()
 end
 function U:Panel(name)
     if name=="editor" and not self.editGame then self:StartEditor(); return end
+    self.menu:EnableKeyboard(false)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorSockets:SetShown(self.editing); self.editorDirty=true
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
     self.panels.chain:EnableKeyboard(name=="chain" and not self.combatInput)
+    self.panels.scores:EnableKeyboard(name=="scores" and not self.combatInput)
     if name=="solo" then self:SelectSolo(1,true) end
+    if name=="scores" then self:RefreshScores() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
@@ -502,42 +540,6 @@ function U:RefreshLobby()
     for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name..(peer.chainReaction and " (chain)" or "") end end
     table.sort(peers)
     self.peerText:SetText("Queued players seen: "..#peers.."\n"..table.concat(peers,"\n",1,math.min(5,#peers)).."\n\nChannel reach depends on your server / ruleset. Both players need this addon.")
-end
-function U:BuildScores()
-    local p=self.panels.scores
-    text(p,"HIGHSCORES",0,0,16,350)
-    self.scoreMode="campaign"; self.shared=false
-    self.scoreIndex=1
-    self.scoreSelector=button(p,"Campaign",0,34,160,function()
-        self.scoreIndex=self.scoreIndex%#FB.Scores.modes+1
-        self.scoreMode=FB.Scores.modes[self.scoreIndex]
-        self.scoreSelector:SetText(FB.Scores.Label(self.scoreMode))
-        self:RefreshScores()
-    end)
-    button(p,"Personal / shared",174,34,168,function() self.shared=not self.shared; self:RefreshScores() end)
-    button(p,"Refresh shared",0,72,160,function()
-        FB.Net.RequestScores()
-        if FB.Community.state=="manual" then FB.Community.Manual("SCOREQ") end
-        self.shared=true; self:RefreshScores()
-    end)
-    button(p,"Share my best",174,72,168,function()
-        local row=FB.Scores.Best(self.scoreMode)
-        if not row then FB.Print("Finish a scored run first."); return end
-        if FB.Community.state=="ready" then FB.Community.Broadcast("SCORE",row.mode,row.score,row.level,row.seconds)
-        else FB.Community.Manual("SCORE",row.mode,row.score,row.level,row.seconds) end
-    end)
-    self.scoreText=text(p,"",0,121,13,350)
-    text(p,"Shared scores are player-reported and cached locally. Campaign rankings count runs started at level 1. Custom levels and practice starts are unranked.",0,354,12,350,muted)
-end
-function U:ShowScores() self:Panel("scores"); self:RefreshScores() end
-function U:RefreshScores()
-    local rows=FB.Scores.Rows(self.shared,self.scoreMode)
-    local lines={(self.shared and "Community" or "Personal").." · "..FB.Scores.Label(self.scoreMode),""}
-    for i=1,math.min(8,#rows) do
-        local row=rows[i]; lines[#lines+1]=i..". "..row.name.."\n    "..row.score.." pts"..(row.mode=="campaign" and ("  ·  Level "..row.level) or "")
-    end
-    if #rows==0 then lines[#lines+1]="No completed runs yet." end
-    self.scoreText:SetText(table.concat(lines,"\n"))
 end
 function U:BuildMarket()
     local p=self.panels.market
@@ -845,6 +847,25 @@ function U:RenderBoard(board,game,remote)
     board.shooter:Show(); board.shooter:SetRotation(-game.angle)
     -- The original game aims with the rotating cannon, without a dotted guide.
 end
+function U:SelectMain(index,silent)
+    if index==self.menuSelection and not silent then return end
+    self.menuSelection=index
+    for i,item in ipairs(self.menuHover) do
+        FB.Animation.Frame(item.label,"menu-"..item.key..(i==index and "-over" or "-off"),1)
+        item.texture:SetAlpha(i==index and 1 or 0.5)
+    end
+    if not silent then FB.Sound("menu_change") end
+end
+local function blink(value)
+    if value>0 then
+        value=value-1
+        if value==0 and math.random(3)==1 then return -5 end
+    elseif value<0 then
+        value=value+1
+        if value==0 then return 3 end
+    elseif math.random(200)==1 then return 3 end
+    return value
+end
 function U:AnimateMenu(dt)
     if not self.menu:IsShown() then return end
     if self.screen=="solo" and not FB.db.reducedMotion then
@@ -852,19 +873,52 @@ function U:AnimateMenu(dt)
         local row=self.soloEntries[self.soloIndex]
         FB.Animation.Frame(row.glow,row.effect,math.floor(self.soloTime*50)%70+1)
     end
-    self.menuTime=(self.menuTime or 0)+dt
-    local tick=math.floor(self.menuTime*25)
-    if not FB.db.reducedMotion then
-        -- Original logo rocking formula from menu() in bin/frozen-bubble.
-        self.menuLogo:SetRotation(math.sin(tick/40)/20)
-        for i,item in ipairs(self.menuHover) do
-            local count=FB.MediaInfo[item.name].frames
-            FB.Animation.Frame(item.texture,item.name,i==self.menuSelection and tick%count+1 or 1)
+    if self.screen~="menu" then return end
+    local reduced=FB.db.reducedMotion
+    self.menuAccum=(self.menuAccum or 0)+math.min(dt,0.25)
+    local steps=math.floor((self.menuAccum+1e-9)/0.02)
+    if steps==0 and reduced==self.menuReduced then return end
+    self.menuAccum=self.menuAccum-steps*0.02; self.menuReduced=reduced
+    self.menuTick=(self.menuTick or 0)+(reduced and 0 or steps)
+    self.menuLogo:SetRotation(reduced and 0 or math.sin(self.menuTick/40)/20)
+    for i,item in ipairs(self.menuHover) do
+        local selected=i==self.menuSelection
+        if selected and not reduced then
+            item.index=(item.index-1+steps)%FB.MediaInfo[item.name].frames+1
         end
+        for _=1,reduced and 0 or steps do
+            if not selected then
+                if (item.broken or 0)>0 then item.broken=item.broken-1
+                elseif math.random(1000)==1 then item.broken=math.floor(20+10*math.cos(math.random()*2*math.pi)) end
+            end
+        end
+        local noise=not reduced and not selected and (item.broken or 0)>0
+        if noise then
+            FB.Animation.Frame(item.mask,"menu-static",self.menuTick%30+1)
+            if not item.masked then item.texture:AddMaskTexture(item.mask); item.masked=true end
+        elseif item.masked then item.texture:RemoveMaskTexture(item.mask); item.masked=nil end
+        item.texture:SetAlpha(selected and 1 or noise and 0.6 or 0.5)
+        FB.Animation.Frame(item.texture,item.name,reduced and 1 or item.index)
+    end
+    for _=1,reduced and 0 or steps do
+        self.greenBlink=blink(self.greenBlink or 0); self.purpleBlink=blink(self.purpleBlink or 0)
     end
     for i,eye in ipairs(self.blinkEyes) do
-        local phase=(self.menuTime+(i>2 and 2.3 or 0))%5.7
-        eye:SetShown(not FB.db.reducedMotion and (phase<0.12 or phase>0.28 and phase<0.37))
+        local state=i<=2 and self.greenBlink or self.purpleBlink
+        eye:SetShown(not reduced and (state or 0)>0)
+    end
+    self.creditStrip:SetShown(not reduced)
+    if not reduced then
+        self.bannerPos=(self.bannerPos-1+steps)%(self.bannerPeriod-1)+1
+        for _,banner in ipairs(self.banners) do
+            local x=banner.start-self.bannerPos
+            if x>self.bannerPeriod/2 then x=x-self.bannerPeriod end
+            local visible=x<292 and x+banner.width>0
+            banner.texture:SetShown(visible)
+            if visible then
+                banner.texture:ClearAllPoints(); banner.texture:SetPoint("TOPLEFT",self.creditStrip,"TOPLEFT",x,0)
+            end
+        end
     end
 end
 function U:Update(dt)
@@ -899,6 +953,7 @@ function U:Update(dt)
         elseif game.status=="lost" or game.status=="draw" then ready=game.endOrder and game.endIndex>=#game.endOrder end
     end
     self.result:SetShown(ready or false)
+    self.resultScores:SetShown(ended and game.scoreEntry~=nil or false)
     self.winnerName:SetShown(winner and true or false)
     self.resultBadge:SetShown(winner and true or false)
     if winner then
@@ -951,7 +1006,7 @@ function U:Update(dt)
     if self.refresh>=1 then
         self.refresh=0
         if self.screen=="lobby" then self:RefreshLobby()
-        elseif self.screen=="scores" then self:RefreshScores()
+        elseif self.screen=="scores" and self.scoreRevision~=FB.Scores.revision then self:RefreshScores()
         elseif self.screen=="market" then self:RefreshMarket() end
     end
 end

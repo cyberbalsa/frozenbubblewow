@@ -429,7 +429,39 @@ test("score validation and bounded personal history",function()
     a.Scores.Receive("Bob-TestRealm",{"1","SCORE","campaign","100","2","10"})
     eq(a.db.peers["Bob-TestRealm:campaign"].score,100)
     for i=1,40 do a.Scores.Record("campaign",i,1,i) end
-    eq(#a.db.scores,30); eq(a.Scores.Best("campaign").score,40)
+    eq(#a.db.scores,30); eq(a.Scores.Best("campaign").score,1)
+end)
+test("existing campaign records rank by progress and then time; only confirmed clears outrank level 100",function()
+    local c=client("Iona")
+    local function old(points,level,seconds)
+        return {name=c.PlayerName(),mode="campaign",score=points,level=level,seconds=seconds,date=1}
+    end
+    local early,slow,fast=old(900,12,10),old(40,100,600),old(30,100,400)
+    c.db.scores={early,slow,fast}; c.Scores.Init(c.db)
+    eq(c.Scores.Best("campaign"),fast); eq(c.Scores.Rows(false,"campaign")[2],slow)
+    local clear=c.Scores.Record("campaign",5,100,1000,true)
+    eq(c.Scores.Best("campaign"),clear); assert(not fast.completed)
+    for i=1,40 do c.Scores.Record("campaign",i,5,10+i) end
+    eq(#c.Scores.Rows(false,"campaign"),30); eq(c.Scores.Rows(false,"campaign")[4],early)
+end)
+test("community scores preserve clears across query and manual channel packets; alts keep their own names",function()
+    local c=client("Ilse")
+    local d=client("Jon")
+    c.Community.Join(); d.Community.Join(); tick(2)
+    local row=c.Scores.Record("campaign",20,100,1200,true)
+    c.db.scores[#c.db.scores+1]={name="Alt-TestRealm",mode="campaign",score=100,level=100,seconds=40,completed=true}
+    d.Net.RequestScores(); tick(3)
+    local received=d.db.peers[c.PlayerName()..":campaign"]
+    assert(received.completed); eq(received.seconds,1200)
+    c.Community.Manual("SCORE",c.Scores.Fields(row))
+    eq(c.lastManual,"FBF1|1|SCORE|campaign|20|100|1200|1")
+    d.Community.Chat(c.lastManual,c.PlayerName(),d.Community.name)
+    d.Scores.Receive(c.PlayerName(),{"1","SCORE","campaign","999","100","60"})
+    eq(d.db.peers[c.PlayerName()..":campaign"],received)
+    d.Scores.Receive("Alt-TestRealm",{"1","SCORE","campaign","8","2","9","1"})
+    eq(d.db.peers["Alt-TestRealm:campaign"],nil)
+    c.Scores.Receive("Alt-TestRealm",{"1","SCORE","campaign","6","100","55","1"})
+    local all=c.Scores.Rows(true,"campaign"); eq(#all,2); eq(all[1].seconds,40)
 end)
 test("debug history is bounded and contains useful session data",function()
     for i=1,600 do a.Debug.Log("TEST",i) end
@@ -482,7 +514,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("UI",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Main",fb,env)
+    loadModule("UI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -496,6 +528,33 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(fb.UI.frame.shown)
         fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(not fb.UI.frame.shown)
         fb.Options.controls.musicVolume.set(0.65); eq(fb.db.musicVolume,0.65)
+    end)
+    test("main menu keyboard, 50 Hz cursors, blinks and scrolling credits follow focus",function()
+        local ui=fb.UI
+        ui.frame:Show(); ui:ShowMenu()
+        local oldFoci=env.GetMouseFoci; env.GetMouseFoci=function() return {ui.menu} end
+        ui.menuAccum=0; ui.bannerPos=708
+        local key=ui.menu.scripts.OnKeyDown
+        ui:SelectMain(1,true)
+        ui:AnimateMenu(0.10)
+        eq(ui.menuHover[1].texture.fbFrame,6); eq(ui.menuHover[2].texture.fbFrame,1)
+        assert(ui.banners[1].texture.shown)
+        key(ui.menu,"UP"); eq(ui.menuSelection,8); eq(ui.menuHover[8].label.fbAsset,"menu-highscores-over")
+        ui.purpleBlink=-1; ui.menuHover[3].broken=5
+        ui:AnimateMenu(0.02)
+        assert(ui.blinkEyes[3].shown and ui.menuHover[3].masked)
+        eq(ui.menuHover[1].texture.fbFrame,6); eq(ui.menuHover[8].texture.fbFrame,2)
+        key(ui.menu,"ENTER"); eq(ui.screen,"scores")
+        local tick=ui.menuTick; ui:AnimateMenu(0.20); eq(ui.menuTick,tick)
+        env.GetMouseFoci=function() return {} end
+        ui.panels.scores.scripts.OnKeyDown(ui.panels.scores,"ESCAPE"); eq(ui.screen,"scores")
+        env.GetMouseFoci=function() return {ui.panels.scores} end
+        ui.panels.scores.scripts.OnKeyDown(ui.panels.scores,"ENTER"); eq(ui.scoreMode,"training")
+        ui.panels.scores.scripts.OnKeyDown(ui.panels.scores,"ESCAPE"); eq(ui.screen,"menu")
+        fb.Options.Set("reducedMotion",true); ui:AnimateMenu(0.02)
+        assert(not ui.creditStrip.shown and not ui.blinkEyes[3].shown and not ui.menuHover[3].masked)
+        fb.Options.Set("reducedMotion",false)
+        ui:SelectMain(1,true); ui.frame:Hide(); env.GetMouseFoci=oldFoci
     end)
     test("stationary crafting, coordinate changes, combat and taxi transitions govern invitations",function()
         local x,map,taxi,craft=10,1,false,true
@@ -557,6 +616,34 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eventFrame.scripts.OnUpdate(eventFrame,0.02); eq(fb.Scores.Best("training-chain").score,29)
         eq(fb.Scores.Best("training").score,14)
         fb.UI:Panel("solo"); fb.UI.soloEntries[2].activate(); eq(fb.UI.screen,"pick")
+    end)
+    test("campaign finish opens its own card with the right preview, time and colorblind artwork",function()
+        local unlocked=fb.db.unlocked; fb.db.unlocked=100
+        local run={score=50,seconds=321,eligible=true}
+        fb.StartCampaign(100,run); fb.game.status="won"; fb.game.elapsed=4
+        eventFrame.scripts.OnUpdate(eventFrame,0.02)
+        assert(fb.game.scoreEntry.completed and fb.UI.resultScores.shown)
+        fb.UI.resultScores.scripts.OnClick()
+        eq(fb.UI.screen,"scores"); eq(fb.UI.scoreMode,"campaign"); eq(fb.UI.highlightScore,fb.game.scoreEntry)
+        local card=fb.UI.scoreCards[1]
+        eq(card.entry,fb.game.scoreEntry); eq(card.level.text,"won!"); eq(card.time.text,"5'25\"")
+        eq(card.board.fbAsset,"score-boards"); eq(card.board.fbFrame,100)
+        fb.Options.Set("colorblind",true); eq(card.board.fbAsset,"score-boards-symbol")
+        fb.Options.Set("colorblind",false)
+        for i=1,14 do fb.Scores.Record("campaign",1,i,90) end
+        fb.UI:RefreshScores(); fb.UI.scoreNext.scripts.OnClick()
+        eq(fb.UI.scorePage,2); eq(card.board.fbFrame,5)
+        fb.UI.scorePrev.scripts.OnClick(); eq(card.board.fbFrame,100)
+        fb.UI.scoreSource.scripts.OnClick(); eq(fb.UI.scoreNumber.text,"1 / 1")
+        fb.UI.scoreSource.scripts.OnClick()
+        fb.UI.scoreSelector.scripts.OnClick()
+        eq(fb.UI.scoreMode,"training"); eq(fb.UI.scoreHeading.fbAsset,"scores-training")
+        eq(fb.UI.scoreColumns[1].lines[1].entry.score,14)
+        eq(fb.UI.scoreColumns[2].lines[1].entry.score,29)
+        fb.Scores.Record("training",14,1,121); fb.UI:RefreshScores()
+        eq(fb.UI.scoreColumns[1].lines[2].rank.text,"")
+        assert(not card.shown and not fb.UI.shareBest.shown)
+        fb.db.unlocked=unlocked
     end)
     test("versus draws the penalty stack, rising bubbles and both shooter penguins",function()
         fb.StartVersus(123)

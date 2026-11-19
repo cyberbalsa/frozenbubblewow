@@ -169,8 +169,8 @@ function N.Receive(prefix,message,channel,sender)
         if now()-(N.lastScoreReply[sender] or -100)<30 then return end
         N.lastScoreReply[sender]=now()
         for _,mode in ipairs(FB.Scores.modes) do
-            local row=FB.Scores.Best(mode)
-            if row then N.Send("SCORE","WHISPER",sender,mode,row.score,row.level,row.seconds) end
+            local row=FB.Scores.Best(mode,FB.PlayerName())
+            if row then N.Send("SCORE","WHISPER",sender,FB.Scores.Fields(row)) end
         end
         return
     end

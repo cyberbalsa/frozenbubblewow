@@ -100,11 +100,11 @@ local function finishSolo()
             FB.db.unlocked=math.max(FB.db.unlocked,FB.level+1)
             FB.db.checkpoint={level=FB.level+1,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
         else
-            if FB.run.eligible then FB.Scores.Record("campaign",FB.run.score,FB.level,FB.run.seconds) end
+            if FB.run.eligible then game.scoreEntry=FB.Scores.Record("campaign",FB.run.score,FB.level,FB.run.seconds,game.status=="won") end
             FB.db.checkpoint=nil
         end
     elseif game.mode=="endless" or game.mode=="training" and game.status=="finished" then
-        FB.Scores.Record(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
+        game.scoreEntry=FB.Scores.Record(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
     end
 end
 local events=CreateFrame("Frame")

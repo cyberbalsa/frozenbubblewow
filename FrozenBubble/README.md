@@ -6,6 +6,8 @@ Mouse aims; left click fires. While hovering over the board, Left/Right or A/D a
 
 Use Multiplayer → Join community channel for discovery. The channel is called `FrozenBubbleForever`. If automatic addon messages are blocked, use **Announce queue**, **Share my best**, **Browse community**, or **Publish** to send a discovery message directly from a click. Matches and requested level downloads use addon whispers. All players must have the addon installed, and Blizzard's channel visibility and message restrictions apply.
 
+Type **/fb scores** to see campaign board previews and the two training rankings. Campaign clears rank first, followed by the furthest level reached and then the quickest time. Use the Personal button to switch to community scores. Hover over a score to see the character’s realm.
+
 ## Addon settings
 
 Open **Settings → AddOns → Frozen Bubble Forever**, right-click the minimap button, or type `/fb settings`. Left-click the button to toggle the game and drag to move it.
