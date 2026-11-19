@@ -12,3 +12,8 @@ Automated tests cannot prove that Blizzard will deliver messages or that every t
 8. Share a best score and refresh on the other client. Verify sender attribution and separation from personal records. Try different Forever internal servers to measure actual channel reach; record the server names and builds.
 9. Create a connected level, save, test, publish, browse from the other client, download, and play. Confirm offline requests expire, corrupt codes fail, and republishing requires a click.
 10. Use `/fb debug`, then log out or `/reload` to flush `FrozenBubbleDB.debugLog`. Report errors with the client build, UI scale, relevant log entries, and which of the above steps failed.
+
+11. In Settings → AddOns → Frozen Bubble Forever, toggle the minimap button and colorblind symbols. Check the board, current and next bubbles, and editor palette. Drag the icon, reload, and check that its position and settings persist.
+12. Set the idle delay to 60 seconds. Walk before it expires, then queue several crafts while standing still. Check that a single invitation appears after the new interval and Later dismisses it for that idle period. Try the same batch with crafting invitations disabled. Check a taxi ride, landing, and combat with a prompt showing.
+13. Drag a line across the editor, undo it, and repeat with right-drag. Test an unsaved draft and return with Edit level. Check the title, colors and grid at two UI scales.
+14. During a solo game, let the window fade and return to it. Listen for the same place in the track. After several ceiling drops, inspect the piston shafts from the screen edge down to the compressor.

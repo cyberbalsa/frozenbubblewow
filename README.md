@@ -18,6 +18,12 @@ Type `/fb`. Aim with the mouse and click to fire. While the pointer is over the 
 - **Versus:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. No pause; hiding the window leaves the match running. Timeout or combat cancels the match without a result.
 - **Editor:** paint up to ten rows, test, save, import/export a 98-character layout code, and publish to the community. Saved/imported levels are unranked.
 
+## Addon settings
+
+Open **Settings → AddOns → Frozen Bubble Forever**, right-click the minimap button, or type `/fb settings`. Left-click the button to toggle the game and drag to move it.
+
+Flight invitations appear once per taxi ride. Idle invitations default to 90 seconds in one spot and can be adjusted from 60 to 120 seconds. Queued crafting counts as idle by default. Each invitation has Play and Later buttons. The page also controls the minimap icon, invitation duration, colorblind symbols, sound, music volume, window size, focus fade, reduced motion, community channel login, and debug logging.
+
 ## Community channel and P2P sharing
 
 Open Multiplayer and join `FrozenBubbleForever`. This dedicated in-game channel carries queue advertisements, highscores, and level listings. Direct addon whispers carry match state and requested level data. No guild membership is required when using the community channel. Without it, discovery falls back to your guild/group.
@@ -38,7 +44,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.4` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.5` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
 
 GitHub Actions tests Lua 5.1 and 5.4 on every push/PR, packages the addon, and retains a build artifact. A `v*` tag creates a GitHub Release and uploads the same ZIP to CurseForge project **1815958** after tests pass. The workflow verifies that the configured CurseForge game version matches interface 16001 before uploading. Alpha/beta tags set the corresponding CurseForge release type.
 

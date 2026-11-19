@@ -1,3 +1,11 @@
+# 0.1.0-alpha.5
+
+- Find Frozen Bubble Forever under WoW Settings → AddOns, or type `/fb settings`. The minimap button opens the game on left-click and settings on right-click. Drag it to move it.
+- A small invitation can appear once per flight path or after 60–120 seconds standing idle. The default is 90 seconds, including time spent batch crafting. Flight, idle, and crafting prompts can be switched off separately. A prompt opens the game only when you click Play.
+- Turn on Colorblind bubble symbols to use the eight original Frozen Bubble patterns throughout play and editing.
+- The editor uses its original background and shows the playable cells. Drag to draw, right-drag to erase, and undo a whole stroke. Test a draft without saving, then click Edit level to return to it.
+- Music stays on the same playback during a focus or combat fade. The solo compressor now extends its piston shafts all the way to the top of the window.
+
 # 0.1.0-alpha.4
 
 - All eight bubble colors have smooth, color-matched rims. The old GIFs had a jagged black outline at large UI scales. Ceiling warnings and freeze effects now draw over the bubble artwork.

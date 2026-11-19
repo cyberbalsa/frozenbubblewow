@@ -336,11 +336,80 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.GetEffectiveScale=function() return 1 end
     methods.GetLeft=function() return 0 end; methods.GetTop=function() return 400 end
     methods.GetParent=function(f) return f.parent end; methods.IsForbidden=function() return false end
+    methods.CreateMaskTexture=methods.CreateTexture
+    local notifications,opened={},nil
+    env.Settings={
+        VarType={Boolean="boolean",Number="number"},
+        RegisterVerticalLayoutCategory=function(title)
+            return {GetID=function() return title end},{AddInitializer=function() end}
+        end,
+        RegisterProxySetting=function(_,key,_,_,default,get,set)
+            return {default=default,get=get,set=set,NotifyUpdate=function() notifications[key]=true end}
+        end,
+        CreateSliderOptions=function() return {SetLabelFormatter=function() end} end,
+        CreateCheckbox=function() end,CreateSlider=function() end,RegisterAddOnCategory=function() end,
+        OpenToCategory=function(id) opened=id end,
+    }
+    env.MinimalSliderWithSteppersMixin={Label={Right=1}}
+    env.CreateSettingsListSectionHeaderInitializer=function(label) return label end
+    env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("UI",fb,env); loadModule("Main",fb,env)
+    loadModule("UI",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
+    local promptEvents=frames[#frames]
+    test("native settings and minimap launcher share saved preferences",function()
+        eq(fb.Options.category:GetID(),"Frozen Bubble Forever")
+        local setting=fb.Options.controls.minimap
+        assert(setting.get() and fb.Options.icon.shown)
+        setting.set(false); assert(not fb.Options.icon.shown and not fb.db.minimap)
+        setting.set(true); assert(fb.Options.icon.shown and notifications.FrozenBubbleForever_minimap)
+        fb.Options.icon.scripts.OnClick(nil,"RightButton"); eq(opened,"Frozen Bubble Forever")
+        fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(fb.UI.frame.shown)
+        fb.Options.icon.scripts.OnClick(nil,"LeftButton"); assert(not fb.UI.frame.shown)
+        fb.Options.controls.musicVolume.set(0.65); eq(fb.db.musicVolume,0.65)
+    end)
+    test("stationary crafting, coordinate changes, combat and taxi transitions govern invitations",function()
+        local x,map,taxi,craft=10,1,false,true
+        env.UnitPosition=function() return x,5,2,map end
+        env.UnitOnTaxi=function() return taxi end
+        env.UnitCastingInfo=function() if craft then return "Craft",nil,nil,nil,nil,true end end
+        local invites=fb.Invitations
+        local function poll(dt) clock=clock+dt; invites.Update() end
+        promptEvents.scripts.OnEvent(nil,"PLAYER_ENTERING_WORLD")
+        fb.Options.controls.idleSeconds.set(60); poll(1)
+        poll(55); eq(invites.reason,nil)
+        x=x+10; poll(1); poll(59); eq(invites.reason,nil)
+        map=2; poll(1); poll(60); eq(invites.reason,"idle")
+        local function click(caption)
+            for _,f in ipairs(frames) do
+                if f.parent==invites.popup and f.text==caption then f.scripts.OnClick(); return end
+            end
+            error("missing popup action "..caption)
+        end
+        click("Later"); poll(120); eq(invites.reason,nil)
+        fb.Options.controls.craftingPrompt.set(false); poll(120); eq(invites.reason,nil)
+        craft=false; poll(60); eq(invites.reason,"idle")
+        env.InCombatLockdown=function() return true end
+        promptEvents.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED"); eq(invites.reason,nil)
+        env.InCombatLockdown=function() return false end
+        taxi=true; poll(1); eq(invites.reason,"flight"); click("Later"); poll(60); eq(invites.reason,nil)
+        taxi=false; poll(1); taxi=true; poll(1); eq(invites.reason,"flight")
+        taxi=false; poll(1); eq(invites.reason,nil)
+        fb.Options.controls.flightPrompt.set(false); taxi=true; poll(1); eq(invites.reason,nil)
+        fb.Options.controls.flightPrompt.set(true); poll(1); eq(invites.reason,"flight")
+        click("Play"); assert(fb.UI.frame.shown); eq(invites.reason,nil)
+        fb.UI.frame:Hide(); taxi=false; poll(1)
+        env.UnitPosition=function() return nil end
+        env.C_Map={GetBestMapForUnit=function() return map end,GetPlayerMapPosition=function()
+            return {GetXY=function() return x/100,0.5 end}
+        end}
+        poll(1); eq(invites.anchor.kind,"map")
+        env.GetUnitSpeed=function() return 5 end
+        poll(120); eq(invites.reason,nil)
+        promptEvents.scripts.OnEvent(nil,"PLAYER_LEAVING_WORLD")
+    end)
     env.SlashCmdList.FROZENBUBBLE(""); fb.StartCampaign(1)
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent"}) do fb.UI:Panel(name); fb.UI:Update(1) end
     test("solo menu launches timed training, records it once, and retries",function()
@@ -370,7 +439,28 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(board.rising[7].shown); eq(board.penalties[1].fbAsset,"penalty-one"); assert(not board.penalties[3].shown)
         fb.Net.match=nil
     end)
-    fb.UI:StartEditor(); fb.UI:Paint("LeftButton"); eq(fb.UI.editGame.grid[1],1)
+    test("editor strokes interpolate across cells, undo together, and survive testing",function()
+        fb.UI:StartEditor(nil,true); fb.UI:SelectEditorColor(7)
+        fb.UI.stroke={button="LeftButton"}
+        fb.UI:Paint("LeftButton",16,16); fb.UI:Paint("LeftButton",144,16)
+        fb.UI.stroke=nil
+        for key=1,5 do eq(fb.UI.editGame.grid[key],7) end
+        eq(#fb.UI.editorHistory,1)
+        fb.UI:UndoEditor(); eq(fb.UI.editGame:Count(),0)
+        fb.UI:Paint("LeftButton",-1,16); eq(fb.UI.editGame:Count(),0)
+        fb.UI:Paint("LeftButton",16,16); fb.UI.levelTitle:SetText("Draft")
+        fb.UI:TestEditor(); eq(fb.game.mode,"custom"); eq(fb.game.grid[1],7)
+        eq(next(fb.db.custom),nil)
+        fb.UI.editButton.scripts.OnClick(); eq(fb.UI.screen,"editor")
+        eq(fb.UI.levelTitle:GetText(),"Draft"); eq(fb.UI.editGame.grid[1],7)
+        fb.Options.controls.colorblind.set(true); fb.UI:Update(0.02)
+        eq(fb.UI.board.bubbles[1].fbAsset,"bubble-symbol7"); eq(fb.UI.editorPalette[7].icon.fbAsset,"bubble-symbol7")
+        fb.UI:TestEditor(); fb.UI:Update(0.02)
+        eq(fb.UI.board.current.fbAsset,"bubble-symbol7"); eq(fb.UI.board.next.fbAsset,"bubble-symbol7")
+        fb.Options.controls.colorblind.set(false); fb.UI:Update(0.02); eq(fb.UI.board.current.fbAsset,"bubble7")
+        fb.UI:StartEditor(nil,true)
+    end)
+    fb.UI:StartEditor(); fb.UI:SelectEditorColor(1); fb.UI:Paint("LeftButton"); eq(fb.UI.editGame.grid[1],1)
     fb.UI:Paint("RightButton"); eq(fb.UI.editGame.grid[1],nil)
     env.SlashCmdList.FROZENBUBBLE("debug"); env.SlashCmdList.FROZENBUBBLE("debug off"); eq(fb.db.debug,false)
     fb.StartCampaign(1); fb.Fire(); eventFrame.scripts.OnUpdate(eventFrame,0.1)
@@ -385,6 +475,26 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(fb.UI.nextButton.shown)
         fb.UI.nextButton.scripts.OnClick(fb.UI.nextButton)
         eq(fb.level,2); eq(fb.game.status,"playing"); eq(fb.run.score,100)
+    end)
+    test("piston shafts fill ceiling drops and retract on a fresh board",function()
+        local board=fb.UI.board
+        fb.game.ceiling=84; fb.UI:RenderBoard(board,fb.game)
+        eq(#board.pistons,3); assert(board.pistons[1].shown and board.pistons[3].shown)
+        fb.game.ceiling=0; fb.UI:RenderBoard(board,fb.game)
+        assert(not board.pistons[1].shown); assert(board.compressor.shown)
+    end)
+    test("fading and refocusing mute and unmute one music playback",function()
+        local starts,stops,volume=0,0,"0.37"
+        env.PlayMusic=function() starts=starts+1 end
+        env.StopMusic=function() stops=stops+1 end
+        env.GetCVar=function() return volume end; env.SetCVar=function(_,value) volume=value end
+        fb.UI.inactive=false; fb.Music(); eq(starts,1); eq(volume,0.65)
+        fb.UI.focusGrace=0; fb.UI.outsideSince=clock-1
+        env.GetMouseFoci=function() return {} end
+        fb.UI:UpdateVisibility(0.2); eq(volume,0); eq(stops,0)
+        env.GetMouseFoci=function() return {fb.UI.board} end
+        fb.UI:UpdateVisibility(0.2); eq(volume,0.65); eq(starts,1)
+        fb.StopGameMusic(); eq(stops,1); eq(volume,"0.37")
     end)
     test("focus fades, pauses solo, restores owned pause, and combat makes transparent",function()
         local focused=false; env.GetMouseFoci=function() return focused and {fb.UI.board} or {} end

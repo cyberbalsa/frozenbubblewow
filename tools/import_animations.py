@@ -72,6 +72,7 @@ def solo_glow(source, pivot):
 
 
 static = {
+    "editor-background": "level_editor.png",
     "solo-panel": "menu/1p_panel.png", "training-clock": "void_mp_training.png",
     "solo-off": "menu/txt_menu_1p_off.png", "solo-over": "menu/txt_menu_1p_over.png",
     "menu-background": "menu/back_start.png", "menu-logo": "menu/fblogo.png",

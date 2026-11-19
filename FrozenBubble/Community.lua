@@ -88,6 +88,8 @@ function C.Save(title,data,author)
     if not C.Validate(data) then return nil,"Use at least one bubble; connect every bubble to the top, within ten rows." end
     title=C.CleanTitle(title); if title=="" then title="Untitled" end
     local id=C.Hash(data)
+    local existing=FB.db.custom[id]
+    if existing and existing.data==data and existing.title==title then return id end
     local count=0; for _ in pairs(FB.db.custom) do count=count+1 end
     if count>=100 and not FB.db.custom[id] then return nil,"Your library is full (100 levels). Delete a level first." end
     FB.db.custom[id]={id=id,title=title,data=data,author=author or FB.PlayerName(),published=false}

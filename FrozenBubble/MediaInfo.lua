@@ -9,6 +9,7 @@ FB.MediaInfo = {
     ["blink-purple-right"] = {w=13, h=14, tw=16, th=16, columns=1, frames=1},
     ["compressor"] = {w=252, h=51, tw=256, th=64, columns=1, frames=1},
     ["compressor-ext"] = {w=188, h=28, tw=256, th=32, columns=1, frames=1},
+    ["editor-background"] = {w=640, h=480, tw=1024, th=512, columns=1, frames=1},
     ["frozen"] = {w=34, h=48, tw=64, th=64, columns=1, frames=1},
     ["glow-multiplayer_training"] = {w=189, h=38, tw=1024, th=1024, columns=3, frames=70},
     ["glow-pick_start_level"] = {w=271, h=37, tw=1024, th=1024, columns=3, frames=70},

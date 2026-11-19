@@ -8,7 +8,7 @@ function FB.CanStart()
     return true
 end
 function FB.StopGameMusic()
-    if StopMusic then StopMusic() end
+    if FB.musicTrack and StopMusic then StopMusic() end
     if FB.oldMusicVolume then
         local set=(C_CVar and C_CVar.SetCVar) or SetCVar
         if set then set("Sound_MusicVolume",FB.oldMusicVolume) end
@@ -18,13 +18,16 @@ function FB.StopGameMusic()
 end
 function FB.Music()
     if not FB.UI.frame then return end
-    if FB.db.music and FB.UI.frame:IsShown() and not FB.UI.inactive and not InCombatLockdown() and PlayMusic then
+    if FB.db.music and FB.UI.frame:IsShown() and PlayMusic then
+        local muted=FB.UI.inactive or InCombatLockdown()
+        if muted and not FB.musicTrack then return end
         local get=(C_CVar and C_CVar.GetCVar) or GetCVar
         local set=(C_CVar and C_CVar.SetCVar) or SetCVar
         if get and set then
             if not FB.oldMusicVolume then FB.oldMusicVolume=get("Sound_MusicVolume") end
-            set("Sound_MusicVolume",FB.db.musicVolume or 0.8)
+            set("Sound_MusicVolume",muted and 0 or (FB.db.musicVolume or 0.8))
         end
+        if muted then return end
         local track=FB.UI.menu and FB.UI.menu:IsShown() and "introzik.ogg" or
             (FB.game and FB.game.mode=="versus" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg")
         if FB.musicTrack~=track then PlayMusic(FB.media..track); FB.musicTrack=track end
@@ -50,13 +53,21 @@ function FB.StartSolo(mode)
     FB.game=FB.Engine.New(nil,seed(),mode); FB.run=nil; FB.level=1
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
 end
-function FB.PlayCustom(id)
+function FB.StartCustom(data,id)
     if not FB.CanStart() then return end
-    local item=FB.db.custom[id]; if not item then return end
-    FB.UI:StartEditor(id)
-    FB.game=FB.Engine.New({},seed(),"custom"); FB.game.grid=FB.Engine.Unpack(item.data)
+    local grid=FB.Engine.Unpack(data)
+    if not grid then return end
+    FB.game=FB.Engine.New({},seed(),"custom"); FB.game.grid=grid
+    for key=1,FB.Engine.ROWS*8 do
+        if grid[key] then FB.game.attachedOrder[#FB.game.attachedOrder+1]=key end
+    end
     FB.game.current=FB.game:Color(); FB.game.next=FB.game:Color(); FB.run=nil
-    FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
+    FB.UI.playingCustomID=id
+    FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
+end
+function FB.PlayCustom(id)
+    local item=FB.db.custom[id]
+    if item then FB.StartCustom(item.data,id) end
 end
 function FB.StartVersus(matchSeed)
     FB.Debug.Log("GAME","versus",matchSeed)
@@ -105,6 +116,7 @@ events:SetScript("OnEvent",function(_,event,...)
         FB.db=FrozenBubbleDB; FB.Scores.Init(FB.db)
         FB.Debug.Init()
         FB.UI:Build()
+        FB.Options.Init(); FB.Invitations.Init()
         C_ChatInfo.RegisterAddonMessagePrefix(FB.PREFIX)
         events:RegisterEvent("CHAT_MSG_ADDON"); events:RegisterEvent("CHAT_MSG_CHANNEL")
         events:RegisterEvent("CHAT_MSG_CHANNEL_NOTICE"); events:RegisterEvent("PLAYER_REGEN_DISABLED")
@@ -113,6 +125,7 @@ events:SetScript("OnEvent",function(_,event,...)
         SLASH_FROZENBUBBLE1="/fb"; SLASH_FROZENBUBBLE2="/frozenbubble"
         SlashCmdList.FROZENBUBBLE=function(command)
             if command:match("^debug") then FB.Debug.Command(command:match("^debug%s*(.*)$"))
+            elseif command=="settings" then FB.Options.Open()
             elseif command=="queue" then FB.UI:ShowLobby(); FB.Net.SetQueue(true)
             elseif command=="scores" then FB.UI.frame:Show(); FB.UI:ShowScores()
             elseif command=="levels" then FB.UI.frame:Show(); FB.UI:ShowMarket()
@@ -155,6 +168,7 @@ events:SetScript("OnEvent",function(_,event,...)
 end)
 events:SetScript("OnUpdate",function(_,dt)
     if not FB.db then return end
+    FB.Invitations.Update()
     FB.UI:UpdateVisibility(dt)
     if FB.game and not FB.UI.editing then
         FB.game:Update(dt)

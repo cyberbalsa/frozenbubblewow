@@ -47,9 +47,10 @@ class Packaging(unittest.TestCase):
                 self.assertTrue((ROOT / f"FrozenBubble/Media/{sound}.ogg").is_file(), sound)
 
     def test_bubble_edges_have_partial_coverage(self):
-        for color in range(1, 9):
-            with self.subTest(color=color):
-                data = (ROOT / f"FrozenBubble/Media/bubble{color}.tga").read_bytes()
+        names = [f"bubble{prefix}{color}" for prefix in ("", "-symbol") for color in range(1, 9)]
+        for name in names:
+            with self.subTest(name=name):
+                data = (ROOT / f"FrozenBubble/Media/{name}.tga").read_bytes()
                 self.assertEqual((data[2], data[16]), (2, 32))  # uncompressed BGRA
                 width, height = struct.unpack_from("<HH", data, 12)
                 self.assertEqual((width, height), (128, 128))

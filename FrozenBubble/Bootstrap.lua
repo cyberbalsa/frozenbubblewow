@@ -1,9 +1,18 @@
 local addon, FB = ...
 _G.FrozenBubble = FB
 FB.name = addon
-FB.version = "0.1.0-alpha.4"
+FB.version = "0.1.0-alpha.5"
 FB.media = "Interface\\AddOns\\" .. addon .. "\\Media\\"
 FB.PREFIX = "FrozenBubble1"
+
+function FB.SetBubbleTexture(texture,color)
+    local asset=(FB.db and FB.db.colorblind and "bubble-symbol" or "bubble")..color
+    if texture.fbAsset~=asset then
+        texture:SetTexture(FB.media..asset..".tga")
+        texture:SetTexCoord(0,1,0,1)
+        texture.fbAsset=asset
+    end
+end
 
 function FB.Clamp(n, lo, hi) return math.max(lo, math.min(hi, n)) end
 function FB.Integer(s, lo, hi)

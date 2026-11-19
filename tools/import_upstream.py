@@ -24,6 +24,7 @@ assert len(levels) == 100
     "-- Original Frozen Bubble levels, GPL-2.0-only. See AUTHORS.upstream.\nlocal _, FB = ...\nFB.Levels = {\n"
     + "".join("  {" + ", ".join(json.dumps(row) for row in rows) + "},\n" for rows in levels) + "}\n")
 textures = {f"bubble{i}": f"balls/bubble-{i}.gif" for i in range(1, 9)}
+textures.update({f"bubble-symbol{i}": f"balls/bubble-colourblind-{i}.gif" for i in range(1, 9)})
 textures.update(background="back_one_player.png", shooter="shooter.png")
 for name, path in textures.items():
     im = Image.open(src / "share/gfx" / path).convert("RGBA")
