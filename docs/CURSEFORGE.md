@@ -10,6 +10,6 @@ Everyone playing needs the addon. Blizzard controls channel visibility and addon
 
 Type **/fb** to play. Aim with the mouse and click to shoot, or hover over the board and use Left/Right and Space. Press P to pause solo play. Versus matches keep running when the window is hidden.
 
-This is an alpha release for WoW Forever 1.60.1. Use **/fb debug** to inspect recent diagnostics and report problems on [GitHub](https://github.com/cyberbalsa/frozenbubblewow/issues).
+Version 0.1.0 supports WoW Forever 1.60.1. Use **/fb debug** to inspect recent diagnostics and report problems on [GitHub](https://github.com/cyberbalsa/frozenbubblewow/issues).
 
 Frozen Bubble Forever is an unofficial, open-source port of Frozen Bubble, released under GPLv2. Original game by Guillaume Cottenceau and the Frozen-Bubble Team, artwork by Alexis Younes and Amaury Amblard-Ladurantie, and music by Matthias Le Bidan.
