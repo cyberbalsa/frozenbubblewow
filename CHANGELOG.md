@@ -1,3 +1,9 @@
+# 0.1.0-alpha.21
+
+- Aim, fire and the penguin’s reaction now follow the original 20 ms game clock. An auto-fired bubble moves on its launch tick. Pressing fire while the cannon is busy queues one shot if you hold the key until it is ready.
+- The local shot clock can be switched off in addon settings for solo and shared-keyboard games. Online games retain their timed rules.
+- After a solo clear, a key advances when the popping bubbles leave the screen. A key retries a frozen board. Timed training shows the original full-size score panel and a key opens the highscore table.
+
 # 0.1.0-alpha.20
 
 - The level editor opens on a working copy of the original 100 boards. The wooden signs, bubble palette, eraser, help card and level browser use the desktop artwork. Press J to jump to a board or click Open to preview a saved set.

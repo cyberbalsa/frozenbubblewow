@@ -40,6 +40,23 @@ function K.Held(pressed,i)
     return alias and K.solo[alias]==i and pressed[alias]
 end
 
+-- A tap on a ready cannon survives between frames. A press during recovery
+-- stays armed only while its key is held, and fires once when the cannon clears.
+function K.PressFire(game,pressed,action,key)
+    if game and game.status=="playing" and not game.paused then
+        pressed[action]={key=key,tap=game:CanShoot()}
+    end
+end
+function K.Fire(game,pressed,action,launchTick)
+    local request=pressed[action]
+    if not request then return end
+    if request.tap or pressed[request.key] then
+        request.tap=false
+        if not game:Shoot(nil,launchTick) then return end
+    end
+    pressed[action]=nil
+end
+
 function K.Aim(game,left,right,center,step)
     local old=game.angle
     local angle=old+(right and step or 0)-(left and step or 0)

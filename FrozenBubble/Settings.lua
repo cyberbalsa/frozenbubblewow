@@ -5,7 +5,7 @@ FB.Options = Options
 local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
     sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
-    fadeOnBlur=true, colorblind=false, debug=true, community=false,
+    shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
 }
 
 function Options.Set(key,value)
@@ -15,6 +15,13 @@ function Options.Set(key,value)
     if key=="boardTransitions" or key=="graphicsLevel" or key=="reducedMotion" or key=="colorblind" or (key=="titleDemos" and FB.Transitions.demo) then FB.Transitions.Interrupt() end
     if FB.Demos.scene and (key=="graphicsLevel" or key=="colorblind" or key=="titleDemos" or key=="reducedMotion") then
         FB.UI:ShowMenu()
+    end
+    if key=="shotClock" and FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match) then
+        local function resetClock(game)
+            game.timed=value; game.idle=0; game.hurryVisible=false
+        end
+        resetClock(FB.game)
+        if FB.LocalVersus.match then resetClock(FB.LocalVersus.match.left) end
     end
     if key=="minimap" and Options.icon then Options.icon:SetShown(value) end
     if key=="graphicsLevel" or key=="reducedMotion" then FB.UI:ApplyGraphics() end
@@ -78,6 +85,7 @@ local function registerPage()
     check("reducedMotion","Reduce menu and penguin animation")
     check("boardTransitions","Animate the start of a round","Reveal new boards with the original game’s transitions. Click to skip.")
     check("titleDemos","Play demos on the title screen","After 20 seconds on the title screen, play a recording from the original game. Click or press a key to return.")
+    check("shotClock","Use the local shot clock","Show the hurry warning and fire automatically in solo and shared-keyboard games. Online matches always use the clock.")
     check("sound","Play sound effects")
     check("music","Play game music")
     slider("musicVolume","Game music volume",0.1,1,0.05,percent)

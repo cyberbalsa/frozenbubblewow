@@ -139,12 +139,12 @@ function N.Finish(result,reason,send)
     if FB.Series.Complete(m) then reason=reason.." Victory limit reached." end
     notify(reason)
 end
-function N.Fire(g)
+function N.Fire(g,launchTick)
     local m=N.match
     if not m or m.phase~="playing" then return end
     m.seq=m.seq+1
     local send=m.arena and FB.Arena.Fan or N.Whisper
-    send(m.arena and "AFIRE" or "FIRE",m.id,m.seq,g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
+    send(m.arena and "AFIRE" or "FIRE",m.id,m.seq,launchTick or g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
         g.current,g.next,g.rng,g:Pack())
 end
 function N.State()

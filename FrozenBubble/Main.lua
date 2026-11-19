@@ -46,6 +46,7 @@ function FB.StartCampaign(level,run)
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
     FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound)
+    FB.game.timed=FB.db.shotClock~=false
     FB.Debug.Log("GAME","campaign",level)
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.UI.level:SetText(tostring(level))
     FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
@@ -60,6 +61,7 @@ function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
     FB.LocalVersus.match=nil
     FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
+    FB.game.timed=FB.db.shotClock~=false
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
 end
 function FB.StartCustomBoard(set,index)
@@ -68,6 +70,7 @@ function FB.StartCustomBoard(set,index)
     if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
     FB.LocalVersus.match=nil; FB.run=nil
     FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound)
+    FB.game.timed=FB.db.shotClock~=false
     if grid then
         FB.game.grid=grid
         for key=1,FB.Engine.ROWS*8 do
@@ -105,7 +108,7 @@ function FB.TogglePause(key)
 end
 function FB.Fire()
     if InCombatLockdown() or FB.UI.editing or FB.Transitions.target or not FB.game then return end
-    FB.game:Shoot()
+    FB.UI:SamplePointer(FB.game); FB.game:Shoot()
 end
 function FB.NextLevel()
     local game=FB.game
@@ -209,8 +212,13 @@ events:SetScript("OnUpdate",function(_,dt)
     if FB.LocalVersus.match and not FB.UI.editing then
         FB.LocalVersus.Update(playTime,FB.UI.keys)
     elseif FB.game and not FB.UI.editing then
-        FB.game:Update(FB.game.mode=="versus" and FB.Net.match and dt or playTime)
         local game=FB.game
+        local elapsed=game.mode=="versus" and FB.Net.match and dt or playTime
+        local ui=FB.UI
+        if ui.frame:IsShown() and (ui.screen=="game" or ui.screen=="opponent") and not FB.Transitions.target then
+            if game.status=="playing" and not game.paused then ui:SamplePointer(game) end
+            game:Update(elapsed,ui.PlayerInput,ui.AnimatePlayerTick)
+        else game:Update(elapsed) end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false

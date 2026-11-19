@@ -256,7 +256,7 @@ test("each chain landing and hurry pulse survives batched simulation updates",fu
         trace={}
         g=E.New(FB.Levels[1],10,"campaign",false,sound)
         while g.tick<550 do g:Update(dt) end
-        eq(table.concat(trace,","),"401 hurry,450 hurry,500 hurry,525 launch,549 stick")
+        eq(table.concat(trace,","),"401 hurry,450 hurry,500 hurry,525 launch,548 stick")
     end
 end)
 test("end of round freezes or ejects cells bottom first on even ticks and supports a late draw",function()
@@ -372,6 +372,31 @@ test("shooter turn, release, fire and idle frames match the desktop input sequen
             end
         end
     end
+end)
+test("a peer replays the launch tick for between-frame clicks, keyboard fire and auto-fire",function()
+    local sender=client("Launcher")
+    local net=sender.Net
+    for _,source in ipairs({"click","keyboard","clock"}) do
+        local shot=E.New(FB.Levels[1],43,"versus")
+        local peer={remote=E.New({},1,"versus"),remoteSeq=0}
+        net.match={phase="playing",id="test",seq=0}
+        net.Whisper=function(kind,...)
+            local words={"1",kind,...}
+            for i=1,#words do words[i]=tostring(words[i]) end
+            sender.PeerView.Fire(peer,words)
+        end
+        shot.onShoot=net.Fire; shot.tick=27; shot.angle=0.41
+        if source=="click" then shot:Shoot()
+        elseif source=="clock" then shot.idle=shot.hurryMax-0.02 end
+        shot:Update(0.12,function(g,launchTick)
+            if source=="keyboard" and g.tick==28 then assert(g:Shoot(nil,launchTick)) end
+        end)
+        local view=peer.remote; eq(view.tick,27)
+        sender.PeerView.Sync(view,shot.grid,shot.offset,shot.tick,shot.shots,shot.lockedShots,shot.rng,{})
+        eq(view.projectile.x,shot.projectile.x); eq(view.projectile.y,shot.projectile.y)
+        eq(view.current,shot.current); eq(view.next,shot.next)
+    end
+    net.match=nil
 end)
 test("queue handshake survives dropped offer, accept, start and ready",function()
     drops={OFFER=true,ACCEPT=true,START=true,READY=true}
@@ -1027,15 +1052,15 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         clock=clock+2; panel.scripts.OnUpdate(); eq(ui.screen,"menu")
         local down,up=ui.board.scripts.OnKeyDown,ui.board.scripts.OnKeyUp
         fb.StartCampaign(1); env.GetMouseFoci=function() return {ui.board} end
-        down(ui.board,"J"); ui:Update(0.04); eq(fb.game.angle,-0.06); up(ui.board,"J")
-        down(ui.board,"I"); ui:Update(0.04); eq(fb.game.angle,0); up(ui.board,"I")
+        down(ui.board,"J"); eventFrame.scripts.OnUpdate(nil,0.04); eq(fb.game.angle,-0.06); up(ui.board,"J")
+        down(ui.board,"I"); eventFrame.scripts.OnUpdate(nil,0.04); eq(fb.game.angle,0); up(ui.board,"I")
         down(ui.board,"UP"); down(ui.board,"SPACE"); eq(fb.game.shots,0)
-        down(ui.board,"K"); eq(fb.game.shots,1)
+        down(ui.board,"K"); eventFrame.scripts.OnUpdate(nil,0.02); eq(fb.game.shots,1)
         ui:ShowMenu(); ui.menuHover[2].activate()
         assert(ui.chainControls.text:find("J / L",1,true)); ui.chainNo.scripts.OnClick()
         down(ui.board,"L"); down(ui.board,"S"); fb.LocalVersus.Update(0.02,ui.keys)
         eq(fb.game.angle,0.03); eq(fb.LocalVersus.match.left.angle,-0.03)
-        down(ui.board,"T"); down(ui.board,"K"); eq(fb.LocalVersus.match.left.shots,1); eq(fb.game.shots,1)
+        down(ui.board,"T"); down(ui.board,"K"); fb.LocalVersus.Update(0.02,ui.keys); eq(fb.LocalVersus.match.left.shots,1); eq(fb.game.shots,1)
         local savedSize=fb.db.windowSize; fb.db.windowSize=0.65
         local anchor,scale={"TOPLEFT",env.UIParent,"TOPLEFT",11,-13},nil
         ui.frame.GetPoint=function() return env.unpack(anchor) end
@@ -1106,6 +1131,55 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(ui.board.stick.shown and ui.board.fx[2].shown and ui.board.boardOverlays[2].shown)
         fb.Options.Set("graphicsLevel",3); fb.StartCampaign(1)
     end)
+    test("the shot clock aims, fires and moves the bubble on the same desktop tick at every render rate",function()
+        local ui=fb.UI
+        local oldFocus=env.GetMouseFoci; env.GetMouseFoci=function() return {ui.board} end
+        for _,frames in ipairs({1,4,12,48}) do
+            fb.StartCampaign(1)
+            local game=fb.game
+            game.idle=(525-6)/50
+            ui.board.scripts.OnKeyDown(ui.board,"RIGHT")
+            for _=1,frames do eventFrame.scripts.OnUpdate(nil,0.24/frames) end
+            eq(game.tick,12); eq(game.shots,1)
+            local shot=game.projectile
+            assert(math.abs(shot.x-(128+70*math.sin(0.18)))<1e-8)
+            assert(math.abs(shot.y-(game.launchY-70*math.cos(0.18)))<1e-8)
+            eq(ui.penguin.fbShots,1); eq(ui.penguin.fbState,"right_to")
+            ui.board.scripts.OnKeyUp(ui.board,"RIGHT")
+        end
+        -- A quick tap survives key release before the next tick. The next key
+        -- press, held while the projectile is in flight, fires once on recovery.
+        fb.StartCampaign(1)
+        local game=fb.game
+        ui.board.scripts.OnKeyDown(ui.board,"LEFT")
+        ui.board.scripts.OnKeyDown(ui.board,"SPACE"); ui.board.scripts.OnKeyUp(ui.board,"SPACE")
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(game.shots,1); eq(game.angle,-0.03)
+        assert(math.abs(game.projectile.x-(128-10*math.sin(0.03)))<1e-8)
+        ui.board.scripts.OnKeyUp(ui.board,"LEFT"); ui.board.scripts.OnKeyDown(ui.board,"SPACE")
+        for _=1,80 do eventFrame.scripts.OnUpdate(nil,0.02) end
+        eq(game.shots,2)
+        ui.board.scripts.OnKeyUp(ui.board,"SPACE")
+        game:Shoot(0); ui.board.scripts.OnKeyDown(ui.board,"UP"); ui.board.scripts.OnKeyUp(ui.board,"UP")
+        for _=1,80 do eventFrame.scripts.OnUpdate(nil,0.02) end
+        eq(game.shots,3); env.GetMouseFoci=oldFocus
+    end)
+    test("local shot-clock preference applies to both launchers while training and online clocks keep their rules",function()
+        local option=fb.Options.controls.shotClock; assert(option.get())
+        fb.StartCampaign(1); fb.game.idle=8.2; fb.game.hurryVisible=true
+        option.set(false); eq(fb.game.idle,0); eq(fb.game.hurryVisible,false)
+        local function wait(game)
+            for _=1,550 do game:Step(0.02) end
+            eq(game.shots,0); eq(game.hurryVisible,false)
+        end
+        wait(fb.game); fb.StartCustomBoard({boards={fb.UI:DefaultEditorBoards()[1]},title="Custom"},1); wait(fb.game)
+        fb.LocalVersus.Start(false); wait(fb.game); wait(fb.LocalVersus.match.left)
+        option.set(true); eq(fb.game.idle,0); eq(fb.LocalVersus.match.left.timed,true)
+        option.set(false); fb.StartSolo("training"); fb.game.tick=6049
+        fb.game:Update(0.02); eq(fb.game.status,"finished")
+        fb.StartVersus(178,false); option.set(true); option.set(false)
+        fb.game.idle=7.48; fb.game:Step(0.02); eq(fb.game.shots,1)
+        option.set(true); fb.StartCampaign(1)
+    end)
     test("mouse aim keeps the penguin turning and a held direction works at the angle limit",function()
         local ui=fb.UI
         fb.StartCampaign(1)
@@ -1113,14 +1187,14 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui.board.IsMouseOver=function() return true end
         ui.Cursor=function() return 258,260 end
         ui.lastX,ui.lastY=nil,nil
-        for i=1,48 do ui:Update(1/120) end
+        for i=1,48 do eventFrame.scripts.OnUpdate(nil,1/120) end
         assert(fb.game.angle>0.8); eq(ui.penguin.fbState,"right")
         eq(fb.game.shots,0)
-        for i=1,130 do ui:Update(1/120) end
+        for i=1,130 do eventFrame.scripts.OnUpdate(nil,1/120) end
         eq(ui.penguin.fbState,"normal"); eq(fb.game.poseAngle,fb.game.angle)
         ui.board.IsMouseOver=nil; ui.Cursor=cursor
         fb.game.angle=fb.Engine.MAX_ANGLE; ui.keys.RIGHT=true
-        for i=1,30 do ui:Update(0.02) end
+        for i=1,30 do eventFrame.scripts.OnUpdate(nil,0.02) end
         eq(fb.game.angle,fb.Engine.MAX_ANGLE); eq(ui.penguin.fbState,"right")
         ui.keys.RIGHT=nil; fb.StartCampaign(1)
     end)
@@ -1165,21 +1239,21 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         env.GetCurrentKeyBoardFocus=function() return env.UIParent end
         down(ui.board,"C"); down(ui.board,"UP"); eq(m.left.shots,0); eq(m.right.shots,0)
         env.GetCurrentKeyBoardFocus=oldKeyboard
-        down(ui.board,"C"); down(ui.board,"UP"); eq(m.left.shots,1); eq(m.right.shots,1)
+        down(ui.board,"C"); down(ui.board,"UP"); eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.shots,1); eq(m.right.shots,1)
         down(ui.board,"P"); eventFrame.scripts.OnUpdate(nil,0.2)
-        eq(m.right.tick,4); eq(m.left.tick,4); assert(m.left.paused)
+        eq(m.right.tick,5); eq(m.left.tick,5); assert(m.left.paused)
         up(ui.board,"P"); down(ui.board,"P")
-        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.right.tick,5); eq(m.left.tick,5)
-        ui:ShowMenu(); eventFrame.scripts.OnUpdate(nil,0.2); eq(m.left.tick,5)
-        ui:ShowGame(); eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,6)
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.right.tick,6); eq(m.left.tick,6)
+        ui:ShowMenu(); eventFrame.scripts.OnUpdate(nil,0.2); eq(m.left.tick,6)
+        ui:ShowGame(); eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,7)
         eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
-        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,6); assert(m.right.paused)
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,7); assert(m.right.paused)
         eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED"); ui:ShowGame()
         ui.focusGrace=0; env.GetMouseFoci=function() return {} end
         ui:UpdateVisibility(0.02); clock=clock+1
-        eventFrame.scripts.OnUpdate(nil,0.10); eq(m.left.tick,6); assert(m.right.paused)
+        eventFrame.scripts.OnUpdate(nil,0.10); eq(m.left.tick,7); assert(m.right.paused)
         env.GetMouseFoci=function() return {ui.remoteBoard} end
-        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,7); eq(m.right.tick,7)
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,8); eq(m.right.tick,8)
         env.GetMouseFoci=oldMouse
     end)
     test("local clears send penalties once and round wins stay on this keyboard",function()
@@ -1225,6 +1299,26 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eventFrame.scripts.OnUpdate(eventFrame,0.02); eq(fb.Scores.Best("training-chain").score,29)
         eq(fb.Scores.Best("training").score,14)
         fb.UI:Panel("solo"); fb.UI.soloEntries[2].activate(); eq(fb.UI.screen,"pick")
+    end)
+    test("solo result keys wait for the original animations and training score card",function()
+        local ui=fb.UI; local oldFocus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        local function press(key)
+            ui.board.scripts.OnKeyDown(ui.board,key); ui.board.scripts.OnKeyUp(ui.board,key)
+        end
+        fb.StartCampaign(1); local game=fb.game
+        game.status="won"; game.effects={{kind="pop",x=16,y=16,vx=0,vy=0,wait=0,color=1}}
+        eventFrame.scripts.OnUpdate(nil,0.02); press("UP"); eq(fb.game,game)
+        game.effects={}; press("UP"); eq(fb.level,2); eq(fb.game.shots,0)
+        game=fb.game; game.status="lost"; eventFrame.scripts.OnUpdate(nil,0.02)
+        press("RIGHT"); eq(fb.game,game)
+        for i=1,100 do eventFrame.scripts.OnUpdate(nil,0.02) end
+        press("RIGHT"); assert(fb.game~=game); eq(fb.level,2)
+        fb.StartSolo("training"); fb.game.tick=6049; fb.game.score=12
+        eventFrame.scripts.OnUpdate(nil,0.02); assert(ui.trainingResult.shown and not ui.resultArt.shown)
+        eq(ui.trainingScore.text,"12"); press("SPACE"); eq(ui.screen,"game")
+        clock=clock+1; press("ENTER"); eq(ui.screen,"scores"); eq(ui.highlightScore,fb.game.scoreEntry)
+        env.GetMouseFoci=oldFocus
     end)
     test("campaign finish opens its own card with the right preview, time and colorblind artwork",function()
         local unlocked=fb.db.unlocked; fb.db.unlocked=100

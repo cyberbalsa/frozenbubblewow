@@ -9,7 +9,7 @@ function L.Start(chains, previous)
     local left=FB.Engine.New(nil,seed,"versus",chains,FB.Sound)
     -- Both launchers draw from the same random stream after the shared opening.
     left.Random=function(_,n) return right:Random(n) end
-    left.timed=true
+    left.timed=FB.db.shotClock~=false; right.timed=left.timed
     L.match={right=right,left=left,wins=previous and previous.wins or {0,0},elapsed=0}
     FB.game=right; FB.run=nil
     FB.UI.keys={}; FB.UI.focusPausedGame=nil
@@ -33,6 +33,7 @@ function L.Update(dt,keys)
         if not m.finished then
             FB.Controls.Aim(right,keys[binding[1]],keys[binding[2]],keys[binding[4]],0.03)
             FB.Controls.Aim(left,keys[binding[5]],keys[binding[6]],keys[binding[8]],0.03)
+            FB.Controls.Fire(right,keys,3); FB.Controls.Fire(left,keys,7)
         end
         local rightAttack,leftAttack=right.attack,left.attack
         right:Update(0.02); left:Update(0.02)
@@ -52,5 +53,6 @@ function L.Update(dt,keys)
                 right:AddGarbage(left.attack-leftAttack)
             end
         end
+        FB.UI.AnimatePlayerTick(right,0.02); FB.UI.AnimatePlayerTick(left,0.02)
     end
 end

@@ -140,6 +140,7 @@ function U:Build()
         end
         if self.pauseScreen and self.pauseScreen:IsShown() then self:PauseKey(b,key); return end
         if self.editing then self:EditorKey(b,key); return end
+        if self:SoloResultKey(b,key) then return end
         local room=FB.Net.match
         if self.screen=="opponent" and room and room.arena then
             local target=({F1=1,F2=2,F3=3,F4=4,F10=0})[key]
@@ -163,8 +164,8 @@ function U:Build()
         b:SetPropagateKeyboardInput(not action and not pause)
         if (not action and not pause) or self.keys[key] then return end
         self.keys[key]=true
-        if action==3 then FB.Fire()
-        elseif action==7 and not FB.game.paused then shared.left:Shoot()
+        if action==3 then K.PressFire(FB.game,self.keys,3,key)
+        elseif action==7 then K.PressFire(shared.left,self.keys,7,key)
         elseif action==9 then self:ToggleFullWindow()
         elseif action==10 then self.chatKey=key
         elseif pause then FB.TogglePause(key) end
@@ -195,19 +196,18 @@ function U:Build()
     self.resultBadge=A.Image(self.result,"net-lose-remote",318.4,118.4,64,49.6,"OVERLAY"); self.resultBadge:Hide()
     self.winnerName=text(self.result,"",177.6,176,20,316.8); self.winnerName:SetJustifyH("CENTER"); self.winnerName:Hide()
     self.resultDetail=text(self.result,"",0,250,18,526.4,{0.2,0.1,0.2}); self.resultDetail:SetJustifyH("CENTER")
-    self.trainingResult=text(self.result,"",32,58,23,462); self.trainingResult:SetJustifyH("CENTER")
+    -- The two-minute results use the original centered 341 x 280 menu panel.
+    self.trainingResult=CreateFrame("Frame",nil,self.result)
+    self.trainingResult:SetScale(1.6); self.trainingResult:SetSize(341,280)
+    self.trainingResult:SetPoint("CENTER",self.frame,"CENTER"); self.trainingResult:EnableMouse(false)
+    A.Image(self.trainingResult,"panel",0,0,nil,nil,"BACKGROUND")
+    text(self.trainingResult,"Your score after two minutes:",0,94,14,341):SetJustifyH("CENTER")
+    self.trainingScore=text(self.trainingResult,"",0,126,14,341); self.trainingScore:SetJustifyH("CENTER")
+    text(self.trainingResult,"Press any key.",0,158,14,341):SetJustifyH("CENTER")
+    self.trainingResult:Hide()
     self.nextButton=button(self.result,"Next level",116,284,294,function() FB.NextLevel() end); self.nextButton:Hide()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
-        if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
-        elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
-        elseif FB.game and FB.game.customSet then
-            local game=FB.game
-            FB.StartCustomBoard(game.customSet,game.status=="won" and not game.customSet.builtin and 1 or game.customIndex)
-        elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
-        elseif FB.Net.match and FB.Net.match.arena and not FB.Arena.Complete(FB.Net.match) then FB.Arena.Start()
-        elseif FB.Series.CanContinue(FB.Net.match) then FB.Series.Ready()
-        elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
-        else self:ShowMenu() end
+        self:RetryRound()
     end)
     self.leaveSeries=button(self.result,"Back to lobby",140,317,246,function() FB.Net.Leave(); self:ShowLobby() end)
     self.leaveSeries:Hide()
@@ -215,6 +215,7 @@ function U:Build()
         if FB.game and FB.game.scoreEntry then self:ShowScores(FB.game.scoreEntry) end
     end)
     self.resultScores:Hide()
+    self.retryButton:SetFrameLevel(self.layers.panel+2); self.resultScores:SetFrameLevel(self.layers.panel+2)
     self.result:Hide()
     self.hud=text(self.gameLayer,"",30,113,23,245,{1,0.93,0.58})
     self.footer=text(self.gameLayer,"",20,235,14,225,{0.16,0.1,0.22})
@@ -351,6 +352,54 @@ function U:HasFocus()
     if GetMouseFocus then return self:OwnsFocus(GetMouseFocus()) end
     return self.frame:IsMouseOver()
 end
+function U:ShowTrainingResult(show)
+    if self.trainingResult:IsShown()==show then return end
+    self.trainingResult:SetShown(show)
+    self.retryButton:ClearAllPoints(); self.resultScores:ClearAllPoints()
+    if show then
+        self.retryButton:SetPoint("TOP",self.trainingResult,"TOP",0,-312)
+        self.resultScores:SetPoint("TOP",self.trainingResult,"TOP",0,-364.8)
+    else
+        self.retryButton:SetPoint("TOPLEFT",116,-284)
+        self.resultScores:SetPoint("TOPLEFT",140,-317)
+    end
+end
+
+function U:RetryRound()
+    if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
+    elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
+    elseif FB.game and FB.game.customSet then
+        local game=FB.game
+        FB.StartCustomBoard(game.customSet,game.status=="won" and not game.customSet.builtin and 1 or game.customIndex)
+    elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
+    elseif FB.Net.match and FB.Net.match.arena and not FB.Arena.Complete(FB.Net.match) then FB.Arena.Start()
+    elseif FB.Series.CanContinue(FB.Net.match) then FB.Series.Ready()
+    elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
+    else self:ShowMenu() end
+end
+
+function U:SoloResultKey(board,key)
+    local game=FB.game
+    if self.screen~="game" or not game or game.status=="playing" then return false end
+    board:SetPropagateKeyboardInput(false)
+    if self.keys[key] then return true end
+    self.keys[key]=true
+    if key=="ESCAPE" then
+        if game.status=="lost" then self:RetryRound() else self:ShowMenu() end
+    else
+        if self.resultGame~=game or not self.result:IsShown() then return true end
+        if game.status=="finished" and GetTime()<(self.trainingReadyAt or 0) then return true end
+        if game.status=="won" and FB.db.graphicsLevel>1 and not FB.db.reducedMotion then
+            for _,fx in ipairs(game.effects) do if fx.kind=="pop" then return true end end
+        end
+        if self.nextButton:IsShown() then FB.NextLevel()
+        elseif game.scoreEntry and (game.status=="finished" or game.status=="won") then self:ShowScores(game.scoreEntry)
+        else self:RetryRound() end
+    end
+    self.keys[key]=true
+    return true
+end
+
 function U:PauseKey(panel,key)
     if InCombatLockdown() then return end
     local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
@@ -430,7 +479,8 @@ function U:UpdateVisibility(dt)
     if math.abs(self.alpha-target)<0.005 then self.alpha=target end
     self.frame:SetAlpha(self.alpha)
     self.frame:SetFrameStrata(inactive and "LOW" or "HIGH")
-    if FB.LocalVersus.match and self.screen=="opponent" and not self.pauseScreen:IsShown() and not combat and not FB.Transitions.target then
+    local resultKeys=self.screen=="game" and FB.game and FB.game.status~="playing"
+    if (resultKeys or FB.LocalVersus.match and self.screen=="opponent") and not self.pauseScreen:IsShown() and not combat and not FB.Transitions.target then
         local capture=self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
         self.board:EnableKeyboard(capture)
         if not capture then self.keys={} end
@@ -674,6 +724,7 @@ function U:Panel(name)
     local shared=name=="opponent" and FB.LocalVersus.match~=nil
     self.pauseControl:SetShown(name=="game" or shared)
     self.pauseControl:ClearAllPoints(); self.pauseControl:SetPoint("TOPLEFT",shared and 467 or 115,shared and -688 or -728)
+    self:ShowTrainingResult(false)
     self.result:ClearAllPoints(); self.result:SetPoint("TOPLEFT",name=="opponent" and 244.8 or 238.4,-304)
     self.menuControl:ClearAllPoints()
     self.menuControl:SetPoint("TOPLEFT",name=="opponent" and 467 or 16,-728)
@@ -1093,6 +1144,39 @@ function U:AnimateMenu(dt)
         end
     end
 end
+function U:SamplePointer(game)
+    if self.inactive or not self.board:IsMouseOver() or (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then return end
+    if K.Held(self.keys,1) or K.Held(self.keys,2) or K.Held(self.keys,4) then return end
+    local x,y=self:Cursor()
+    if self.aimGame~=game or self.lastX~=x or self.lastY~=y then
+        self.aimGame,self.lastX,self.lastY=game,x,y
+        if y<game.launchY-10 then
+            game.poseAngle=game.poseAngle or game.angle
+            game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE)
+        end
+    end
+end
+
+-- The desktop applies turn and center before fire on every 20 ms tick.
+function U.PlayerInput(game,launchTick)
+    local keys=U.keys
+    local left,right,center=K.Held(keys,1),K.Held(keys,2),K.Held(keys,4)
+    if left or right or center then K.Aim(game,left,right,center,0.03)
+    else
+        local pose=game.poseAngle or game.angle
+        local delta=game.angle-pose
+        game.turning=delta<0 and -1 or delta>0 and 1 or 0
+        game.poseAngle=math.abs(delta)<=0.03 and game.angle or pose+game.turning*0.03
+    end
+    K.Fire(game,keys,3,launchTick)
+end
+
+function U.AnimatePlayerTick(game,dt)
+    if FB.db.graphicsLevel~=3 or FB.db.reducedMotion then return end
+    local left=FB.LocalVersus.match and game==FB.LocalVersus.match.left
+    FB.Animation.Penguin(left and U.remotePenguin or U.penguin,game,left and "p2" or "p1",dt)
+end
+
 function U:Update(dt)
     if FB.Transitions.target or not self.frame or not self.frame:IsShown() then return end
     FB.Demos.Update(dt)
@@ -1102,27 +1186,8 @@ function U:Update(dt)
     self:UpdatePause(dt)
     if self.pauseScreen:IsShown() then return end
     local game=self.editing and self.editGame or FB.game
-    if game and not FB.LocalVersus.match and not self.editing and not game.paused and game.status=="playing" then
-        local left,right,center=K.Held(self.keys,1),K.Held(self.keys,2),K.Held(self.keys,4)
-        if left or right or center then K.Aim(game,left,right,center,dt*1.5)
-        else
-            local poseAngle=game.poseAngle or game.angle
-            if self.board:IsMouseOver() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) then
-                local x,y=self:Cursor()
-                if self.lastX~=x or self.lastY~=y then
-                    if y<game.launchY-10 then game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE) end
-                    self.lastX,self.lastY=x,y
-                end
-            end
-            -- Mouse aim is immediate. Let the penguin finish the corresponding
-            -- turn at the keyboard's 0.03 radians per desktop frame.
-            local delta=game.angle-poseAngle
-            game.turning=delta<0 and -1 or delta>0 and 1 or 0
-            game.poseAngle=math.abs(delta)<=dt*1.5 and game.angle or poseAngle+game.turning*dt*1.5
-        end
-    end
     self.penguin:SetShown(FB.db.graphicsLevel==3 and not self.editing and self.gameLayer:IsShown() and not FB.MatchChat.input:IsShown())
-    if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
+    if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",0) end
     if self.editing then self:UpdateEditor() else self:RenderBoard(self.board,game) end
     if self.screen=="opponent" and FB.Net.match and FB.Net.match.arena and FB.Net.match.played then
         self:RenderArena(FB.Net.match,dt); return
@@ -1150,6 +1215,9 @@ function U:Update(dt)
             end
         end
     end
+    if game and game.status=="finished" and self.trainingGame~=game then
+        self.trainingReadyAt=GetTime()+1; self.trainingGame=game
+    elseif not game or game.status~="finished" then self.trainingGame=nil end
     self.resultGame=game
     self.result:SetShown(ready or false)
     self.resultScores:SetShown(ended and game.scoreEntry~=nil or false)
@@ -1160,8 +1228,8 @@ function U:Update(dt)
         FB.Animation.Frame(self.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
     end
     local finished=ended and game.status=="finished"
-    self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
-    if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
+    self:ShowTrainingResult(finished or false); self.resultDetail:SetShown(not finished)
+    if finished then self.trainingScore:SetText(tostring(game.score)) end
     local series=match and match.series
     local canRematch=FB.Series.CanContinue(match)
     local restarting=match and (match.phase=="restart" or match.phase=="barrier" and match.parent~=nil)
@@ -1181,7 +1249,7 @@ function U:Update(dt)
     elseif game then
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
         if game.customSet then label=game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards end
-        self.hud:SetText(shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or
+        self.hud:SetText(training and ("Score: "..game.score) or shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetShown(not training and game.mode~="versus")
         self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
@@ -1189,14 +1257,14 @@ function U:Update(dt)
             local art=shared and winner and (winner==game and "local-win-p1" or "local-win-p2") or winner and (winner==game and "net-win-local" or "net-win-remote")
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
-            FB.Animation.Frame(self.resultArt,art,1)
+            if finished then self.resultArt:Hide() else FB.Animation.Frame(self.resultArt,art,1) end
             self.resultDetail:SetText(game.customSet and (game.status=="won" and (canAdvance and "Board cleared" or "Set cleared") or "Try this board again") or shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and FB.Series.Caption(match) or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     if self.screen=="opponent" then
         if remote and FB.db.graphicsLevel==3 then
-            FB.Animation.Penguin(self.remotePenguin,remote,"p2",FB.db.reducedMotion and 0 or dt)
+            FB.Animation.Penguin(self.remotePenguin,remote,"p2",(shared or FB.db.reducedMotion) and 0 or dt)
         end
         self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)

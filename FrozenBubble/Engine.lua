@@ -260,15 +260,18 @@ function E:Attach(x,y,hit)
         if hit and self.penaltyRules and #self.chains==0 and self.status=="playing" then self:ApplyGarbage() end
     end
 end
-function E:Shoot(angle)
-    if self.status~="playing" or self.projectile or #self.chains>0 or #self.rising>0 or self.paused then return false end
+function E:CanShoot()
+    return self.status=="playing" and not self.paused and not self.projectile and #self.chains==0 and #self.rising==0
+end
+function E:Shoot(angle,launchTick)
+    if not self:CanShoot() then return false end
     self.angle=FB.Clamp(angle or self.angle,-E.MAX_ANGLE,E.MAX_ANGLE)
     self.projectile={x=128,y=self.launchY,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
     self.current=self.next
     self.next=self:Color()
     self.shots=self.shots+1; self.idle=0; self.hurryVisible=false
     self.sound("launch")
-    if self.onShoot then self.onShoot(self) end
+    if self.onShoot then self.onShoot(self,launchTick or self.tick) end
     return true
 end
 function E:TrainingTimeLeft()
@@ -303,7 +306,7 @@ function E:StepEnding()
     if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.sound("noh") end
     if not freeze and self.grid[key] then self.effects[#self.effects+1]=self:Effect(key,"pop") end
 end
-local function advanceGame(self,dt)
+local function advanceGame(self,dt,input)
     if self.status~="playing" then
         if self.status=="won" or self.status=="lost" or self.status=="draw" then self:StepEnding() end
         return
@@ -314,19 +317,19 @@ local function advanceGame(self,dt)
         if self:TrainingTimeLeft()==0 then self.status="finished"; self.projectile=nil; return end
         if self.pending==0 and #self.rising==0 and self:Random(1500)==1 then self:AddGarbage(self:Random(6)) end
     end
-    if #self.chains>0 then self:MoveChains(); return end
-    self.idle=self.idle+dt
+    if #self.chains==0 then self.idle=self.idle+dt end
     -- The desktop warning blinks every 25 simulation ticks, starting one
     -- tick after the threshold. Do not derive its sound from UI refreshes.
     local late=math.floor((self.idle-self.hurryWarn)*50+0.5)
     local warning=self.timed~=false and late>0 and math.floor(late/25)%2==0
     if warning and not self.hurryVisible then self.sound("hurry") end
     self.hurryVisible=warning
+    -- Network replays start at the last completed tick before the shot moves.
+    if input then input(self,self.tick-1) end
+    if #self.chains>0 then self:MoveChains(); return end
     if #self.rising>0 then self:MoveGarbage(); return end
-    if not self.projectile then
-        if self.idle+1e-9>=self.hurryMax then self:Shoot(self.angle) end
-        return
-    end
+    if not self.projectile and self.timed~=false and self.idle+1e-9>=self.hurryMax then self:Shoot(nil,self.tick-1) end
+    if not self.projectile then return end
     local p=self.projectile
     local previousX,previousY=p.x,p.y
     p.x,p.y=p.x+p.vx*dt,p.y+p.vy*dt
@@ -347,9 +350,9 @@ local function advanceGame(self,dt)
         self:MoveChains()
     end
 end
-function E:Step(dt)
+function E:Step(dt,input)
     if self.paused then return end
-    advanceGame(self,dt)
+    advanceGame(self,dt,input)
     -- update_game moves sprites after collisions and end-of-round actions, even
     -- on the tick they are created. Speeds here are pixels per desktop frame.
     local bottom=self.effectFloor or self.launchY+80
@@ -367,10 +370,14 @@ function E:Step(dt)
         if self.stick.ticks>14 then self.stick=nil end
     end
 end
-function E:Update(dt)
+function E:Update(dt,input,animate)
     if self.paused then return end
     self.accumulator=self.accumulator+math.min(dt,0.25)
-    while self.accumulator+1e-9>=0.02 do self:Step(0.02); self.accumulator=self.accumulator-0.02 end
+    while self.accumulator+1e-9>=0.02 do
+        self:Step(0.02,input)
+        if animate then animate(self,0.02) end
+        self.accumulator=self.accumulator-0.02
+    end
 end
 function E:Pack()
     local out={}

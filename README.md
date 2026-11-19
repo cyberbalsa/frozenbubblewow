@@ -12,6 +12,10 @@ Download `FrozenBubbleForever-<version>.zip` from [GitHub Releases](https://gith
 
 Type `/fb`. Use the arrow keys and Enter or Space to navigate the main menu. Aim with the mouse and click to fire. While the pointer is over the board, Left/Right or A/D aim; Space/Up fire; P pauses solo games. Match three of the same color and drop clusters disconnected from the ceiling. The ceiling descends every nine solo shots and the launcher fires after 10.5 seconds in solo play.
 
+With the keyboard, a fire press during a shot fires once when the cannon is ready if you keep holding it. After a solo win, press a key when the last popping bubble has left the screen to continue. After a loss, a key retries once the board has frozen. Escape retries a loss immediately or leaves a cleared board. The mouse buttons on the result screen also work.
+
+Turn off **Use the local shot clock** in **Settings → AddOns → Frozen Bubble Forever** to take your time between shots. This applies to solo and shared-keyboard games. Training still lasts two minutes, and online matches always use their shot clock.
+
 - **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Runs started at level 1 qualify for campaign highscores. Finished campaigns rank first, followed by the furthest level reached. A shorter time wins a tie. Restarting a partially played board after logout becomes practice.
 - **Multiplayer training:** survive the two-minute clock on a solo board. Earn one point for each bubble beyond three in a clear, including any that fall. Incoming penalties use the versus rules. Random levels and training both offer chain reactions. Turn them on and a falling bubble can fly back up to complete another match. Training records separate scores for each ruleset.
 - **Endless:** clear the board for a new wave and a 500-point bonus.
@@ -72,7 +76,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.20` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.21` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

@@ -180,7 +180,7 @@ function U:RenderArena(m,dt)
     FB.Animation.Frame(self.resultArt,winner and winnerArt or "panel",1)
     self.resultArt:SetSize(526.4,254.4)
     self.winnerName:SetShown(winner~=nil); self.winnerName:SetText(winner or "")
-    self.trainingResult:Hide(); self.resultBadge:Hide(); self.resultScores:Hide()
+    self:ShowTrainingResult(false); self.resultBadge:Hide(); self.resultScores:Hide()
     self.roomBadges:SetShown(winner~=nil)
     local x=#m.names==5 and 322 or #m.names==4 and 348 or 352
     local used=0
