@@ -1,3 +1,9 @@
+# 0.1.0-alpha.19
+
+- Pausing fills the game window with the desktop pause artwork. The penguin plays all 35 frames at 50 Hz, then repeats frames 12–35. Click the picture or press P, Pause, Escape, Enter, or Space to resume.
+- Launches, rebounds, pops, incoming bubbles, ceiling drops, and hurry warnings play in simulation order. Two chain reactions in the same screen update each get their own sound.
+- The editor uses the title music. Solo and multiplayer demos switch to their own music as the board opens. Pausing or fading silences the existing track until you return.
+
 # 0.1.0-alpha.18
 
 - The title logo now ripples, folds, catches the light, and gathers falling snow. Full graphics picks an effect when the addon loads. Press **Left Ctrl+N** over the main menu to cycle through all nine.

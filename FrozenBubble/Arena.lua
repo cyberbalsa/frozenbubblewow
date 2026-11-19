@@ -199,12 +199,12 @@ local function begin(m)
     if InCombatLockdown() then A.Leave("Combat started."); return false end
     m.phase="playing"; m.seq=0; m.lastState=-100; m.played=true
     for seat,v in ipairs(A.Opponents(m)) do
-        v.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction)
+        v.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction,FB.Sound)
         -- Desktop removes falling sprites below screen y=470 on every board.
         local boardTop=seat<=2 and 19 or 247
         v.remote.effectFloor=(470-boardTop)*2+16
         v.remote.chainTurnY=((seat<=2 and 185 or 415)-boardTop)*2+16
-        v.remote.launchY=362; v.remote.hurryMax=math.huge; v.phase="playing"; v.lastSeen=GetTime()
+        v.remote.launchY=362; v.remote.hurryMax=math.huge; v.remote.timed=false; v.phase="playing"; v.lastSeen=GetTime()
     end
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire
@@ -215,6 +215,7 @@ end
 local function lost(m,v)
     if v.lost then return end
     v.lost=true; m.mask=m.mask+2^(v.index-1)
+    if m.phase=="playing" then FB.Sound(v.left and "cancel" or "lose") end
     if v.remote then v.remote.status="lost"; v.phase="done" end
     if v.name==m.me or m.target==v.name then m.target=nil end
     m.pulse=-100
@@ -251,7 +252,7 @@ local function finish(m,winner)
     end
     if name then
         local key=name==m.me and "wins" or "losses"
-        FB.db[key]=FB.db[key]+1; FB.Sound(name==m.me and "applause" or "lose")
+        FB.db[key]=FB.db[key]+1
     end
     N.Notify(name and (name.." won round "..m.round..".") or "Draw.")
 end

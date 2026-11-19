@@ -75,7 +75,6 @@ function V.Fire(m,p)
     view.current,view.next=color,current
     view:Shoot(angle)
     view.next,view.rng=nextColor,rng
-    FB.Sound("launch")
 end
 
 function V.Sync(view,grid,offset,tick,shots,locked,rng,rising)
@@ -116,5 +115,4 @@ function V.Update(m,dt)
     if view.turnUntil and GetTime()>view.turnUntil then view.turning=0 end
     view:Update(dt)
     if m.phase=="playing" then view.status="playing" end
-    FB.BoardSounds(view)
 end

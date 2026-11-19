@@ -110,7 +110,14 @@ function U:ShowScores(entry)
         self.scoreMode=entry.mode=="training-chain" and "training" or entry.mode
         self.shared=false
         for i,row in ipairs(S.Rows(false,entry.mode)) do
-            if row==entry then self.scorePage=math.ceil(i/(entry.mode=="campaign" and 10 or 20)); break end
+            if row==entry then
+                self.scorePage=math.ceil(i/(entry.mode=="campaign" and 10 or 20))
+                local game=FB.game
+                if game and game.scoreEntry==entry and self.scorePage==1 and not game.applauded then
+                    FB.Sound("applause"); game.applauded=true
+                end
+                break
+            end
         end
     end
     self:Panel("scores")

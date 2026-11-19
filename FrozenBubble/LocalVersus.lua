@@ -5,15 +5,15 @@ FB.LocalVersus = L
 function L.Start(chains, previous)
     if not FB.CanStart() then return end
     local seed=FB.GameSeed()
-    local right=FB.Engine.New(nil,seed,"versus",chains)
-    local left=FB.Engine.New(nil,seed,"versus",chains)
+    local right=FB.Engine.New(nil,seed,"versus",chains,FB.Sound)
+    local left=FB.Engine.New(nil,seed,"versus",chains,FB.Sound)
     -- Both launchers draw from the same random stream after the shared opening.
     left.Random=function(_,n) return right:Random(n) end
     left.timed=true
     L.match={right=right,left=left,wins=previous and previous.wins or {0,0},elapsed=0}
     FB.game=right; FB.run=nil
     FB.UI.keys={}; FB.UI.focusPausedGame=nil
-    FB.UI.frame:Show(); FB.Transitions.Open("opponent"); FB.Music()
+    FB.Transitions.Open("opponent"); FB.UI.frame:Show(); FB.Music()
 end
 
 function L.Rematch()
@@ -46,12 +46,11 @@ function L.Update(dt,keys)
                     local winner=p==1 and right or left
                     winner.status="won"
                 end
-                m.finished=true; FB.Sound("applause")
+                m.finished=true; FB.Sound("lose")
             else
                 left:AddGarbage(right.attack-rightAttack)
                 right:AddGarbage(left.attack-leftAttack)
             end
         end
-        FB.BoardSounds(right); FB.BoardSounds(left)
     end
 end

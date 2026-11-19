@@ -140,6 +140,7 @@ function U:Build()
         if self.inactive or (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()) or not self:HasFocus() then
             b:SetPropagateKeyboardInput(true); self.keys={}; return
         end
+        if self.pauseScreen and self.pauseScreen:IsShown() then self:PauseKey(b,key); return end
         if self.editing then
             local color=FB.Integer(key,1,8)
             local action=editorKeys[key]
@@ -179,10 +180,10 @@ function U:Build()
         if (not action and not pause) or self.keys[key] then return end
         self.keys[key]=true
         if action==3 then FB.Fire()
-        elseif action==7 and not FB.game.paused and shared.left:Shoot() then FB.Sound("launch")
+        elseif action==7 and not FB.game.paused then shared.left:Shoot()
         elseif action==9 then self:ToggleFullWindow()
         elseif action==10 then self.chatKey=key
-        elseif pause then FB.TogglePause() end
+        elseif pause then FB.TogglePause(key) end
     end)
     self.board:SetScript("OnKeyUp",function(_,key)
         -- Focus the edit box after the opening keystroke has finished.
@@ -192,11 +193,18 @@ function U:Build()
         end
         self.keys[key]=nil
     end)
-    self.overlay=CreateFrame("Frame",nil,self.board); self.overlay:SetAllPoints(); self.overlay:EnableMouse(false)
-    self.overlay:SetFrameLevel(self.board:GetFrameLevel()+3)
-    self.pauseArt=A.Image(self.overlay,"pause",33,130,190,143); self.pauseArt:Hide()
-    self.overlayText=text(self.overlay,"",14,145,20,228)
-    self.overlaySub=text(self.overlay,"",14,185,12,228)
+    local pause=CreateFrame("Frame",nil,self.gameLayer)
+    self.pauseScreen=pause
+    pause:SetSize(640,480); pause:SetScale(1.6); pause:SetPoint("TOPLEFT",0,0)
+    pause:SetFrameLevel(self.layers.panel+1); pause:EnableMouse(true)
+    A.Image(pause,"pause-background",0,0,nil,nil,"BACKGROUND")
+    self.pauseArt=A.Image(pause,"pause",220,164)
+    pause:SetPropagateKeyboardInput(true); pause:EnableKeyboard(false); pause:Hide()
+    pause:SetScript("OnKeyDown",function(panel,key) self:PauseKey(panel,key) end)
+    pause:SetScript("OnKeyUp",function(_,key) self.keys[key]=nil end)
+    pause:SetScript("OnMouseDown",function(_,key)
+        if key=="LeftButton" and not self.inactive and not InCombatLockdown() and FB.game and FB.game.paused then FB.TogglePause() end
+    end)
     self.result=CreateFrame("Frame",nil,self.gameLayer); self.result:SetSize(526.4,350)
     self.result:SetPoint("TOPLEFT",238.4,-304); self.result:SetFrameLevel(self.layers.panel)
     self.resultArt=A.Image(self.result,"win-panel",0,0,526.4,254.4)
@@ -359,10 +367,46 @@ function U:HasFocus()
     if GetMouseFocus then return self:OwnsFocus(GetMouseFocus()) end
     return self.frame:IsMouseOver()
 end
+function U:PauseKey(panel,key)
+    if InCombatLockdown() then return end
+    local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+    local resume=key=="P" or key=="PAUSE" or key=="ESCAPE" or key=="SPACE" or key=="ENTER" or key=="NUMPADENTER"
+    panel:SetPropagateKeyboardInput(not (active and resume))
+    if active and resume and FB.game and FB.game.paused and not self.keys[key] then
+        FB.TogglePause(key)
+    end
+end
+
+function U:UpdatePause(dt)
+    local show=FB.game and FB.game.paused and FB.game.status=="playing" and
+        (self.screen=="game" or self.screen=="opponent" and FB.LocalVersus.match~=nil)
+    local panel=self.pauseScreen
+    if not show then
+        if panel:IsShown() then
+            panel:Hide(); panel:EnableKeyboard(false); self.pauseElapsed,self.pauseCapture=nil,nil
+            if not self.inactive and not self.combatInput and self.board:IsMouseOver() then
+                self.board:EnableKeyboard(true); self.board:SetPropagateKeyboardInput(true)
+            end
+        end
+        return
+    end
+    if not panel:IsShown() then
+        self.pauseElapsed=0; panel:Show(); self.board:EnableKeyboard(false)
+    elseif not self.inactive and not FB.db.reducedMotion then
+        self.pauseElapsed=self.pauseElapsed+dt
+    end
+    local tick=math.floor(self.pauseElapsed*50+1e-8)
+    -- The desktop plays indices 0..34 once, then returns to zero-based index 11.
+    local frame=FB.db.reducedMotion and 1 or tick<35 and tick+1 or (tick-35)%24+12
+    if self.pauseArt.fbFrame~=frame then FB.Animation.Frame(self.pauseArt,"pause",frame) end
+    local capture=not self.combatInput and not self.inactive
+    if self.pauseCapture~=capture then panel:EnableKeyboard(capture); self.pauseCapture=capture end
+end
+
 function U:SetCombatInput(blocked)
     if self.combatInput==blocked then return end
     self.combatInput=blocked
-    if blocked then FB.Transitions.Interrupt() end
+    if blocked then FB.Transitions.Interrupt(); self.pauseScreen:EnableKeyboard(false); self.pauseCapture=false end
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
@@ -401,7 +445,7 @@ function U:UpdateVisibility(dt)
     if math.abs(self.alpha-target)<0.005 then self.alpha=target end
     self.frame:SetAlpha(self.alpha)
     self.frame:SetFrameStrata(inactive and "LOW" or "HIGH")
-    if FB.LocalVersus.match and self.screen=="opponent" and not combat and not FB.Transitions.target then
+    if FB.LocalVersus.match and self.screen=="opponent" and not self.pauseScreen:IsShown() and not combat and not FB.Transitions.target then
         local capture=self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
         self.board:EnableKeyboard(capture)
         if not capture then self.keys={} end
@@ -464,7 +508,7 @@ function U:ShowMenu()
     self.panels.keys:EnableKeyboard(false); FB.MatchChat.Close()
     self.panels.chain:EnableKeyboard(false)
     self.panels.scores:EnableKeyboard(false)
-    self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; self.menu:EnableKeyboard(not self.combatInput); FB.Music()
+    self.menu:Show(); self.gameLayer:Hide(); self.screen="menu"; self.menu:EnableKeyboard(not self.combatInput); self:UpdatePause(0); FB.Music()
 end
 function U:ShowGame()
     if not FB.game then self:Panel("solo"); return end
@@ -613,7 +657,6 @@ function U:Options()
 end
 function U:Panel(name)
     FB.Transitions.Cancel()
-    local wasDemo=FB.Demos.scene
     FB.Demos.Close()
     if name=="editor" and not self.editGame then self:StartEditor(); return end
     self.menu:EnableKeyboard(false)
@@ -668,7 +711,7 @@ function U:Panel(name)
     if name=="opponent" then self.hud:Show() end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
     if not gameplay and canPauseGame() then FB.game.paused=true end
-    if wasDemo then FB.Music() end
+    self:UpdatePause(0); FB.Music()
 end
 function U:BuildHelp()
     local p=self.panels.help
@@ -1051,9 +1094,7 @@ function U:RenderBoard(board,game,remote)
         FB.Animation.Frame(board.nextRim,rim,1)
         board.nextRim:SetSize(FB.MediaInfo[rim].w*factor,FB.MediaInfo[rim].h*factor)
     end
-    local warning=game.status=="playing" and (not remote or game.timed) and game.idle and game.hurryWarn and game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
-    if warning and not board.wasWarning then FB.Sound("hurry") end
-    board.wasWarning=warning
+    local warning=game.status=="playing" and game.hurryVisible
     if warning then
         local asset=mini and ("arena-hurry-rp"..mini) or remote and "hurry-remote" or "hurry"
         FB.Animation.Frame(board.hurry,asset,1)
@@ -1141,6 +1182,8 @@ function U:Update(dt)
     if FB.Demos.scene then return end
     FB.MatchChat.Refresh()
     self:AnimateMenu(dt)
+    self:UpdatePause(dt)
+    if self.pauseScreen:IsShown() then return end
     local game=self.editing and self.editGame or FB.game
     if game and not FB.LocalVersus.match and not self.editing and not game.paused and game.status=="playing" then
         local left,right,center=K.Held(self.keys,1),K.Held(self.keys,2),K.Held(self.keys,4)
@@ -1164,7 +1207,6 @@ function U:Update(dt)
     self.penguin:SetShown(FB.db.graphicsLevel==3 and not self.editing and self.gameLayer:IsShown() and not FB.MatchChat.input:IsShown())
     if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
     if self.editing then self:UpdateEditor() else self:RenderBoard(self.board,game) end
-    self.overlayText:SetText(""); self.overlaySub:SetText("")
     if self.screen=="opponent" and FB.Net.match and FB.Net.match.arena and FB.Net.match.played then
         self:RenderArena(FB.Net.match,dt); return
     end
@@ -1210,7 +1252,6 @@ function U:Update(dt)
     self.retryButton:SetEnabled(not restarting and not (canRematch and match.ready))
     self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
-    self.pauseArt:Hide()
     local training=game and game.mode=="training" and not self.editing
     self.trainingClock:SetShown(training or false); self.trainingTime:SetShown(training or false)
     if training then
@@ -1227,10 +1268,7 @@ function U:Update(dt)
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetShown(not training and game.mode~="versus")
         self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
-        if game.paused then
-            FB.Animation.Frame(self.pauseArt,"pause",math.floor((GetTime()%1.4)*25)+1)
-            self.overlaySub:SetText("Press P or click Pause to resume.")
-        elseif game.status~="playing" then
+        if game.status~="playing" then
             local art=shared and winner and (winner==game and "local-win-p1" or "local-win-p2") or winner and (winner==game and "net-win-local" or "net-win-remote")
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)

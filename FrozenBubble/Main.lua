@@ -14,25 +14,30 @@ function FB.StopGameMusic()
         if set then set("Sound_MusicVolume",FB.oldMusicVolume) end
         FB.oldMusicVolume=nil
     end
-    FB.musicTrack=nil
+    FB.musicTrack,FB.appliedMusicVolume=nil,nil
 end
 function FB.Music()
     if not FB.UI.frame then return end
     if FB.db.music and FB.UI.frame:IsShown() and PlayMusic then
-        local muted=FB.UI.inactive or InCombatLockdown()
+        local scene=FB.Transitions.demo and FB.DemoData.scenes[FB.Transitions.demo] or FB.Demos.scene
+        local screen=FB.Transitions.target or FB.UI.screen
+        local board=screen=="game" or screen=="opponent"
+        local muted=FB.UI.inactive or InCombatLockdown() or (board and FB.game and FB.game.paused)
         if muted and not FB.musicTrack then return end
         local get=(C_CVar and C_CVar.GetCVar) or GetCVar
         local set=(C_CVar and C_CVar.SetCVar) or SetCVar
         if get and set then
             if not FB.oldMusicVolume then FB.oldMusicVolume=get("Sound_MusicVolume") end
-            set("Sound_MusicVolume",muted and 0 or (FB.db.musicVolume or 0.8))
+            local volume=muted and 0 or (FB.db.musicVolume or 0.8)
+            if FB.appliedMusicVolume~=volume then
+                set("Sound_MusicVolume",volume); FB.appliedMusicVolume=volume
+            end
         end
         if muted then return end
-        local versus=FB.game and FB.game.mode=="versus"
-        if FB.Demos.scene then versus=FB.Demos.scene~=FB.DemoData.scenes[1] end
-        local track=not FB.Transitions.target and FB.UI.menu and FB.UI.menu:IsShown() and "introzik.ogg"
-            or (versus and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg")
-        if FB.musicTrack~=track then PlayMusic(FB.media..track); FB.musicTrack=track end
+        local track="introzik.ogg"
+        if scene then track=scene.background=="solo-background" and "frozen-mainzik-1p.ogg" or "frozen-mainzik-2p.ogg"
+        elseif board then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
+        if FB.musicTrack~=track and PlayMusic(FB.media..track)~=false then FB.musicTrack=track end
     else FB.StopGameMusic() end
 end
 function FB.StartCampaign(level,run)
@@ -40,9 +45,9 @@ function FB.StartCampaign(level,run)
     FB.LocalVersus.match=nil
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
-    FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign")
+    FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound)
     FB.Debug.Log("GAME","campaign",level)
-    FB.UI.editing=false; FB.UI.frame:Show(); FB.Transitions.Open("game"); FB.UI.level:SetText(tostring(level))
+    FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.UI.level:SetText(tostring(level))
     FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
     FB.Music()
 end
@@ -54,15 +59,15 @@ end
 function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
     FB.LocalVersus.match=nil
-    FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction); FB.run=nil; FB.level=1
-    FB.UI.editing=false; FB.UI.frame:Show(); FB.Transitions.Open("game"); FB.Music()
+    FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction,FB.Sound); FB.run=nil; FB.level=1
+    FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
 end
 function FB.StartCustomBoard(set,index)
     local board=set.boards[index]
     local grid=not set.builtin and FB.Engine.Unpack(board)
     if not board or (not set.builtin and not grid) or not FB.CanStart() then return end
     FB.LocalVersus.match=nil; FB.run=nil
-    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom")
+    FB.game=FB.Engine.New(set.builtin and board or {},FB.GameSeed(),"custom",nil,FB.Sound)
     if grid then
         FB.game.grid=grid
         for key=1,FB.Engine.ROWS*8 do
@@ -71,7 +76,7 @@ function FB.StartCustomBoard(set,index)
         FB.game.current=FB.game:Color(); FB.game.next=FB.game:Color()
     end
     FB.game.customSet,FB.game.customIndex=set,index
-    FB.UI.frame:Show(); FB.Transitions.Open("game"); FB.Music()
+    FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.Music()
 end
 function FB.StartCustom(data,id)
     FB.StartCustomBoard({boards={data},id=id,title="Custom level"},1)
@@ -84,19 +89,23 @@ function FB.StartVersus(matchSeed,chainReaction)
     FB.LocalVersus.match=nil
     FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
-    FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction); FB.run=nil
-    FB.UI.editing=false; FB.UI.frame:Show(); FB.Transitions.Open("opponent"); FB.Music()
+    FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction,FB.Sound); FB.run=nil
+    FB.UI.editing=false; FB.Transitions.Open("opponent"); FB.UI.frame:Show(); FB.Music()
 end
-function FB.TogglePause()
-    if not FB.game then return end
+function FB.TogglePause(key)
+    if not FB.game or FB.game.status~="playing" then return end
     if FB.game.mode=="versus" and not FB.LocalVersus.match then FB.Print("Versus matches cannot pause. Leave multiplayer to forfeit."); return end
     if InCombatLockdown() then return end
     FB.UI.focusPausedGame=nil
     FB.game.paused=not FB.game.paused
+    FB.UI.keys={}
+    if key then FB.UI.keys[key]=true end
+    if FB.game.paused then FB.Sound("pause") end
+    FB.UI:UpdatePause(0); FB.Music()
 end
 function FB.Fire()
     if InCombatLockdown() or FB.UI.editing or FB.Transitions.target or not FB.game then return end
-    if FB.game:Shoot() then FB.Sound("launch") end
+    FB.game:Shoot()
 end
 function FB.NextLevel()
     local game=FB.game
@@ -108,7 +117,9 @@ end
 local function finishSolo()
     local game=FB.game
     if not game or game.mode=="versus" or game.status=="playing" or game.recorded then return end
-    game.recorded=true; FB.Sound(game.status=="finished" and "cancel" or game.status=="won" and "applause" or "lose")
+    game.recorded=true
+    if game.status=="finished" then FB.Sound("cancel")
+    elseif game.status=="lost" then FB.Sound("lose") end
     if game.mode=="campaign" then
         FB.run.score=FB.run.score+game.score; game.score=0
         FB.run.seconds=FB.run.seconds+game.elapsed
@@ -200,14 +211,10 @@ events:SetScript("OnUpdate",function(_,dt)
     elseif FB.game and not FB.UI.editing then
         FB.game:Update(FB.game.mode=="versus" and FB.Net.match and dt or playTime)
         local game=FB.game
-        if game.changed then
-            game.boardChanged=true
-        end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false
         end
-        FB.BoardSounds(game)
         finishSolo()
     end
     FB.Community.Update(); FB.Net.Update(dt); FB.UI:Update(playTime)

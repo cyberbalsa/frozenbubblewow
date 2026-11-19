@@ -1,7 +1,7 @@
 local addon, FB = ...
 _G.FrozenBubble = FB
 FB.name = addon
-FB.version = "0.1.0-alpha.18"
+FB.version = "0.1.0-alpha.19"
 FB.media = "Interface\\AddOns\\" .. addon .. "\\Media\\"
 FB.PREFIX = "FrozenBubble1"
 
@@ -39,14 +39,7 @@ function FB.PlayerName(name)
     return name:gsub("%s", "")
 end
 function FB.Sound(name)
+    if InCombatLockdown and InCombatLockdown() then return end
     if FB.UI and (FB.UI.inactive or FB.UI.frame and not FB.UI.frame:IsShown()) then return end
     if FB.db and FB.db.sound and PlaySoundFile then PlaySoundFile(FB.media .. name .. ".ogg", "SFX") end
-end
-function FB.BoardSounds(game)
-    if game.changed then FB.Sound((game.lastPop or 0)>0 and "destroy_group" or "stick"); game.changed=false end
-    if game.autoLaunched then FB.Sound("launch"); game.autoLaunched=false end
-    if game.malusSound then FB.Sound("malus"); game.malusSound=false end
-    if game.bounced then FB.Sound("rebound"); game.bounced=false end
-    if game.lowered then FB.Sound(game.penaltyRules and "newroot" or "newroot_solo"); game.lowered=false end
-    if game.frozenSound then FB.Sound("noh"); game.frozenSound=false end
 end

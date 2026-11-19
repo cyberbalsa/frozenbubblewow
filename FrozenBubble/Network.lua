@@ -108,9 +108,9 @@ function N.Begin()
     if m.capable and not m.series then
         m.round=1; m.series={id=m.id,wins=0,losses=0,limit=m.limit or 0}
     end
-    m.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction)
+    m.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction,FB.Sound)
     -- The spectator advances shots received from the other player.
-    m.remote.hurryMax=math.huge
+    m.remote.hurryMax=math.huge; m.remote.timed=false
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.onShoot=N.Fire
     notify("Playing against "..m.peer)
@@ -132,8 +132,10 @@ function N.Finish(result,reason,send)
         if result~="won" and result~="lost" and result~="draw" then FB.game.projectile=nil end
     end
     if m.remote then m.remote.status=result=="won" and "lost" or result=="lost" and "won" or result end
-    if result=="won" then FB.db.wins=FB.db.wins+1; FB.Sound("applause")
-    elseif result=="lost" then FB.db.losses=FB.db.losses+1; FB.Sound("lose") end
+    if result=="won" then FB.db.wins=FB.db.wins+1
+    elseif result=="lost" then FB.db.losses=FB.db.losses+1 end
+    if result=="won" or result=="lost" or result=="draw" then FB.Sound("lose")
+    elseif result=="aborted" then FB.Sound("cancel") end
     if FB.Series.Complete(m) then reason=reason.." Victory limit reached." end
     notify(reason)
 end

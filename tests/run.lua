@@ -230,6 +230,35 @@ test("different frame rates produce the same chain outcome",function()
         eq(g.tick,144); eq(g.status,"won"); eq(g.score,130)
     end
 end)
+test("desktop training replay emits the recorded launches, rebounds and impacts on their ticks",function()
+    -- First three shots from share/data/demo1.bz2. The opening colors and
+    -- expected play_sound calls were captured from the desktop replay engine.
+    local trace,tick={},0
+    local g=E.New({"41375547","1353422","37742134","3587853","45546887"},1,"training",true,
+        function(name) trace[#trace+1]=tick.." "..name end)
+    local shots={[27]={4,-8*0.03},[74]={7,-13*0.03},[109]={3,-20*0.03}}
+    for i=1,150 do
+        tick=i
+        if shots[i] then g.current=shots[i][1]; assert(g:Shoot(shots[i][2])) end
+        g:Step(0.02)
+    end
+    eq(table.concat(trace,","),"27 launch,48 stick,74 launch,93 stick,109 launch,128 rebound,129 stick")
+end)
+test("each chain landing and hurry pulse survives batched simulation updates",function()
+    for _,dt in ipairs({0.02,0.04,0.25}) do
+        local g,trace
+        trace={}
+        local function sound(name) trace[#trace+1]=g.tick.." "..name end
+        g=E.New({"22.11133","...2...","....3..."},17,"training",true,sound)
+        g.tick=30; g:Resolve(4); g:AdvanceRoot()
+        while g.tick<110 do g:Update(dt) end
+        eq(table.concat(trace,","),"30 destroy_group,30 newroot,98 destroy_group,106 destroy_group")
+        trace={}
+        g=E.New(FB.Levels[1],10,"campaign",false,sound)
+        while g.tick<550 do g:Update(dt) end
+        eq(table.concat(trace,","),"401 hurry,450 hurry,500 hurry,525 launch,549 stick")
+    end
+end)
 test("end of round freezes or ejects cells bottom first on even ticks and supports a late draw",function()
     local g=E.New({"313.....","12....."},9,"versus")
     g.status="won"; g:Update(0.02)
@@ -1471,6 +1500,48 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(#board.pistons,3); assert(board.pistons[1].shown and board.pistons[3].shown)
         fb.game.ceiling=0; fb.UI:RenderBoard(board,fb.game)
         assert(not board.pistons[1].shown); assert(board.compressor.shown)
+    end)
+    test("pause uses the desktop frame sequence, consumes resume input and holds the music stream",function()
+        local ui=fb.UI
+        local oldMouse,oldPlay,oldStop=env.GetMouseFoci,env.PlayMusic,env.StopMusic
+        local oldGet,oldSet,oldSound=env.GetCVar,env.SetCVar,env.PlaySoundFile
+        local tracks,cues,volume,stops={},{}, "0.37",0
+        env.PlayMusic=function(path) tracks[#tracks+1]=path; return true end
+        env.StopMusic=function() stops=stops+1 end
+        env.PlaySoundFile=function(path,channel) eq(channel,"SFX"); cues[#cues+1]=path end
+        env.GetCVar=function() return volume end; env.SetCVar=function(_,v) volume=v end
+        env.GetMouseFoci=function() return {ui.pauseScreen} end
+        ui.inactive=false; ui:ShowMenu(); fb.StartCampaign(1)
+        eq(tracks[#tracks],fb.media.."frozen-mainzik-1p.ogg")
+        local g=fb.game; local starts=#tracks
+        ui.board.scripts.OnKeyDown(ui.board,"P"); eq(cues[#cues],fb.media.."pause.ogg")
+        assert(ui.pauseScreen.shown and g.paused); eq(volume,0); eq(ui.pauseArt.fbFrame,1)
+        ui.pauseScreen.scripts.OnKeyDown(ui.pauseScreen,"P"); assert(g.paused)
+        ui.pauseScreen.scripts.OnKeyUp(ui.pauseScreen,"P")
+        for _=1,34 do ui:Update(0.02) end
+        eq(ui.pauseArt.fbFrame,35)
+        ui:Update(0.02); eq(ui.pauseArt.fbFrame,12)
+        for _=1,24 do ui:Update(0.02) end
+        eq(ui.pauseArt.fbFrame,12)
+        fb.Options.Set("reducedMotion",true); ui:Update(0.02); eq(ui.pauseArt.fbFrame,1)
+        fb.Options.Set("reducedMotion",false)
+        ui.pauseScreen.scripts.OnKeyDown(ui.pauseScreen,"SPACE")
+        assert(not g.paused and not ui.pauseScreen.shown)
+        ui.board.scripts.OnKeyDown(ui.board,"SPACE"); eq(g.shots,0)
+        ui.board.scripts.OnKeyUp(ui.board,"SPACE"); eq(#tracks,starts); eq(stops,0); eq(volume,0.65)
+        ui:ShowMenu(); eq(tracks[#tracks],fb.media.."introzik.ogg")
+        ui:StartEditor(nil,true); eq(tracks[#tracks],fb.media.."introzik.ogg")
+        fb.LocalVersus.Start(false); eq(tracks[#tracks],fb.media.."frozen-mainzik-2p.ogg")
+        fb.LocalVersus.match=nil; ui:ShowMenu()
+        fb.Options.Set("boardTransitions",true)
+        fb.Demos.Start(1); eq(tracks[#tracks],fb.media.."frozen-mainzik-1p.ogg")
+        eq(fb.Transitions.demo,1); local demoStarts=#tracks
+        fb.Transitions.Finish(); eq(#tracks,demoStarts)
+        ui:ShowMenu(); fb.Demos.Start(4); eq(tracks[#tracks],fb.media.."frozen-mainzik-2p.ogg")
+        fb.Transitions.Finish(); ui:ShowMenu(); fb.Options.Set("boardTransitions",false)
+        fb.StartCampaign(1); fb.StopGameMusic(); eq(volume,"0.37")
+        env.GetMouseFoci,env.PlayMusic,env.StopMusic=oldMouse,oldPlay,oldStop
+        env.GetCVar,env.SetCVar,env.PlaySoundFile=oldGet,oldSet,oldSound
     end)
     test("fading and refocusing mute and unmute one music playback",function()
         local starts,stops,volume=0,0,"0.37"

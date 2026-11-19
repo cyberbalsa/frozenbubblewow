@@ -241,6 +241,7 @@ function T.Open(target,demo)
     if T.suffix then brightnessBackdrop(layout) end
     display(0)
     T.frame:Show(); T.frame:EnableKeyboard(true); T.frame:SetPropagateKeyboardInput(true)
+    FB.Music()
 end
 function T.Advance(dt)
     if not T.target then return dt end

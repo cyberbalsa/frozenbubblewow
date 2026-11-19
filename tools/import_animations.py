@@ -155,6 +155,7 @@ static.update({"mini-rim": "on_top_next-mini.png", "mini-frozen": "balls/bubble_
                "mini-prelight": "balls/bubble_prelight-mini.png", "mini-seven": "tomate-mini.png",
                "mini-one": "banane-mini.png", "arena-chat-left": "void_chat_small_rp1_rp3.png",
                "arena-chat-right": "void_chat_small_rp2_rp4.png"})
+static["pause-background"] = "back_paused.png"
 static["arena-background"] = "back_multiplayer.png"
 for seat in range(1, 5):
     static[f"arena-left-rp{seat}"] = f"left-rp{seat}-mini.png"

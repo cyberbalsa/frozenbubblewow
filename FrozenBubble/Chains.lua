@@ -144,7 +144,6 @@ function E:MoveChains()
                     self.grid[slot]=chain.color; self.attachedOrder[#self.attachedOrder+1]=slot
                     self:Resolve(slot)
                     if self.lastPop==0 then self.stick={key=slot,ticks=0} end
-                    self.changed=true
                     break
                 end
             end

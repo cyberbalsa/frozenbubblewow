@@ -40,8 +40,9 @@ function E:Color()
     if #colors == 0 then return self:Random(8) end
     return colors[self:Random(#colors)]
 end
-function E.New(level, seed, mode, chainReaction)
-    local self = setmetatable({grid={}, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
+local function silent() end
+function E.New(level, seed, mode, chainReaction, sound)
+    local self = setmetatable({grid={}, sound=sound or silent, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
         attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
     self.chains={}
@@ -104,6 +105,8 @@ end
 function E:Resolve(key)
     local group=self:Group(key,true)
     local popped, dropped=0,0
+    self.sound(#group>=3 and "destroy_group" or "stick")
+    self.boardChanged=true
     if #group >= 3 then
         for _, k in ipairs(group) do self:Remove(k,"pop"); popped=popped+1 end
         local attached=self:RootDistances()
@@ -186,7 +189,7 @@ function E:ApplyGarbage()
     for index,bubble in ipairs(self.rising) do
         bubble.y=bubble.y+index*7+self:Random(20)-1
     end
-    self.malusSound=true
+    self.sound("malus")
 end
 function E:MoveGarbage()
     for i=#self.rising,1,-1 do
@@ -224,7 +227,7 @@ function E:AdvanceRoot()
             self.attachedOrder[#self.attachedOrder+1]=col
         end
     end
-    self.lowered=true
+    self.sound(self.penaltyRules and "newroot" or "newroot_solo")
 end
 function E:Attach(x,y,hit)
     local candidates={}
@@ -256,7 +259,6 @@ function E:Attach(x,y,hit)
         self:CheckEnd()
         if hit and self.penaltyRules and #self.chains==0 and self.status=="playing" then self:ApplyGarbage() end
     end
-    self.changed=true
 end
 function E:Shoot(angle)
     if self.status~="playing" or self.projectile or #self.chains>0 or #self.rising>0 or self.paused then return false end
@@ -264,7 +266,8 @@ function E:Shoot(angle)
     self.projectile={x=128,y=self.launchY,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
     self.current=self.next
     self.next=self:Color()
-    self.shots=self.shots+1; self.idle=0
+    self.shots=self.shots+1; self.idle=0; self.hurryVisible=false
+    self.sound("launch")
     if self.onShoot then self.onShoot(self) end
     return true
 end
@@ -297,7 +300,7 @@ function E:StepEnding()
     self.endIndex=self.endIndex+1
     local key=self.endOrder[self.endIndex]
     self.endCells[key]=true
-    if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.frozenSound=true end
+    if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.sound("noh") end
     if not freeze and self.grid[key] then self.effects[#self.effects+1]=self:Effect(key,"pop") end
 end
 local function advanceGame(self,dt)
@@ -313,16 +316,22 @@ local function advanceGame(self,dt)
     end
     if #self.chains>0 then self:MoveChains(); return end
     self.idle=self.idle+dt
+    -- The desktop warning blinks every 25 simulation ticks, starting one
+    -- tick after the threshold. Do not derive its sound from UI refreshes.
+    local late=math.floor((self.idle-self.hurryWarn)*50+0.5)
+    local warning=self.timed~=false and late>0 and math.floor(late/25)%2==0
+    if warning and not self.hurryVisible then self.sound("hurry") end
+    self.hurryVisible=warning
     if #self.rising>0 then self:MoveGarbage(); return end
     if not self.projectile then
-        if self.idle+1e-9>=self.hurryMax then self.autoLaunched=self:Shoot(self.angle) end
+        if self.idle+1e-9>=self.hurryMax then self:Shoot(self.angle) end
         return
     end
     local p=self.projectile
     local previousX,previousY=p.x,p.y
     p.x,p.y=p.x+p.vx*dt,p.y+p.vy*dt
-    if p.x<E.R then p.x=2*E.R-p.x; p.vx=-p.vx; self.bounced=true end
-    if p.x>E.W-E.R then p.x=2*(E.W-E.R)-p.x; p.vx=-p.vx; self.bounced=true end
+    if p.x<E.R then p.x=2*E.R-p.x; p.vx=-p.vx; self.sound("rebound") end
+    if p.x>E.W-E.R then p.x=2*(E.W-E.R)-p.x; p.vx=-p.vx; self.sound("rebound") end
     if p.y<=E.R+self.ceiling then self:Attach(p.x,p.y); self:MoveChains(); return end
     local hit,nearest
     for key=1,E.ROWS*8 do
@@ -359,6 +368,7 @@ function E:Step(dt)
     end
 end
 function E:Update(dt)
+    if self.paused then return end
     self.accumulator=self.accumulator+math.min(dt,0.25)
     while self.accumulator+1e-9>=0.02 do self:Step(0.02); self.accumulator=self.accumulator-0.02 end
 end
