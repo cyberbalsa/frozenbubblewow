@@ -3,6 +3,7 @@ local _, FB = ...
 local C={name="FrozenBubbleForever",catalog={},pending={},replyAt={},state="offline",lastManual=-100}
 FB.Community=C
 C.maxBoards=100
+C.blankBoard=string.rep("0",98)
 local function now() return GetTime() end
 function C.Join()
     if FB.Debug then FB.Debug.Log("CHANNEL","join",C.name) end
@@ -130,7 +131,7 @@ local function readLevelText(text)
         elseif #rows>0 then
             local data=table.concat(rows)
             data=data..string.rep("0",98-#data)
-            if #boards>=C.maxBoards or not C.Validate(data) then return end
+            if #boards>=C.maxBoards or data~=C.blankBoard and not C.Validate(data) then return end
             boards[#boards+1]=data; rows={}
         end
     end
@@ -138,42 +139,66 @@ local function readLevelText(text)
 end
 function C.Decode(code)
     if type(code)~="string" then return end
-    if #code==98 and C.Validate(code) then return {code} end
+    if #code==98 and (code==C.blankBoard or C.Validate(code)) then return {code} end
     if code:sub(1,7)~="FBSET1:" then return readLevelText(code) end
     local length=#code-7
     if length<98 or length%98~=0 or length>98*C.maxBoards then return end
     local boards={}
     for pos=8,#code,98 do
         local data=code:sub(pos,pos+97)
-        if not C.Validate(data) then return end
+        if data~=C.blankBoard and not C.Validate(data) then return end
         boards[#boards+1]=data
     end
     return boards
 end
 function C.SaveSet(title,boards,author,replacing)
     if #boards<1 or #boards>C.maxBoards then return nil,"A set holds 1 to 100 boards." end
-    for i,data in ipairs(boards) do
-        if not C.Validate(data) then return nil,"Board "..i.." must contain a bubble within the ten editable rows." end
+    local emptyBoard
+    for i=1,#boards do
+        if not author and boards[i]==C.blankBoard then
+            emptyBoard=emptyBoard or i
+        elseif not C.Validate(boards[i]) then
+            return nil,"Board "..i.." must contain a bubble within the ten editable rows."
+        end
     end
     title=C.CleanTitle(title); if title=="" then title="Untitled" end
     local code=C.Code(boards)
-    local id=(#boards>1 and "s" or "")..C.Hash(code)
+    local id
+    if not emptyBoard then id=(#boards>1 and "s" or "")..C.Hash(code) end
     local library=FB.db.custom
     local old=replacing and library[replacing]
-    local replace=old and old.author==FB.PlayerName() and replacing~=id
-    local existing=library[id]
-    if existing and C.Code(C.Boards(existing))~=code then return nil,"A different layout has the same library ID." end
-    if not existing and not replace then
-        local count=0; for _ in pairs(library) do count=count+1 end
-        if count>=100 then return nil,"Your library is full. Delete a saved set first." end
+    local player=FB.PlayerName()
+    local owned=old and (old.author==player or old.emptyBoard)
+    local count,key=0,nil
+    for stored,item in pairs(library) do
+        count=count+1
+        if id and item.id==id then
+            if C.Code(C.Boards(item))~=code then return nil,"A different layout has the same library ID." end
+            if author then
+                if item.author==author and item.title==title then return stored end
+            elseif stored==replacing and (owned or title==item.title) then key=stored
+            elseif not key and item.title==title then key=stored end
+        end
     end
-    if not existing or (not author and existing.title~=title) then
-        local item={id=id,title=title,author=author or FB.PlayerName(),published=false}
+    if not key and id and not library[id] then key=id end
+    if not key and owned and replacing:match("^local%-") then key=replacing end
+    if not library[key] and not owned and count>=100 then return nil,"Your library is full. Delete a saved set first." end
+    -- The wire ID describes a layout. Blank drafts and differently named files
+    -- with the same layout still need separate slots in the desktop-style editor.
+    if not key then
+        repeat
+            FB.db.localSetSerial=(FB.db.localSetSerial or 0)+1
+            key="local-"..FB.db.localSetSerial
+        until not library[key]
+    end
+    local existing=library[key]
+    if not existing or existing.id~=id or existing.title~=title or emptyBoard then
+        local item={id=id,title=title,author=author or player,published=false,emptyBoard=emptyBoard}
         if #boards==1 then item.data=boards[1] else item.boards={unpack(boards)} end
-        library[id]=item
+        library[key]=item
     end
-    if replace then library[replacing]=nil end
-    return id
+    if owned and replacing~=key then library[replacing]=nil end
+    return key
 end
 function C.Save(title,data,author)
     return C.SaveSet(title,{data},author)
@@ -185,8 +210,21 @@ end
 function C.Publish(id,manual)
     local item=FB.db.custom[id]
     if not item then return end
+    if item.emptyBoard then return nil,"Fill board "..item.emptyBoard.." before publishing this set." end
+    -- Peers request by sender and layout checksum. The name explicitly offered
+    -- by this player wins when their library contains two copies.
+    for _,other in pairs(FB.db.custom) do
+        if other.id==item.id then other.published=false end
+    end
     item.published=true
     if manual then C.Manual(listing(item)) else C.Broadcast(listing(item)) end
+    return true
+end
+local function publishedLayout(id)
+    if not id then return end
+    local library=FB.db.custom
+    if library[id] and library[id].id==id and library[id].published then return library[id] end
+    for _,item in pairs(library) do if item.id==id and item.published then return item end end
 end
 function C.Browse(manual)
     if manual then C.Manual("CATALOG") else C.Broadcast("CATALOG") end
@@ -238,9 +276,9 @@ function C.Receive(message,channel,sender)
         end
         return true
     elseif kind=="GETBOARDS" and channel=="WHISPER" then
-        local item=FB.db.custom[p[3]]
+        local item=publishedLayout(p[3])
         local first=FB.Integer(p[4],1,C.maxBoards)
-        if item and item.published and item.boards and first and first<=#item.boards and
+        if item and item.boards and first and first<=#item.boards and
             now()-(C.replyAt[sender..":boards"] or -100)>=0.15 then
             C.replyAt[sender..":boards"]=now()
             FB.Net.Send("BOARDS","WHISPER",sender,item.id,first,item.boards[first]..(item.boards[first+1] or ""))
@@ -268,8 +306,8 @@ function C.Receive(message,channel,sender)
         end
         return true
     elseif kind=="GETLEVEL" and channel=="WHISPER" then
-        local item=FB.db.custom[p[3]]
-        if item and item.data and item.published and now()-(C.replyAt[sender..":get"] or -100)>2 then
+        local item=publishedLayout(p[3])
+        if item and item.data and now()-(C.replyAt[sender..":get"] or -100)>2 then
             C.replyAt[sender..":get"]=now()
             FB.Net.Send("LEVELDATA","WHISPER",sender,item.id,item.data)
         end

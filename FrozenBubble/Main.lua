@@ -84,7 +84,7 @@ function FB.StartSolo(mode,chainReaction)
 end
 function FB.StartCustomBoard(set,index)
     local board=set.boards[index]
-    if not board or not set.builtin and type(board)~="string" then return end
+    if not board or not set.builtin and not FB.Community.Validate(board) then return end
     local game=FB.Engine.New(board,FB.GameSeed(),"custom",nil,FB.Sound,true)
     if not game or not FB.CanStart() then return end
     FB.LeaveBoard(); FB.LocalVersus.match=nil; FB.run=nil; FB.game=game
@@ -98,7 +98,9 @@ function FB.StartCustom(data,id)
 end
 function FB.PlayCustom(id,index)
     local item=FB.db.custom[id]
-    if item then FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1) end
+    if item and not item.emptyBoard then
+        FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1)
+    end
 end
 function FB.StartVersus(matchSeed,chainReaction)
     FB.LeaveBoard(); FB.LocalVersus.match=nil

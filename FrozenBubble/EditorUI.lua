@@ -113,12 +113,21 @@ function U:BuildEditor(text,button,input,fill)
     sign(self.emptyLibrary,50,70,285,text,"LEFT"):SetText("THERE ARE NO CUSTOM")
     sign(self.emptyLibrary,50,95,285,text,"LEFT"):SetText("LEVELSETS TO DELETE.")
     sign(self.emptyLibrary,40,165,295,text,"LEFT"):SetText('PRESS "OK" TO CONTINUE')
+    local changes=CreateFrame("Frame",nil,d); self.saveChanges=changes; changes:SetAllPoints()
+    sign(changes,25,40,312,text,"LEFT"):SetText("THERE ARE UNSAVED CHANGES")
+    sign(changes,22,75,315,text,"LEFT"):SetText('PRESS "OK" TO SAVE')
+    sign(changes,22,95,315,text,"LEFT"):SetText("CHANGES AND CONTINUE")
+    sign(changes,22,135,315,text,"LEFT"):SetText('PRESS "CANCEL" TO CONTINUE')
+    sign(changes,22,155,315,text,"LEFT"):SetText("WITHOUT SAVING")
+    self.keepEditing=hit(changes,89,195,163,38,function() self:CloseEditorDialog() end)
+    sign(self.keepEditing,0,0,163,text):SetText("KEEP EDITING")
     self.dialogMessage=text(d,"",23,69,16,295); self.dialogMessage:SetJustifyH("CENTER")
     self.dialogValue=input(d,41,115,259,""); self.dialogValue:SetMaxLetters(36)
     self.dialogValue:SetScript("OnEnterPressed",function() self:AcceptEditorDialog() end)
     self.dialogValue:SetScript("OnEscapePressed",function() self:CloseEditorDialog() end)
     self.editorOK=hit(d,0,236,150,40,function() self:AcceptEditorDialog() end)
     self.editorBack=hit(d,191,236,150,40,function()
+        if self.editorDialog=="saveChanges" then self:FinishEditorSwitch(false); return end
         local quit=self.editorDialog=="quit"
         self:CloseEditorDialog()
         if quit then self:StoreEditorDraft(); self:ShowMenu() end
@@ -130,7 +139,13 @@ function U:BuildEditor(text,button,input,fill)
     self.editorTools=CreateFrame("Frame",nil,d); self.editorTools:SetAllPoints()
     local options={
         {"Test board",function() self:TestEditor() end},
-        {"Publish set",function() local id=self:SaveEditor(); if id then FB.Community.Publish(id,FB.Community.state~="ready") end end},
+        {"Publish set",function()
+            local id=self:SaveEditor()
+            if id then
+                local _,err=FB.Community.Publish(id,FB.Community.state~="ready")
+                if err then self.editorStatus:SetText(err) end
+            end
+        end},
         {"Undo",function() self:UndoEditor() end},
         {"Clear board",function() if next(self.editGame.grid) then self:RememberEditor(); self.editGame.grid={} end end},
         {"Move left",function() self:EditorAction("left") end},{"Move right",function() self:EditorAction("right") end},
@@ -145,23 +160,6 @@ function U:BuildEditor(text,button,input,fill)
     end
     self.editorBrowser=self:BuildSetBrowser(d,77,text,function(delta) self:BrowseEditorSet(delta) end)
 
-    local prompt=self.panels.editorPrompt
-    text(prompt,"Save your changes before opening another set?",0,54,20,340)
-    local function proceed(save)
-        local t=self.pendingEditor
-        if not t then return end
-        self.pendingEditor=nil
-        if save then
-            local id=self:SaveEditor()
-            if not id then self:Panel("editor"); return end
-            -- Edited layouts have a new content ID when they replace an owned set.
-            if t.reload and t.id~="default-levelset" and not FB.db.custom[t.id] then t.id=id end
-        end
-        self:StartEditor(t.id,t.fresh,t.index,true,t.title,t.reload)
-    end
-    button(prompt,"Save and open",0,150,150,function() proceed(true) end)
-    button(prompt,"Discard edits",165,150,150,function() proceed(false) end)
-    button(prompt,"Keep editing",75,206,165,function() self.pendingEditor=nil; self:Panel("editor") end)
 end
 
 function U:SelectEditorColor(color)
@@ -218,16 +216,20 @@ local function showSelection(b,files,index,board)
     end
 end
 
-local function savedSets(includeDefault,defaultFirst,ui)
+local function savedSets(includeDefault,forPlay,ui)
     local files={}
-    for id,item in pairs(FB.db.custom) do files[#files+1]={id=id,title=item.title,boards=FB.Community.Boards(item)} end
+    for id,item in pairs(FB.db.custom) do
+        if not forPlay or not item.emptyBoard then
+            files[#files+1]={id=id,title=item.title,boards=FB.Community.Boards(item)}
+        end
+    end
     local stock=includeDefault and {id="default-levelset",title="default-levelset",boards=ui:DefaultEditorBoards()}
-    if stock and not defaultFirst then files[#files+1]=stock end
+    if stock and not forPlay then files[#files+1]=stock end
     table.sort(files,function(a,b)
         if a.title==b.title then return a.id<b.id end
         return a.title<b.title
     end)
-    if stock and defaultFirst then table.insert(files,1,stock) end
+    if stock and forPlay then table.insert(files,1,stock) end
     return files
 end
 
@@ -238,7 +240,7 @@ end
 
 local titles={help="HELP - KEY SHORTCUTS", tools="EDITOR TOOLS", jump="ENTER LEVEL TO JUMP TO", rename="LEVELSET NAME",
     new="ENTER NEW LEVELSET NAME",open="SELECT LEVELSET TO OPEN",delete="SELECT LEVELSET TO DELETE",
-    empty="NO LEVELSET TO DELETE",confirm="DELETE LEVELSET?",quit="SAVE CHANGES?"}
+    empty="NO LEVELSET TO DELETE",confirm="DELETE LEVELSET?",quit="SAVE CHANGES?",saveChanges="SAVE CHANGES?"}
 function U:EditorDialog(kind)
     if kind=="open" or kind=="delete" then
         self.editorFiles=savedSets(kind=="open",false,self)
@@ -248,6 +250,7 @@ function U:EditorDialog(kind)
     self.dialogValue:ClearFocus()
     self.editorShield:Show(); self.editorHelp:SetShown(kind=="help"); self.editorTools:SetShown(kind=="tools")
     self.emptyLibrary:SetShown(kind=="empty")
+    self.saveChanges:SetShown(kind=="saveChanges")
     local title=titles[kind]
     self.dialogSign:ClearAllPoints(); self.dialogSign:SetPoint("TOPLEFT",math.floor(341/2-6*#title),-5)
     self.dialogSign:SetText(title); self.dialogMessage:SetText("")
@@ -275,6 +278,7 @@ function U:EditorDialog(kind)
     elseif kind=="quit" then self.dialogMessage:SetText("Save this set to your library? Escape keeps the editor open.") end
 end
 function U:CloseEditorDialog()
+    self.pendingEditor=nil
     self.editorDirty=true; self.editorDialog=nil; self.dialogValue:ClearFocus(); self.editorShield:Hide()
 end
 function U:ExitEditor()
@@ -285,7 +289,8 @@ function U:AcceptEditorDialog()
     if InCombatLockdown() then return end
     local kind=self.editorDialog
     local value=self.dialogValue:GetText()
-    if kind=="jump" then
+    if kind=="saveChanges" then self:FinishEditorSwitch(true); return
+    elseif kind=="jump" then
         local n=FB.Integer(value,1,#self.editBoards)
         if not n then self.dialogMessage:SetText("Enter a board number from 1 to "..#self.editBoards.."."); return end
         self:EditorBoards(); self:SelectEditorBoard(n)

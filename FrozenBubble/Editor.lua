@@ -37,7 +37,7 @@ function U:BuildEditorText(text,button,fill)
             local record,err=FB.Recordings.Import(box:GetText())
             if record then FB.Recordings.Library() else self.codeNotice:SetText(err) end
         elseif self:ImportEditor(box:GetText()) then self:Panel("editor")
-        else self.codeNotice:SetText("Invalid layout. Check row widths, colors and empty boards.") end
+        else self.codeNotice:SetText("Invalid layout. Check the row widths and bubble colors.") end
     end)
     button(p,"Back",364,309,124,back)
     self.levelCode=box
@@ -61,7 +61,7 @@ function U:OpenEditorText(export)
         self.levelCode:SetText(""); self.levelCode:SetFocus()
     end
 end
-local blankBoard=string.rep("0",98)
+local blankBoard=FB.Community.blankBoard
 local originals
 function U:DefaultEditorBoards()
     if not originals then
@@ -103,10 +103,12 @@ function U:StartEditor(id,fresh,index,confirmed,title,reload)
         end
     end
     local replace=fresh or reload or id and self.editID~=id
-    if replace and self.editGame and not confirmed and self:EditorModified() then
-        self.pendingEditor={id=id,fresh=fresh,index=index,title=title,reload=reload}; self.frame:Show(); self:Panel("editorPrompt"); return
-    end
     if FB.game then FB.game.paused=true end
+    if replace and self.editGame and not confirmed and self:EditorModified() then
+        self:Panel("editor"); self.frame:Show()
+        self.pendingEditor={id=id,fresh=fresh,index=index,title=title,reload=reload}
+        self:EditorDialog("saveChanges"); return
+    end
     if not self.editGame or replace then
         if not fresh and not id then id="default-levelset" end
         local stock=id=="default-levelset"
@@ -120,6 +122,17 @@ function U:StartEditor(id,fresh,index,confirmed,title,reload)
         self:EditorBoards(); self:SelectEditorBoard(index)
     end
     self:Panel("editor"); self.frame:Show()
+end
+function U:FinishEditorSwitch(save)
+    local target=self.pendingEditor
+    self:CloseEditorDialog()
+    if not target then return end
+    if save then
+        local id=self:SaveEditor()
+        if not id then return end
+        if target.reload and target.id~="default-levelset" and not FB.db.custom[target.id] then target.id=id end
+    end
+    self:StartEditor(target.id,target.fresh,target.index,true,target.title,target.reload)
 end
 function U:EditorModified()
     local item=self.editID and FB.db.custom[self.editID]
@@ -165,7 +178,7 @@ function U:EditorAction(action)
 end
 function U:ImportEditor(code)
     local boards=FB.Community.Decode(code)
-    if not boards then self.editorStatus:SetText("Invalid code. Use a nonempty ten-row board with colors 1–8 in the WoW code."); return end
+    if not boards then self.editorStatus:SetText("Invalid code. Use colors 1–8 and 0 for empty spaces in the WoW code."); return end
     self:RememberEditor()
     if #boards==1 then self.editBoards[self.editIndex]=boards[1]; self:SelectEditorBoard(self.editIndex)
     else self.editBoards=boards; self:SelectEditorBoard(1) end
@@ -180,7 +193,10 @@ function U:TestEditor()
 end
 function U:SaveEditor()
     local id,err=FB.Community.SaveSet(self.levelTitle:GetText(),self:EditorBoards(),nil,self.editID)
-    self.editorStatus:SetText(id and "Saved to your library." or err)
-    if id then self.editID=id; self.levelTitle:SetText(FB.db.custom[id].title); self:StoreEditorDraft() end
+    if id then
+        local item=FB.db.custom[id]
+        self.editID=id; self.levelTitle:SetText(item.title); self:StoreEditorDraft()
+        self.editorStatus:SetText(item.emptyBoard and ("Draft saved. Board "..item.emptyBoard.." is empty.") or "Saved to your library.")
+    else self.editorStatus:SetText(err) end
     return id
 end

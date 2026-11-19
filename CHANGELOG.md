@@ -1,3 +1,9 @@
+# 0.1.0-alpha.36
+
+- Save and reopen named level sets while they still have empty boards. The editor preserves empty boards in their original positions when importing and exporting desktop files and WoW codes. You can test individual boards as you build the set.
+- The original Save Changes dialog appears over the board when you switch sets with unsaved edits. You can save, discard the changes, or keep editing.
+- Two sets with the same layout can keep different names in your library. Publishing a copy offers it under the chosen name. A draft in My Library shows which board still needs bubbles.
+
 # 0.1.0-alpha.35
 
 - The level editor paints through the point where you release the mouse, even between frames. A held brush can leave the board and start painting again on the other side. Undo removes the whole stroke.

@@ -775,6 +775,44 @@ test("ordered sets recover lost pages and commit only the requested complete set
     guest.Community.Receive("1|BOARDS|"..wrong.."|1|"..boards[1]..boards[2],"WHISPER",host.PlayerName())
     eq(guest.Community.pending[key],nil); eq(guest.db.custom[wrong],nil)
 end)
+test("named copies share by layout checksum and unfinished sets stay local",function()
+    local host,guest=client("Painter"),client("Collector")
+    host.Community.Join(); guest.Community.Join(); tick(2)
+    local c=host.Community
+    local one=E.New({"1......."},1):Pack()
+    for _,boards in ipairs({{one},{one,one}}) do
+        local first=assert(c.SaveSet("Ice",boards))
+        local copy=assert(c.SaveSet("Snow",boards))
+        assert(first~=copy); eq(host.db.custom[copy].id,first)
+        local key=host.PlayerName()..":"..first
+        assert(c.Publish(first)); tick(2)
+        guest.Community.Request(key); tick(3); eq(guest.db.custom[first].title,"Ice")
+        assert(c.Publish(copy)); tick(2)
+        assert(not host.db.custom[first].published and host.db.custom[copy].published)
+        eq(guest.Community.catalog[key].title,"Snow")
+        guest.Community.Request(key); tick(3)
+        eq(guest.db.custom[first].title,"Ice")
+        local received
+        for _,item in pairs(guest.db.custom) do if item.id==first and item.title=="Snow" then received=item end end
+        assert(received); eq(received.author,host.PlayerName())
+        eq(guest.Community.Code(guest.Community.Boards(received)),c.Code(boards))
+        local draft=assert(c.SaveSet("Snow",{one,c.blankBoard},nil,copy))
+        assert(not c.Publish(draft)); eq(host.db.custom[draft].emptyBoard,2)
+        eq(host.db.custom[first].title,"Ice"); assert(not host.db.custom[first].published)
+        assert(not guest.Community.SaveSet("Invalid transfer",{one,c.blankBoard},host.PlayerName()))
+    end
+end)
+test("a full level library can finish an existing draft without consuming another slot",function()
+    local host=client("Builder")
+    local c=host.Community
+    local draft
+    for i=1,100 do draft=assert(c.SaveSet("Draft "..i,{c.blankBoard})) end
+    assert(not c.SaveSet("Overflow",{c.blankBoard}))
+    local invalid="9"..c.blankBoard:sub(2)
+    assert(not c.SaveSet("Invalid",{invalid},nil,draft)); eq(host.db.custom[draft].title,"Draft 100")
+    local id=assert(c.SaveSet("Ready",{E.New({"....2..."},1):Pack()},nil,draft))
+    eq(host.db.custom[draft],nil); assert(not host.db.custom[id].emptyBoard); eq(host.db.custom[id].title,"Ready")
+end)
 test("unsolicited or corrupt level downloads cannot write the library",function()
     b.Community.Receive("1|LEVELDATA|12|"..string.rep("1",98),"WHISPER","Alice-TestRealm")
     eq(b.db.custom["12"],nil)
@@ -2061,21 +2099,55 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:StartEditor(nil,true,nil,true,"Ice cave")
         ui:SelectEditorColor(1); ui:Paint("LeftButton",16,16)
         local original=assert(ui:SaveEditor())
-        local function reopen(choice)
+        local function reopen(button)
             ui:EditorDialog("open"); eq(ui.editorFiles[ui.fileIndex].id,original)
-            ui:AcceptEditorDialog(); eq(ui.screen,"editorPrompt")
-            for _,f in ipairs(frames) do
-                if f.parent==ui.panels.editorPrompt and f.text==choice then f.scripts.OnClick(); return end
-            end
-            error("Missing editor choice "..choice)
+            ui:AcceptEditorDialog(); eq(ui.screen,"editor"); eq(ui.editorDialog,"saveChanges")
+            assert(ui.saveChanges.shown and ui.gameLayer.shown and ui.editorShield.shown)
+            eq(ui.dialogSign:GetText(),"SAVE CHANGES?")
+            button.scripts.OnClick()
+            eq(ui.pendingEditor,nil); eq(ui.editorDialog,nil)
         end
         ui:SelectEditorColor(2); ui:Paint("LeftButton",16,16)
-        reopen("Keep editing"); eq(ui.editGame.grid[1],2); assert(ui:EditorModified())
-        reopen("Discard edits"); eq(ui.editGame.grid[1],1); assert(not ui:EditorModified())
+        reopen(ui.keepEditing); eq(ui.editGame.grid[1],2); assert(ui:EditorModified())
+        reopen(ui.editorBack); eq(ui.editGame.grid[1],1); assert(not ui:EditorModified())
         ui:SelectEditorColor(3); ui:Paint("LeftButton",16,16)
-        reopen("Save and open"); eq(ui.editGame.grid[1],3); assert(not ui:EditorModified())
+        reopen(ui.editorOK); eq(ui.editGame.grid[1],3); assert(not ui:EditorModified())
         assert(ui.editID~=original and fb.db.custom[ui.editID] and not fb.db.custom[original])
         ui:StartEditor(nil,true,nil,true); fb.db.custom=oldLibrary
+    end)
+    test("editor saves, reopens and exchanges unfinished named sets in both file formats",function()
+        local ui,c=fb.UI,fb.Community
+        local library,draft=fb.db.custom,fb.db.editorDraft
+        fb.db.custom={}
+        ui:StartEditor(nil,true,1,true,"Cavern"); local cavern=assert(ui:SaveEditor())
+        ui:StartEditor(nil,true,1,true,"Glacier"); local glacier=assert(ui:SaveEditor())
+        assert(glacier~=cavern); eq(fb.db.custom[cavern].title,"Cavern")
+        ui:SelectEditorColor(6); ui:Paint("LeftButton",16,16); local filled=ui.editGame:Pack()
+        ui:EditorAction("append"); eq(ui:SaveEditor(),glacier)
+        ui.editGame=nil; ui:StartEditor(); eq(ui.editIndex,2); eq(ui.editID,glacier)
+        ui:EditorDialog("open"); eq(#ui.editorFiles,3); ui:CloseEditorDialog()
+        ui.marketRemote=false; ui:ShowMarket()
+        eq(ui.marketRows[2].key,glacier); assert(ui.marketRows[2].edit.shown and not ui.marketRows[2].button.shown)
+        ui:Panel("pick"); eq(#ui.pickFiles,1)
+        local game=fb.game; fb.PlayCustom(glacier); eq(fb.game,game)
+        ui:StartEditor(glacier); ui:TestEditor(); eq(ui.screen,"editor")
+        ui:EditorAction("first"); ui:TestEditor(); eq(fb.game.grid[1],6)
+        ui.editButton.scripts.OnClick(); eq(ui.editIndex,1); eq(ui.editID,glacier)
+        local boards={c.blankBoard,filled,c.blankBoard}
+        for _,code in ipairs({c.LevelText(boards),c.Code(boards)}) do
+            ui:OpenEditorText(false); ui.levelCode:SetText(code); ui.codeImport.scripts.OnClick()
+            eq(ui.screen,"editor"); eq(table.concat(ui:EditorBoards()),table.concat(boards))
+            ui:OpenEditorText(true); eq(ui.levelCode:GetText(),c.LevelText(boards))
+            ui.codeFormat.scripts.OnClick(); eq(ui.levelCode:GetText(),c.Code(boards))
+            ui:Panel("editor")
+        end
+        eq(ui:SaveEditor(),glacier); eq(fb.db.custom[glacier].emptyBoard,1)
+        ui:Paint("LeftButton",16,16); ui:EditorAction("last"); ui:Paint("LeftButton",16,16)
+        local ready=assert(ui:SaveEditor()); assert(not fb.db.custom[ready].emptyBoard)
+        eq(fb.db.custom[glacier],nil); eq(fb.db.custom[cavern].emptyBoard,1)
+        ui:Panel("pick"); eq(#ui.pickFiles,2); ui:PickSet(1); eq(ui.pickID,ready)
+        ui.pickPlay.scripts.OnClick(); eq(fb.game.customSet.id,ready)
+        ui:StartEditor(nil,true,nil,true); fb.db.custom=library; fb.db.editorDraft=draft
     end)
     test("edit, reorder, export and play a custom set through its final board",function()
         local ui=fb.UI
@@ -2095,9 +2167,9 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui.codeFormat.scripts.OnClick(); eq(ui.levelCode:GetText(),fb.Community.Code({first,second,third}))
         ui:OpenEditorText(false); ui.levelCode:SetText("not a level"); ui.codeImport.scripts.OnClick(); eq(ui.screen,"editorText")
         ui.levelCode:SetText(fb.Community.LevelText({first,second,third})); ui.codeImport.scripts.OnClick(); eq(ui.screen,"editor")
-        ui:ImportEditor("FBSET1:"..first..string.rep("0",98)); eq(#ui.editBoards,3)
+        ui:ImportEditor("FBSET1:"..first..string.rep("0",97).."8"); eq(#ui.editBoards,3)
         ui:StoreEditorDraft(); ui.editGame=nil; ui:StartEditor(); eq(#ui.editBoards,3)
-        ui:StartEditor(nil,true); eq(ui.screen,"editorPrompt"); assert(ui.pendingEditor.fresh)
+        ui:StartEditor(nil,true); eq(ui.editorDialog,"saveChanges"); assert(ui.pendingEditor.fresh)
         ui:Panel("editor"); local id=assert(ui:SaveEditor())
         local cp,unlocked=fb.db.checkpoint,fb.db.unlocked
         fb.PlayCustom(id)

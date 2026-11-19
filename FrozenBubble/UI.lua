@@ -257,7 +257,7 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     FB.Plaques.Build(self)
     self.panels={}
-    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
+    for _,name in ipairs({"editorText","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
         if name~="replay" and name~="editorText" and name~="pick" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
@@ -961,9 +961,10 @@ function U:RefreshMarket()
     self.marketPage=FB.Clamp(self.marketPage or 1,1,math.max(1,math.ceil(#keys/6)))
     for i,row in ipairs(self.marketRows) do
         local key=keys[(self.marketPage-1)*6+i]; local item=key and source[key]
-        row.key=key; row.button:SetShown(item~=nil); row.edit:SetShown(item~=nil and not self.marketRemote)
+        row.key=key; row.button:SetShown(item~=nil and not item.emptyBoard); row.edit:SetShown(item~=nil and not self.marketRemote)
         local count=item and (item.count or (item.boards and #item.boards))
-        row.label:SetText(item and (item.title..(count and (" ("..count..")") or "").."\n|cff8eacbe"..(item.peer or item.author).."|r") or (i==1 and "No levels found. Browse or create one." or ""))
+        local byline=item and (item.emptyBoard and ("Draft · board "..item.emptyBoard.." is empty") or item.peer or item.author)
+        row.label:SetText(item and (item.title..(count and (" ("..count..")") or "").."\n|cff8eacbe"..byline.."|r") or (i==1 and "No levels found. Browse or create one." or ""))
         row.button:SetText(self.marketRemote and "Download" or "Play")
     end
 end
