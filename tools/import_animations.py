@@ -105,6 +105,7 @@ static = {
     "versus-background": "backgrnd.png", "panel": "menu/void_panel.png",
     "compressor": "compressor_main.png", "compressor-ext": "compressor_ext.png",
     "prelight": "balls/bubble_prelight.png", "frozen": "balls/bubble_lose.png",
+    "local-win-p1": "win_panel_p1.png", "local-win-p2": "win_panel_p2.png",
     "net-win-local": "win_panel_p1_net.png", "net-win-remote": "win_panel_rp3.png",
     "net-lose-local": "net_lose_p1.png", "net-lose-remote": "net_lose_rp3.png",
     "hurry-remote": "hurry_p2.png",

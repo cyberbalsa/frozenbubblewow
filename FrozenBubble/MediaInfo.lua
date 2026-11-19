@@ -31,6 +31,8 @@ FB.MediaInfo = {
     ["hover-p1p2"] = {w=40, h=30, tw=256, th=256, columns=4, frames=30},
     ["hurry"] = {w=244, h=102, tw=256, th=128, columns=1, frames=1},
     ["hurry-remote"] = {w=244, h=102, tw=256, th=128, columns=1, frames=1},
+    ["local-win-p1"] = {w=329, h=159, tw=512, th=256, columns=1, frames=1},
+    ["local-win-p2"] = {w=329, h=159, tw=512, th=256, columns=1, frames=1},
     ["loose-p1"] = {w=80, h=60, tw=1024, th=1024, columns=10, frames=158},
     ["loose-p2"] = {w=80, h=60, tw=1024, th=1024, columns=10, frames=158},
     ["lose-panel"] = {w=345, h=124, tw=512, th=128, columns=1, frames=1},

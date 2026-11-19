@@ -2,7 +2,9 @@
 
 Install this `FrozenBubble` folder in `World of Warcraft/_forever_/Interface/AddOns/`, restart WoW, and type `/fb`.
 
-Mouse aims; left click fires. While hovering over the board, Left/Right or A/D aim, Space/Up fire, and P pauses solo play. Multiplayer keeps running when hidden. Combat pauses solo games and cancels versus matches without a result.
+Mouse aims; left click fires. While hovering over the board, Left/Right or A/D aim, Space/Up fire, and P pauses solo play. Online matches keep running when hidden. Combat pauses solo and shared-keyboard games and cancels online matches without a result.
+
+Choose **2P Game** to share one keyboard. The right player aims with Left/Right, fires with Up and centers with Down. The left player aims with X/V, fires with C and centers with D. P pauses both boards. **Next round** keeps each player’s win count.
 
 Use Multiplayer → Join community channel for discovery. The channel is called `FrozenBubbleForever`. If automatic addon messages are blocked, use **Announce queue**, **Share my best**, **Browse community**, or **Publish** to send a discovery message directly from a click. Matches and requested level downloads use addon whispers. All players must have the addon installed, and Blizzard's channel visibility and message restrictions apply.
 

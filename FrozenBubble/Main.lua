@@ -1,5 +1,5 @@
 local addon, FB = ...
-local function seed() return (time()+math.floor(GetTime()*1000))%2147483646+1 end
+function FB.GameSeed() return (time()+math.floor(GetTime()*1000))%2147483646+1 end
 function FB.CanStart()
     if InCombatLockdown() then FB.Print("Start a game after combat."); return false end
     if FB.Net.match and FB.Net.match.phase~="done" then FB.Print("Leave or finish multiplayer first."); return false end
@@ -35,9 +35,10 @@ function FB.Music()
 end
 function FB.StartCampaign(level,run)
     if not FB.CanStart() then return end
+    FB.LocalVersus.match=nil
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
-    FB.game=FB.Engine.New(FB.Levels[level],seed(),"campaign")
+    FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign")
     FB.Debug.Log("GAME","campaign",level)
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.UI.level:SetText(tostring(level))
     FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
@@ -50,14 +51,15 @@ function FB.ContinueCampaign()
 end
 function FB.StartSolo(mode,chainReaction)
     if not FB.CanStart() then return end
-    FB.game=FB.Engine.New(nil,seed(),mode,chainReaction); FB.run=nil; FB.level=1
+    FB.LocalVersus.match=nil
+    FB.game=FB.Engine.New(nil,FB.GameSeed(),mode,chainReaction); FB.run=nil; FB.level=1
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("game"); FB.Music()
 end
 function FB.StartCustom(data,id)
-    if not FB.CanStart() then return end
     local grid=FB.Engine.Unpack(data)
-    if not grid then return end
-    FB.game=FB.Engine.New({},seed(),"custom"); FB.game.grid=grid
+    if not grid or not FB.CanStart() then return end
+    FB.LocalVersus.match=nil
+    FB.game=FB.Engine.New({},FB.GameSeed(),"custom"); FB.game.grid=grid
     for key=1,FB.Engine.ROWS*8 do
         if grid[key] then FB.game.attachedOrder[#FB.game.attachedOrder+1]=key end
     end
@@ -70,13 +72,15 @@ function FB.PlayCustom(id)
     if item then FB.StartCustom(item.data,id) end
 end
 function FB.StartVersus(matchSeed,chainReaction)
+    FB.LocalVersus.match=nil
+    FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
     FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction); FB.run=nil
     FB.UI.editing=false; FB.UI.frame:Show(); FB.UI:Panel("opponent"); FB.Music()
 end
 function FB.TogglePause()
     if not FB.game then return end
-    if FB.game.mode=="versus" then FB.Print("Versus matches cannot pause. Leave multiplayer to forfeit."); return end
+    if FB.game.mode=="versus" and not FB.LocalVersus.match then FB.Print("Versus matches cannot pause. Leave multiplayer to forfeit."); return end
     if InCombatLockdown() then return end
     FB.UI.focusPausedGame=nil
     FB.game.paused=not FB.game.paused
@@ -170,7 +174,9 @@ events:SetScript("OnUpdate",function(_,dt)
     if not FB.db then return end
     FB.Invitations.Update()
     FB.UI:UpdateVisibility(dt)
-    if FB.game and not FB.UI.editing then
+    if FB.LocalVersus.match and not FB.UI.editing then
+        FB.LocalVersus.Update(dt,FB.UI.keys)
+    elseif FB.game and not FB.UI.editing then
         FB.game:Update(dt)
         local game=FB.game
         if game.changed then

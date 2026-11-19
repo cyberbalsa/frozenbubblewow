@@ -494,7 +494,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.IsShown=function(f) return f.shown end; methods.IsMouseOver=function() return false end
     methods.GetEffectiveScale=function() return 1 end
     methods.GetLeft=function() return 0 end; methods.GetTop=function() return 400 end
-    methods.GetParent=function(f) return f.parent end; methods.IsForbidden=function() return false end
+    methods.GetParent=function(f) return rawget(f,"parent") end; methods.IsForbidden=function() return false end
     methods.CreateMaskTexture=methods.CreateTexture
     local notifications,opened={},nil
     env.Settings={
@@ -514,7 +514,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("UI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Main",fb,env)
+    loadModule("UI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -598,6 +598,70 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     end)
     env.SlashCmdList.FROZENBUBBLE(""); fb.StartCampaign(1)
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent"}) do fb.UI:Panel(name); fb.UI:Update(1) end
+    test("two-player menu, simultaneous controls, chat focus and shared pause",function()
+        local ui=fb.UI
+        local oldMouse,oldKeyboard=env.GetMouseFoci,env.GetCurrentKeyBoardFocus
+        env.GetMouseFoci=function() return {ui.remoteBoard} end
+        ui:ShowMenu(); ui.menuHover[2].activate(); eq(ui.screen,"chain")
+        ui:BackFromChain(); eq(ui.screen,"menu")
+        ui.menuHover[2].activate(); ui.chainYes.scripts.OnClick()
+        local m=fb.LocalVersus.match
+        eq(m.right:Pack(),m.left:Pack()); eq(m.right.current,m.left.current); eq(m.right.next,m.left.next)
+        assert(m.right.chainReaction and m.left.chainReaction and not fb.Net.match)
+        eq(ui.screen,"opponent"); ui:UpdateVisibility(0.02)
+        local down,up=ui.board.scripts.OnKeyDown,ui.board.scripts.OnKeyUp
+        down(ui.board,"RIGHT"); down(ui.board,"X")
+        eventFrame.scripts.OnUpdate(nil,0.04)
+        eq(m.right.angle,0.06); eq(m.left.angle,-0.06)
+        up(ui.board,"RIGHT"); up(ui.board,"X")
+        down(ui.board,"DOWN"); down(ui.board,"D"); eventFrame.scripts.OnUpdate(nil,0.04)
+        eq(m.right.angle,0); eq(m.left.angle,0)
+        up(ui.board,"DOWN"); up(ui.board,"D")
+        env.GetCurrentKeyBoardFocus=function() return env.UIParent end
+        down(ui.board,"C"); down(ui.board,"UP"); eq(m.left.shots,0); eq(m.right.shots,0)
+        env.GetCurrentKeyBoardFocus=oldKeyboard
+        down(ui.board,"C"); down(ui.board,"UP"); eq(m.left.shots,1); eq(m.right.shots,1)
+        down(ui.board,"P"); eventFrame.scripts.OnUpdate(nil,0.2)
+        eq(m.right.tick,4); eq(m.left.tick,4); assert(m.left.paused)
+        up(ui.board,"P"); down(ui.board,"P")
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.right.tick,5); eq(m.left.tick,5)
+        ui:ShowMenu(); eventFrame.scripts.OnUpdate(nil,0.2); eq(m.left.tick,5)
+        ui:ShowGame(); eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,6)
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,6); assert(m.right.paused)
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED"); ui:ShowGame()
+        ui.focusGrace=0; env.GetMouseFoci=function() return {} end
+        ui:UpdateVisibility(0.02); clock=clock+1
+        eventFrame.scripts.OnUpdate(nil,0.10); eq(m.left.tick,6); assert(m.right.paused)
+        env.GetMouseFoci=function() return {ui.remoteBoard} end
+        eventFrame.scripts.OnUpdate(nil,0.02); eq(m.left.tick,7); eq(m.right.tick,7)
+        env.GetMouseFoci=oldMouse
+    end)
+    test("local clears send penalties once and round wins stay on this keyboard",function()
+        local ui=fb.UI
+        local m=fb.LocalVersus.match
+        local wins,losses=fb.db.wins,fb.db.losses
+        local right=m.right
+        right.grid={[1]=1,[2]=1,[3]=1,[4]=2}; right.attachedOrder={1,2,3,4}
+        right.projectile={x=16,y=48,vx=0,vy=-500,color=1}
+        -- A fourth matching bubble attaches underneath the top row.
+        fb.LocalVersus.Update(0.04,{}); eq(right.attack,1); eq(m.left.pending,1)
+        fb.LocalVersus.Update(0.06,{}); eq(m.left.pending,1)
+        right.status="lost"; fb.LocalVersus.Update(0.02,{})
+        eq(m.left.status,"won"); eq(m.wins[2],1)
+        for i=1,40 do fb.LocalVersus.Update(0.20,{}) end
+        ui:Update(0); assert(ui.result.shown and not ui.resultBadge.shown)
+        eq(ui.resultArt.fbAsset,"local-win-p2"); eq(ui.remoteLabel.text,"1"); eq(ui.retryButton.text,"Next round")
+        ui.retryButton.scripts.OnClick(); m=fb.LocalVersus.match
+        assert(m.right.chainReaction and m.left.chainReaction); eq(m.right.shots,0); eq(m.wins[2],1)
+        m.left.status="lost"; fb.LocalVersus.Update(0.02,{}); eq(m.right.status,"won"); eq(m.wins[1],1)
+        ui:Update(0); eq(ui.resultArt.fbAsset,"local-win-p1")
+        fb.LocalVersus.Rematch(); m=fb.LocalVersus.match
+        m.right.status="lost"; m.left.status="lost"; fb.LocalVersus.Update(0.04,{})
+        eq(m.right.status,"draw"); eq(m.left.status,"draw"); eq(m.wins[1],1); eq(m.wins[2],1)
+        eq(fb.db.wins,wins); eq(fb.db.losses,losses); eq(fb.Net.match,nil)
+        fb.StartCampaign(1); eq(fb.LocalVersus.match,nil)
+    end)
     test("solo menu launches timed training, records it once, and retries",function()
         fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)
         fb.UI:SelectSolo(4); fb.UI:Update(0.10)

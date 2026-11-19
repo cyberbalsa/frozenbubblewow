@@ -1,3 +1,8 @@
+# 0.1.0-alpha.9
+
+- **2P Game** opens a shared-keyboard match. Player 1 uses the arrows on the right board. Player 2 uses X and V to aim, C to fire and D to center on the left. Both players start with the same layout and opening bubbles.
+- Large clears send bubbles across the table. Each player has their original winner panel, and Next round carries the score into the rematch. Local rounds pause together on combat or when the game fades.
+
 # 0.1.0-alpha.8
 
 - Campaign highscores rank a full clear first, then the furthest level reached, then the fastest time. The gallery shows each run’s level, time and board. Older scores keep their recorded level and time.

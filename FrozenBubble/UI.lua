@@ -77,6 +77,10 @@ local function makeBoard(parent,x,y)
     end
     return b
 end
+local function canPauseGame()
+    return FB.game and (FB.game.mode~="versus" or FB.LocalVersus.match)
+end
+local localKeys={LEFT=true,RIGHT=true,UP=true,DOWN=true,X=true,V=true,C=true,D=true,P=true}
 function U:Build()
     local A=FB.Animation
     local f=CreateFrame("Frame","FrozenBubbleWindow",UIParent,"BackdropTemplate")
@@ -89,7 +93,7 @@ function U:Build()
     f:SetScript("OnDragStart",f.StartMoving); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
         self.keys={}; self.board:EnableKeyboard(false)
-        if FB.game and FB.game.mode~="versus" then FB.game.paused=true end
+        if canPauseGame() then FB.game.paused=true end
         FB.StopGameMusic()
     end)
     f:SetScript("OnShow",function()
@@ -104,20 +108,36 @@ function U:Build()
     self.board:SetFrameLevel(self.layers.board)
     self.board:EnableMouse(true); self.board:EnableMouseWheel(true)
     self.board:SetScript("OnEnter",function(b) if not InCombatLockdown() then b:EnableKeyboard(true); b:SetPropagateKeyboardInput(true) end end)
-    self.board:SetScript("OnLeave",function(b) b:EnableKeyboard(false); self.keys={}; self.stroke=nil end)
+    self.board:SetScript("OnLeave",function(b)
+        if not (FB.LocalVersus.match and self.screen=="opponent") then b:EnableKeyboard(false); self.keys={} end
+        self.stroke=nil
+    end)
     self.board:SetScript("OnMouseDown",function(_,which)
         if InCombatLockdown() then return end
         if self.editing and (which=="LeftButton" or which=="RightButton") then
             self.levelTitle:ClearFocus(); self.levelCode:ClearFocus()
             self.stroke={button=which}; self:Paint(which)
-        elseif not self.editing and which=="LeftButton" then FB.Fire() end
+        elseif not self.editing and not FB.LocalVersus.match and which=="LeftButton" then FB.Fire() end
     end)
     self.board:SetScript("OnMouseUp",function() self.stroke=nil end)
     self.board:SetScript("OnMouseWheel",function(_,delta)
         if self.editing then self:SelectEditorColor((self.editorColor-1+delta)%8+1)
-        elseif FB.game then FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE) end
+        elseif FB.game and not FB.LocalVersus.match then FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE) end
     end)
     self.board:SetScript("OnKeyDown",function(b,key)
+        if FB.LocalVersus.match and self.screen=="opponent" then
+            if InCombatLockdown() then return end
+            local active=self:HasFocus() and not self.inactive and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+            local used=active and localKeys[key]
+            b:SetPropagateKeyboardInput(not used)
+            if used and not self.keys[key] then
+                self.keys[key]=true
+                if key=="UP" then FB.Fire()
+                elseif key=="C" and not FB.game.paused and FB.LocalVersus.match.left:Shoot() then FB.Sound("launch")
+                elseif key=="P" then FB.TogglePause() end
+            end
+            return
+        end
         if self.editing then
             if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() then b:SetPropagateKeyboardInput(true); return end
             local color=tonumber(key)
@@ -149,6 +169,7 @@ function U:Build()
     self.retryButton=button(self.result,"Try again",116,284,294,function()
         if FB.game and FB.game.mode=="campaign" then FB.StartCampaign(FB.level)
         elseif FB.game and (FB.game.mode=="training" or FB.game.mode=="random" or FB.game.mode=="endless") then FB.StartSolo(FB.game.mode,FB.game.chainReaction)
+        elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
         elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
     end)
@@ -177,7 +198,7 @@ function U:Build()
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
-    self.remoteLabel=text(self.gameLayer,"",128,12,16,250); self.remoteLabel:SetJustifyH("CENTER")
+    self.remoteLabel=text(self.gameLayer,"",131,17.6,16,250); self.remoteLabel:SetJustifyH("CENTER")
     -- Original 640x480 menu, including its exact entry positions and source textures.
     local menu=CreateFrame("Frame",nil,f); self.menu=menu; menu:SetSize(640,480); menu:SetScale(1.6); menu:SetPoint("TOPLEFT",0,0)
     menu:SetFrameLevel(self.layers.menu)
@@ -187,7 +208,7 @@ function U:Build()
     self.menuHover={}; self.menuButtons={}
     local entries={
         {"1pgame","1pgame",function() self:Panel("solo") end},
-        {"2pgame","p1p2",function() self:ShowLobby() end},
+        {"2pgame","p1p2",function() self:ChooseChainRules("local") end},
         {"langame","langame",function() self:ShowLobby() end},
         {"netgame","netgame",function() FB.Community.Join(); self:ShowLobby() end},
         {"editor","editor",function() self:StartEditor() end},
@@ -313,12 +334,17 @@ function U:UpdateVisibility(dt)
     if math.abs(self.alpha-target)<0.005 then self.alpha=target end
     self.frame:SetAlpha(self.alpha)
     self.frame:SetFrameStrata(inactive and "LOW" or "HIGH")
+    if FB.LocalVersus.match and self.screen=="opponent" and not combat then
+        local capture=self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        self.board:EnableKeyboard(capture)
+        if not capture then self.keys={} end
+    end
     if inactive~=self.inactive then
         self.inactive=inactive
         self.keys={}; self.board:EnableKeyboard(false)
-        if FB.game and FB.game.mode~="versus" then
+        if canPauseGame() then
             if inactive and not FB.game.paused then FB.game.paused=true; self.focusPausedGame=FB.game
-            elseif not inactive and self.focusPausedGame==FB.game and not combat then FB.game.paused=false; self.focusPausedGame=nil end
+            elseif not inactive and self.focusPausedGame==FB.game and not combat and (self.screen=="game" or self.screen=="opponent") then FB.game.paused=false; self.focusPausedGame=nil end
         end
         FB.Music()
         if not inactive and self.board:IsMouseOver() and self.gameLayer:IsShown() then
@@ -344,7 +370,7 @@ function U:ShowMenu()
     self.editing=false; self.stroke=nil
     self.focusPausedGame=nil
     self.keys={}; self.board:EnableKeyboard(false)
-    if FB.game and FB.game.mode~="versus" then FB.game.paused=true end
+    if canPauseGame() then FB.game.paused=true end
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.solo:EnableKeyboard(false)
     self.panels.chain:EnableKeyboard(false)
@@ -353,7 +379,7 @@ function U:ShowMenu()
 end
 function U:ShowGame()
     if not FB.game then self:Panel("solo"); return end
-    if FB.game.mode~="versus" and not InCombatLockdown() then FB.game.paused=false end
+    if canPauseGame() and not InCombatLockdown() then FB.game.paused=false end
     self:Panel(FB.game.mode=="versus" and "opponent" or "game"); FB.Music()
 end
 function U:BuildSolo()
@@ -403,9 +429,10 @@ function U:BuildSolo()
     FB.Animation.Image(prompt,"panel",0,0,nil,nil,"BACKGROUND")
     self.chainTitle=text(prompt,"",0,12,14,341); self.chainTitle:SetJustifyH("CENTER")
     text(prompt,"Enable chain-reaction?",0,66,14,341):SetJustifyH("CENTER")
-    self.chainYes=button(prompt,"Yes (Y)",56,114,105,function() FB.StartSolo(self.chainMode,true) end)
-    self.chainNo=button(prompt,"No (N)",180,114,105,function() FB.StartSolo(self.chainMode,false) end)
-    button(prompt,"Back",118,218,105,function() self:Panel("solo") end)
+    self.chainControls=text(prompt,"",8,159,13,325); self.chainControls:SetJustifyH("CENTER")
+    self.chainYes=button(prompt,"Yes (Y)",56,114,105,function() self:StartChainGame(true) end)
+    self.chainNo=button(prompt,"No (N)",180,114,105,function() self:StartChainGame(false) end)
+    button(prompt,"Back",118,218,105,function() self:BackFromChain() end)
     prompt:SetPropagateKeyboardInput(true)
     prompt:SetScript("OnKeyDown",function(panel,key)
         if InCombatLockdown() then return end
@@ -413,8 +440,8 @@ function U:BuildSolo()
         local used=active and (key=="Y" or key=="N" or key=="ESCAPE")
         panel:SetPropagateKeyboardInput(not used)
         if used then
-            if key=="ESCAPE" then self:Panel("solo")
-            else FB.StartSolo(self.chainMode,key=="Y") end
+            if key=="ESCAPE" then self:BackFromChain()
+            else self:StartChainGame(key=="Y") end
         end
     end)
     local pick=self.panels.pick
@@ -423,9 +450,16 @@ function U:BuildSolo()
     self.level=input(pick,0,139,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
     button(pick,"Play level",100,137,220,function() FB.StartCampaign(tonumber(self.level:GetText()) or 1) end)
 end
+function U:BackFromChain()
+    if self.chainMode=="local" then self:ShowMenu() else self:Panel("solo") end
+end
+function U:StartChainGame(chains)
+    if self.chainMode=="local" then FB.LocalVersus.Start(chains) else FB.StartSolo(self.chainMode,chains) end
+end
 function U:ChooseChainRules(mode)
+    self.chainControls:SetText(mode=="local" and "Right board: Left/Right aim, Up fires, Down centers.\nLeft board: X / V aim, C fires, D centers." or "")
     self.chainMode=mode
-    self.chainTitle:SetText(mode=="training" and "Multiplayer training" or "Random level")
+    self.chainTitle:SetText(mode=="local" and "Two players" or mode=="training" and "Multiplayer training" or "Random level")
     self:Panel("chain")
 end
 function U:SelectSolo(index,silent)
@@ -458,6 +492,7 @@ end
 function U:Panel(name)
     if name=="editor" and not self.editGame then self:StartEditor(); return end
     self.menu:EnableKeyboard(false)
+    self.keys={}; self.board:EnableKeyboard(false)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorSockets:SetShown(self.editing); self.editorDirty=true
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
@@ -472,7 +507,9 @@ function U:Panel(name)
     self.remoteLabel:SetShown(name=="opponent")
     self.remotePenguin:SetShown(name=="opponent")
     self.footer:SetShown(name~="opponent" and name~="editor")
-    self.pauseControl:SetShown(name~="opponent" and name~="editor")
+    local shared=name=="opponent" and FB.LocalVersus.match~=nil
+    self.pauseControl:SetShown(name=="game" or shared)
+    self.pauseControl:ClearAllPoints(); self.pauseControl:SetPoint("TOPLEFT",shared and 467 or 115,shared and -688 or -728)
     self.result:ClearAllPoints(); self.result:SetPoint("TOPLEFT",name=="opponent" and 244.8 or 238.4,-304)
     self.menuControl:ClearAllPoints()
     self.menuControl:SetPoint("TOPLEFT",name=="opponent" and 467 or 16,-728)
@@ -481,7 +518,7 @@ function U:Panel(name)
     if name=="opponent" then
         FB.Animation.Frame(self.gameBackground,"versus-background",1)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
-        self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",640,-12); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
+        self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",648,-17.6); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
         self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
     else
         self.penguin:SetPoint("TOPLEFT",646.4,-672)
@@ -493,7 +530,7 @@ function U:Panel(name)
     end
     if name=="opponent" then self.hud:Show() end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and name=="game" or false)
-    if not gameplay and FB.game and FB.game.mode~="versus" then FB.game.paused=true end
+    if not gameplay and canPauseGame() then FB.game.paused=true end
 end
 function U:BuildHelp()
     local p=self.panels.help
@@ -501,7 +538,7 @@ function U:BuildHelp()
     FB.Animation.Image(p,"menu-logo",75,45,190,119)
     text(p,"Aim with your mouse and click to shoot. While the pointer is over the board, use Left / Right (or A / D) and Space / Up instead. P pauses solo play.",0,211,13,350)
     text(p,"Match 3 or more of the same color. Bubbles disconnected from the ceiling fall. The ceiling drops every 9 solo shots; after 10.5 seconds, the launcher fires automatically.",0,287,13,350)
-    text(p,"In versus, large clears send bubbles to the other board. Keep yours above the danger line to win. You cannot pause a match; hiding the window keeps it running.",0,363,13,350,muted)
+    text(p,"In versus, large clears send bubbles to the other board. Keep yours above the danger line to win. P pauses shared-keyboard games. Online matches keep running when you hide the window.",0,363,13,350,muted)
 end
 function U:BuildLobby()
     local p=self.panels.lobby
@@ -925,7 +962,7 @@ function U:Update(dt)
     if not self.frame or not self.frame:IsShown() then return end
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game
-    if game and not self.editing and not game.paused and game.status=="playing" then
+    if game and not FB.LocalVersus.match and not self.editing and not game.paused and game.status=="playing" then
         local oldAngle=game.angle
         if self.keys.LEFT or self.keys.A then game.angle=FB.Clamp(game.angle-dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
         elseif self.keys.RIGHT or self.keys.D then game.angle=FB.Clamp(game.angle+dt*1.5,-E.MAX_ANGLE,E.MAX_ANGLE)
@@ -944,9 +981,11 @@ function U:Update(dt)
     local canAdvance=not self.editing and game and game.status=="won" and game.mode=="campaign" and FB.level<100
     self.nextButton:SetShown(canAdvance or false)
     local ended=not self.editing and game and game.status~="playing"
+    local shared=FB.LocalVersus.match
     local match=FB.Net.match
+    local remote=shared and shared.left or match and match.remote
     local versus=game and game.mode=="versus"
-    local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and match and match.remote)
+    local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and remote)
     local ready=ended
     if ended and not FB.db.reducedMotion then
         if winner then ready=winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
@@ -954,16 +993,16 @@ function U:Update(dt)
     end
     self.result:SetShown(ready or false)
     self.resultScores:SetShown(ended and game.scoreEntry~=nil or false)
-    self.winnerName:SetShown(winner and true or false)
-    self.resultBadge:SetShown(winner and true or false)
-    if winner then
+    self.winnerName:SetShown(winner and not shared or false)
+    self.resultBadge:SetShown(winner and not shared or false)
+    if winner and not shared then
         self.winnerName:SetText(winner==game and FB.PlayerName() or match.peer)
         FB.Animation.Frame(self.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
     end
     local finished=ended and game.status=="finished"
     self.trainingResult:SetShown(finished or false); self.resultDetail:SetShown(not finished)
     if finished then self.trainingResult:SetText("Your score after two minutes\n\n"..game.score) end
-    self.retryButton:SetText(versus and "Back to lobby" or "Try again")
+    self.retryButton:SetText(shared and "Next round" or versus and "Back to lobby" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance or false)
     self.pauseArt:Hide()
     local training=game and game.mode=="training" and not self.editing
@@ -977,7 +1016,7 @@ function U:Update(dt)
         self.footer:SetText("Paint your layout, then Save, Test, or Publish.")
     elseif game then
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
-        self.hud:SetText(game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
+        self.hud:SetText(shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
             (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetShown(not training and game.mode~="versus")
         self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
@@ -985,22 +1024,21 @@ function U:Update(dt)
             FB.Animation.Frame(self.pauseArt,"pause",math.floor((GetTime()%1.4)*25)+1)
             self.overlaySub:SetText("Press P or click Pause to resume.")
         elseif game.status~="playing" then
-            local art=winner and (winner==game and "net-win-local" or "net-win-remote")
+            local art=shared and winner and (winner==game and "local-win-p1" or "local-win-p2") or winner and (winner==game and "net-win-local" or "net-win-remote")
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
             FB.Animation.Frame(self.resultArt,art,1)
-            self.resultDetail:SetText(training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
+            self.resultDetail:SetText(shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and (FB.Net.notice or "") or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     if self.screen=="opponent" then
-        local remote=match and match.remote
         if remote then
             FB.Animation.Penguin(self.remotePenguin,remote,"p2",FB.db.reducedMotion and 0 or dt)
         end
         self.remotePenguin:SetShown(remote~=nil)
         self:RenderBoard(self.remoteBoard,remote,true)
-        self.remoteLabel:SetText(match and (match.peer.."  ·  "..(match.remote and match.remote.score or 0)) or "No active match")
+        self.remoteLabel:SetText(shared and tostring(shared.wins[2]) or match and (match.peer.."  ·  "..(match.remote and match.remote.score or 0)) or "No active match")
     end
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then
