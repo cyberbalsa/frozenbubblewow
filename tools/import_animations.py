@@ -42,33 +42,33 @@ def pack_images(name, images, columns=None):
     metadata[name] = dict(w=w, h=h, tw=tw, th=th, columns=columns, frames=len(images))
 
 
-def cannon_angles():
+def cannon_angles(name, filename, width):
     # init_game pre-renders the barrel with this exact Catmull-Rom sampler.
     source = (args.upstream / "lib/Games/FrozenBubble/CStuff.xs").read_text()
     start = source.index("static inline double\ntransform_cubic")
     stop = source.index("void flipflop_", start)
-    barrel = Image.open(src / "shooter.png").convert("RGBA")
-    assert barrel.size == (100, 100)
+    barrel = Image.open(src / filename).convert("RGBA")
+    assert barrel.size == (width, width)
     with tempfile.TemporaryDirectory() as build:
         build = Path(build)
         (build / "rotation.inc").write_text(source[start:stop])
         exe = build / "cannon"
-        subprocess.run(["cc", "-std=c99", "-O2", "-I", str(build), str(root / "tools/cannon_surface.c"),
+        subprocess.run(["cc", "-std=c99", "-O2", f"-DCANNON_WIDTH={width}", "-I", str(build), str(root / "tools/cannon_surface.c"),
                         "-lm", "-o", str(exe)], check=True)
         raw = subprocess.run([str(exe)], input=barrel.tobytes(), capture_output=True, check=True).stdout
 
-    stride = 100 * 100 * 4
+    stride = width * width * 4
     assert len(raw) == 201 * stride
     frames = [Image.frombytes("RGBA", barrel.size, raw[i:i+stride]) for i in range(0, len(raw), stride)]
     boxes = [frame.getchannel("A").getbbox() for frame in frames]
     # Carry one transparent pixel around the common crop for texture filtering.
     x0, y0 = max(0, min(b[0] for b in boxes)-1), max(0, min(b[1] for b in boxes)-1)
-    x1, y1 = min(100, max(b[2] for b in boxes)+1), min(100, max(b[3] for b in boxes)+1)
+    x1, y1 = min(width, max(b[2] for b in boxes)+1), min(width, max(b[3] for b in boxes)+1)
     cropped = [frame.crop((x0, y0, x1, y1)) for frame in frames]
     w, h = cropped[0].size
     columns = min(range(math.ceil(201 / (2048//h)), 2048//w + 1), key=lambda n: power(n*w) * power(math.ceil(201/n)*h))
-    pack_images("cannon-angles", cropped, columns)
-    metadata["cannon-angles"].update(left=x0-50, top=y0-50)
+    pack_images(name, cropped, columns)
+    metadata[name].update(left=x0-width//2, top=y0-width//2)
 
 
 def campaign_previews():
@@ -148,6 +148,18 @@ static = {
     "penalty-one": "banane.png", "penalty-seven": "tomate.png",
     "progress-red": "dot_red.png", "progress-green": "dot_green.png",
 }
+for color in range(1, 9):
+    static[f"mini-bubble{color}"] = f"balls/bubble-{color}-mini.png"
+    static[f"mini-bubble-symbol{color}"] = f"balls/bubble-colourblind-{color}-mini.png"
+static.update({"mini-rim": "on_top_next-mini.png", "mini-frozen": "balls/bubble_lose-mini.png",
+               "mini-prelight": "balls/bubble_prelight-mini.png", "mini-seven": "tomate-mini.png",
+               "mini-one": "banane-mini.png", "arena-chat-left": "void_chat_small_rp1_rp3.png",
+               "arena-chat-right": "void_chat_small_rp2_rp4.png"})
+static["arena-background"] = "back_multiplayer.png"
+for seat in range(1, 5):
+    static[f"arena-left-rp{seat}"] = f"left-rp{seat}-mini.png"
+    for key, file in (("target", "attack"), ("target-me", "attackme"), ("arena-win", "win_panel"), ("arena-lose", "net_lose"), ("arena-hurry", "hurry")):
+        static[f"{key}-rp{seat}"] = f"{file}_rp{seat}.png"
 for credit in ("artwork", "soundtrack", "cpucontrol", "leveleditor"):
     static["banner-" + credit] = f"menu/banner_{credit}.png"
 for color in ("green", "purple"):
@@ -170,16 +182,18 @@ for _ in range(30):
                                                        for _ in range(40 * 30))))
     masks.append(mask)
 pack_images("menu-static", masks)
-cannon_angles()
+cannon_angles("cannon-angles", "shooter.png", 100)
+cannon_angles("mini-cannon", "shooter-mini.png", 50)
 for name, path in static.items():
     atlas(name, [src / path])
 for name in ("1pgame", "p1p2", "langame", "netgame", "editor", "gfx-l1", "gfx-l2", "gfx-l3", "keys", "highscore"):
     frames = sorted((src / "menu/anims").glob(name + "_*.png"))
     atlas("hover-" + name, frames[:70] if name == "langame" else frames)
-for player in ("p1", "p2"):
+for player in ("p1", "p2", "rp1", "rp2", "rp3", "rp4"):
     for animation in ("anime-shooter", "wait", "win", "loose"):
         atlas(animation + "-" + player, sorted((src / "pinguins").glob(animation + "_" + player + "_*.png")))
 atlas("pause", sorted(src.glob("pause_00*.png")))
+atlas("mini-stick", [src / f"balls/stick_effect_{i}-mini.png" for i in range(7)])
 atlas("stick", [src / f"balls/stick_effect_{i}.png" for i in range(7)])
 for name in ("introzik", "menu_change", "menu_selected", "pause", "cancel", "noh", "newroot", "typewriter", "chatted"):
     shutil.copy(args.upstream / "share/snd" / f"{name}.ogg", dst / f"{name}.ogg")

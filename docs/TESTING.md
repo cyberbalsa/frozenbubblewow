@@ -21,3 +21,6 @@ Automated tests cannot prove that Blizzard will deliver messages or that every t
 14. Queue with chain reactions selected on one client and standard rules on the other. Then select chains on both and play a round. Follow a shot from launch on the left board, watch a return flight hit another group, and check penalties after each clear. At the end, compare the freeze order, winning penguin, and winner’s name on both clients.
 
 15. Open Highscores with the main menu arrow keys and Enter. Check the thumbnail and time of a campaign entry, toggle colorblind symbols, view both training columns, and use Share best from each column. On a second account, refresh the shared table and compare the level and clear marker.
+
+
+For an arena test, host a room and join it from two to four other characters. Check that each character sees their own board in the center, that F1–F4 target the opponent in the corresponding corner, and that F10 resumes split penalties. Leave one board full and verify that its player can watch the survivors. Check room chat, guest departure, combat, and a rematch to the chosen victory limit.

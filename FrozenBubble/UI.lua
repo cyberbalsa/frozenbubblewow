@@ -48,6 +48,7 @@ local function bubble(parent)
 end
 local function place(t,parent,x,y,color,size,alpha)
     t:ClearAllPoints(); t:SetPoint("CENTER",parent,"TOPLEFT",x,-y)
+    t.fbMiniBubble=parent.fbMiniSeat
     t:SetSize(size or 32,size or 32); FB.SetBubbleTexture(t,color)
     t:SetAlpha(alpha or 1); t:Show()
 end
@@ -149,6 +150,16 @@ function U:Build()
             end
             return
         end
+        local room=FB.Net.match
+        if self.screen=="opponent" and room and room.arena then
+            local target=({F1=1,F2=2,F3=3,F4=4,F10=0})[key]
+            if target and room.targeting and room.phase=="playing" and (target==0 or self.roomOpponents[target]) then
+                b:SetPropagateKeyboardInput(false); FB.Arena.Target(target); return
+            end
+            if self:CanAutoRematch() and room.phase=="done" and (key=="ENTER" or key=="SPACE" or key==K.keys[3]) then
+                b:SetPropagateKeyboardInput(false); FB.Arena.Start(); return
+            end
+        end
         if self:CanAutoRematch() and FB.Series.CanContinue(FB.Net.match)
             and (key=="ENTER" or key=="SPACE" or key==K.keys[3]) then
             b:SetPropagateKeyboardInput(false)
@@ -196,6 +207,7 @@ function U:Build()
             local game=FB.game
             FB.StartCustomBoard(game.customSet,game.status=="won" and not game.customSet.builtin and 1 or game.customIndex)
         elseif FB.LocalVersus.match then FB.LocalVersus.Rematch()
+        elseif FB.Net.match and FB.Net.match.arena and not FB.Arena.Complete(FB.Net.match) then FB.Arena.Start()
         elseif FB.Series.CanContinue(FB.Net.match) then FB.Series.Ready()
         elseif FB.game and FB.game.mode=="versus" then FB.Net.Leave(); self:ShowLobby()
         else self:ShowMenu() end
@@ -214,7 +226,7 @@ function U:Build()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
     self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
     self.panels={}
-    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","scores","market","editor","opponent","solo","chain","pick","settings"}) do
+    for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","market","editor","opponent","solo","chain","pick","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
         if name~="editorText" and name~="keys" and name~="scores" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
@@ -223,7 +235,7 @@ function U:Build()
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button); self:BuildMarket(); self:BuildEditor()
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -312,9 +324,9 @@ function U:Build()
     end)
     self.editButton:Hide()
     local chrome=CreateFrame("Frame",nil,f); chrome:SetAllPoints(); chrome:SetFrameLevel(self.layers.chrome)
-    button(chrome,"X",976,4,30,function() f:Hide() end)
-    button(chrome,"−",900,4,28,function() FB.Options.Set("windowSize",math.max(0.55,(FB.db.windowSize or 1)-0.1)) end)
-    button(chrome,"+",932,4,28,function() FB.Options.Set("windowSize",math.min(1,(FB.db.windowSize or 1)+0.1)) end)
+    self.windowClose=button(chrome,"X",976,4,30,function() f:Hide() end)
+    self.windowMinus=button(chrome,"−",900,4,28,function() FB.Options.Set("windowSize",math.max(0.55,(FB.db.windowSize or 1)-0.1)) end)
+    self.windowPlus=button(chrome,"+",932,4,28,function() FB.Options.Set("windowSize",math.min(1,(FB.db.windowSize or 1)+0.1)) end)
     self:Options(); self:ShowMenu(); f:Hide()
 end
 function U:OwnsFocus(frame)
@@ -422,7 +434,13 @@ function U:PlaceBoard(board,x,y,scale)
         dot:ClearAllPoints(); dot:SetPoint("TOPLEFT",progressX,(versus and 12 or 16)-(i-1)*(FB.MediaInfo["progress-green"].h+1))
     end
 end
+function U:WindowControls(arena)
+    self.windowMinus:ClearAllPoints(); self.windowMinus:SetPoint("TOPLEFT",arena and 245 or 900,-4)
+    self.windowPlus:ClearAllPoints(); self.windowPlus:SetPoint("TOPLEFT",arena and 275 or 932,-4)
+    self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or 976,-4)
+end
 function U:ShowMenu()
+    self:WindowControls(false)
     FB.Demos.Close()
     self.editing=false; self.stroke=nil
     self.focusPausedGame=nil
@@ -597,6 +615,12 @@ function U:Panel(name)
     if name=="solo" then self:SelectSolo(1,true) end
     if name=="scores" then self:RefreshScores() end
     if name=="pick" then self:PickSet() end
+    if name=="rooms" then self:RefreshRooms() end
+    self:WindowControls(false)
+    FB.MatchChat.Position(false)
+    if self.roomBadges then self.roomBadges:Hide() end
+    self.arenaHUD:Hide(); self.board.fbPenaltyX,self.board.fbPenaltyY,self.board.fbNextY=nil,nil,nil
+    for _,board in ipairs(self.miniBoards) do board:Hide() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local gameplay=name=="game" or name=="opponent" or name=="editor"
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
@@ -617,6 +641,8 @@ function U:Panel(name)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
         self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",648,-17.6); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
         self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
+        local m=FB.Net.match
+        if m and m.arena and m.played then self:LayoutArena(m) end
     else
         self.penguin:SetPoint("TOPLEFT",646.4,-672)
         FB.Animation.Frame(self.gameBackground,name=="editor" and "editor-background" or "solo-background",1)
@@ -661,17 +687,22 @@ function U:BuildLobby()
     self.lobbyNotice=text(p,"",0,199,13,350)
     self.accept=button(p,"Accept",0,260,105,function() FB.Net.Accept() end)
     button(p,"Leave / forfeit",118,260,130,function() FB.Net.Leave() end)
-    button(p,"View match",255,260,90,function() self:Panel("opponent") end)
+    button(p,"View match",255,260,90,function()
+        local m=FB.Net.match
+        if m and m.arena and not m.played then self:Panel("rooms") else self:Panel("opponent") end
+    end)
     self.victoryLimit=button(p,"",0,300,345,function(_,which)
         if FB.Net.queue or FB.Net.match then return end
         FB.db.versusLimit=FB.Series.Cycle(FB.db.versusLimit,which=="RightButton" and -1 or 1)
         self:RefreshLobby()
     end)
     self.victoryLimit:RegisterForClicks("LeftButtonUp","RightButtonUp")
-    self.peerText=text(p,"",0,339,12,350,muted)
+    button(p,"Arena rooms · 3–5 players",0,338,345,function() self:Panel("rooms") end)
+    self.peerText=text(p,"",0,375,12,350,muted)
 end
 function U:ShowLobby() self.frame:Show(); self:Panel("lobby"); self:RefreshLobby() end
 function U:RefreshLobby()
+    if self.screen=="rooms" then self:RefreshRooms() end
     if not self.lobbyNotice then return end
     self.lobbyNotice:SetText(FB.Net.notice or "Queue to match another player, or enter Player-Realm to challenge a friend.")
     local chains=FB.db.versusChains
@@ -865,6 +896,8 @@ function U:UpdateEditor()
 end
 function U:RenderBoard(board,game,remote)
     local low=FB.db.graphicsLevel==1
+    local mini=board.fbMiniSeat
+    local factor=mini and 2 or 1
     local phase=game and game.rootPeriod and game.lockedShots%game.rootPeriod or 0
     local sweep
     if game and (not game.status or game.status=="playing") and game.rootPeriod and phase>=game.rootPeriod-2 then
@@ -886,9 +919,10 @@ function U:RenderBoard(board,game,remote)
                 overlays=overlays+1
                 local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
                 board.boardOverlays[overlays]=overlay
+                if mini then effect="mini-"..effect end
                 local info=FB.MediaInfo[effect]
-                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y-(effect=="frozen" and 7 or 0))
-                overlay:SetSize(info.w,info.h); FB.Animation.Frame(overlay,effect,1)
+                overlay:ClearAllPoints(); overlay:SetPoint("CENTER",board,"TOPLEFT",x,-y-(ended and ended[key] and 7 or 0))
+                overlay:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(overlay,effect,1)
             end
         else board.bubbles[key]:Hide() end
     end
@@ -925,14 +959,14 @@ function U:RenderBoard(board,game,remote)
     local height,used=0,0
     while pending>0 and height<350 do
         local grouped=pending>=7
-        local asset=grouped and "penalty-seven" or "penalty-one"
+        local asset=mini and (grouped and "mini-seven" or "mini-one") or (grouped and "penalty-seven" or "penalty-one")
         local info=FB.MediaInfo[asset]
         used=used+1
         local marker=board.penalties[used] or board:CreateTexture(nil,"ARTWORK")
         board.penalties[used]=marker
-        marker:ClearAllPoints(); marker:SetPoint("BOTTOM",board,"TOPLEFT",remote and 278 or -23,-362+height)
-        marker:SetSize(info.w,info.h); FB.Animation.Frame(marker,asset,1)
-        height=height+info.h-1; pending=pending-(grouped and 7 or 1)
+        marker:ClearAllPoints(); marker:SetPoint("BOTTOM",board,"TOPLEFT",board.fbPenaltyX or (remote and 278 or -23),-(board.fbPenaltyY or 362)+height)
+        marker:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(marker,asset,1)
+        height=height+(info.h-1)*factor; pending=pending-(grouped and 7 or 1)
     end
     for i=used+1,#board.penalties do board.penalties[i]:Hide() end
     local chains=game and game.chains
@@ -955,37 +989,44 @@ function U:RenderBoard(board,game,remote)
     if game.stick and not low then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
-        FB.Animation.Frame(board.stick,"stick",math.floor(game.stick.age/0.04)+1)
+        FB.Animation.Frame(board.stick,mini and "mini-stick" or "stick",math.floor(game.stick.age/0.04)+1)
     end
     if game.projectile then place(board.projectile,board,game.projectile.x,game.projectile.y,game.projectile.color)
     end
     local versus=game.mode=="versus"
-    local launchY=versus and 366 or E.LAUNCH_Y
+    local launchY=game.launchY or (versus and 366 or E.LAUNCH_Y)
     local angle=game.angle or 0
-    local asset=low and "aim-dot" or "cannon-angles"
+    local asset=low and "aim-dot" or mini and "mini-cannon" or "cannon-angles"
     local barrel=FB.MediaInfo[asset]
-    local x=low and 127+60*math.sin(angle) or 128+barrel.left
-    local y=low and launchY-1-60*math.cos(angle) or launchY+barrel.top
+    local x=low and 127+60*math.sin(angle) or 128+barrel.left*factor
+    local y=low and launchY-1-60*math.cos(angle) or launchY+barrel.top*factor
     board.shooter:ClearAllPoints(); board.shooter:SetPoint("TOPLEFT",board,"TOPLEFT",x,-y)
-    board.shooter:SetSize(barrel.w,barrel.h)
+    board.shooter:SetSize(barrel.w*factor,barrel.h*factor)
     FB.Animation.Frame(board.shooter,asset,low and 1 or math.floor(100-angle*200/math.pi+0.5)+1)
-    local nextY=versus and 416 or 412
+    local nextY=board.fbNextY or (versus and 416 or 412)
     if game.status=="lost" or game.status=="draw" then
-        local info=FB.MediaInfo.frozen
+        local frozen=mini and "mini-frozen" or "frozen"
+        local info=FB.MediaInfo[frozen]
         for i,t in ipairs({board.current,board.next}) do
             t:ClearAllPoints(); t:SetPoint("CENTER",board,"TOPLEFT",128,-(i==1 and launchY+7 or nextY+8))
-            t:SetSize(info.w,info.h); FB.Animation.Frame(t,"frozen",1)
+            t:SetSize(info.w*factor,info.h*factor); FB.Animation.Frame(t,frozen,1)
         end
     else
         place(board.current,board,128,launchY,game.current)
         place(board.next,board,128,nextY,game.next)
-        board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,versus and -397 or -393)
-        board.nextRim:Show()
+        board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,-(nextY-19))
+        local rim=mini and "mini-rim" or "next-rim"
+        FB.Animation.Frame(board.nextRim,rim,1)
+        board.nextRim:SetSize(FB.MediaInfo[rim].w*factor,FB.MediaInfo[rim].h*factor)
     end
     local warning=game.status=="playing" and (not remote or game.timed) and game.idle and game.hurryWarn and game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
     if warning and not board.wasWarning then FB.Sound("hurry") end
     board.wasWarning=warning
-    if warning then FB.Animation.Frame(board.hurry,remote and "hurry-remote" or "hurry",1) end
+    if warning then
+        local asset=mini and ("arena-hurry-rp"..mini) or remote and "hurry-remote" or "hurry"
+        FB.Animation.Frame(board.hurry,asset,1)
+        board.hurry:SetSize(FB.MediaInfo[asset].w*factor,FB.MediaInfo[asset].h*factor)
+    end
     board.hurry:SetShown(warning or false)
 end
 function U:SelectMain(index,silent)
@@ -1086,6 +1127,9 @@ function U:Update(dt)
     if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
     if self.editing then self:UpdateEditor() else self:RenderBoard(self.board,game) end
     self.overlayText:SetText(""); self.overlaySub:SetText("")
+    if self.screen=="opponent" and FB.Net.match and FB.Net.match.arena and FB.Net.match.played then
+        self:RenderArena(FB.Net.match,dt); return
+    end
     local canAdvance=not self.editing and game and game.status=="won" and (game.mode=="campaign" and FB.level<100 or game.customSet and game.customIndex<#game.customSet.boards)
     self.nextButton:SetShown(canAdvance or false)
     local ended=not self.editing and game and game.status~="playing"
@@ -1168,7 +1212,8 @@ function U:Update(dt)
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then
         self.refresh=0
-        if self.screen=="lobby" then self:RefreshLobby()
+        if self.screen=="rooms" then self:RefreshRooms()
+        elseif self.screen=="lobby" then self:RefreshLobby()
         elseif self.screen=="scores" and self.scoreRevision~=FB.Scores.revision then self:RefreshScores()
         elseif self.screen=="market" then self:RefreshMarket() end
     end

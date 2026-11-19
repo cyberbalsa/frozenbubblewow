@@ -27,8 +27,12 @@ static void set_pixel(SDL_Surface *surface, int px, int py, Uint8 r, Uint8 g, Ui
 
 #include "rotation.inc"
 
+#ifndef CANNON_WIDTH
+#define CANNON_WIDTH 100
+#endif
+
 int main(void) {
-    enum { width = 100, count = width * width };
+    enum { width = CANNON_WIDTH, count = width * width };
     PixelFormat format = {4};
     Uint32 input[count], output[count];
     SDL_Surface source = {width, width, input, &format}, dest = {width, width, output, &format};

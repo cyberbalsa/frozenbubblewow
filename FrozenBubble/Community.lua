@@ -67,7 +67,7 @@ function C.Chat(message,sender,channelName)
     if channelName~=C.name or type(message)~="string" or message:sub(1,5)~="FBF1|" or #message>255 then return end
     -- Normal chat is only a discovery/catalog transport, never gameplay or an executable payload.
     local body=message:sub(6); local fields=FB.Split(body)
-    if fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
+    if fields[2]=="AROOM" or fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
         FB.Net.Receive(FB.PREFIX,body,"CHANNEL",sender)
     end
 end

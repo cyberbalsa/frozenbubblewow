@@ -129,7 +129,10 @@ function E:Resolve(key)
     local penalty=math.max(0,popped+dropped-3)
     if self.mode=="training" then self.score=self.score+penalty
     else self.score=self.score+popped*10+dropped*20 end
-    if self.mode=="versus" then self.attack=self.attack+penalty end
+    if self.mode=="versus" then
+        self.attack=self.attack+penalty
+        if self.onPenalty and penalty>0 then self.onPenalty(penalty) end
+    end
     self.lastPop,self.lastDrop=popped,dropped
     return popped,dropped
 end

@@ -30,6 +30,8 @@ The eight colored bubbles retain their original GIF interiors. The importer rend
 
 The highscore background, frame, headings and menu credit strips come from the pinned checkout. The 100 level thumbnails use the four-by-four pixel average in `CStuff.xs::shrink_`, with separate sheets for the standard and colorblind sprites.
 
+The live arena uses the original multiplayer backdrop, miniature bubbles and penguin animations, targeting marks, chat panels, and result badges. The miniature cannon uses the same rotation routine with the original 50-pixel shooter.
+
 ## Title-screen recordings
 
 The four recordings come from `share/data/demo{1..4}.bz2` in the pinned checkout. Each runs through the original Perl engine. The addon replays the resulting sprite changes and sound cues at 50 frames per second. Board sprites stay separate so the colorblind setting also works on recorded games. The closing wipe follows `blacken_` in `CStuff.xs`.

@@ -2,7 +2,7 @@
 ## Title: Frozen Bubble Forever
 ## Notes: Frozen Bubble for WoW Forever: 100 levels, versus, matchmaking, and highscores.
 ## Author: Frozen Bubble contributors; WoW port contributors
-## Version: 0.1.0-alpha.14
+## Version: 0.1.0-alpha.15
 ## IconTexture: Interface\AddOns\FrozenBubble\Media\logo
 ## SavedVariables: FrozenBubbleDB
 ## License: GPL-2.0-only
@@ -17,6 +17,7 @@ Scores.lua
 PeerView.lua
 Network.lua
 Series.lua
+Arena.lua
 Community.lua
 MediaInfo.lua
 Animation.lua
@@ -25,6 +26,7 @@ Demos.lua
 Controls.lua
 MatchChat.lua
 UI.lua
+ArenaUI.lua
 Editor.lua
 Scoreboard.lua
 Invitations.lua

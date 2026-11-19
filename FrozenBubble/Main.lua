@@ -3,7 +3,7 @@ function FB.GameSeed() return (time()+math.floor(GetTime()*1000))%2147483646+1 e
 function FB.CanStart()
     if InCombatLockdown() then FB.Print("Start a game after combat."); return false end
     if FB.Net.match and FB.Net.match.phase~="done" then FB.Print("Leave or finish multiplayer first."); return false end
-    if FB.Net.match then FB.Series.Leave(FB.Net.match); FB.Net.match=nil end
+    if FB.Net.match then FB.Net.Leave() end
     if FB.Net.queue then FB.Net.SetQueue(false) end
     return true
 end
@@ -168,6 +168,7 @@ events:SetScript("OnEvent",function(_,event,...)
         FB.UI:SetCombatInput(true)
         FB.UI.keys={}; FB.UI.board:EnableKeyboard(false)
         local match=FB.Net.match
+        if match and match.arena then FB.Arena.Leave("Combat started."); match=nil end
         if match and (match.phase=="restart" or match.phase=="barrier" or match.phase=="done") then FB.Series.Leave(match) end
         if match and match.phase~="playing" and match.phase~="done" then
             FB.Net.Whisper("CANCEL",match.id); FB.Net.match=nil

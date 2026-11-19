@@ -1,10 +1,10 @@
 # Frozen Bubble Forever
 
-Frozen Bubble in WoW Forever: the original 100 levels, two-player versus, community highscores, and player-created levels. Native Lua; no external service or runtime dependencies.
+Play the original 100 Frozen Bubble levels in WoW Forever, challenge a friend, or host an arena for up to five players. Share levels and highscores through the in-game community channel.
 
 ![Project artwork](art/curseforge-icon.png)
 
-**Alpha software.** The Lua simulation, protocol, UI loading, and packaging have automated tests. Live Forever client testing is still required, particularly for addon-message restrictions and channel reach. This is an adaptation of the game, not a bit-for-bit port of its Perl/SDL runtime or its five-player internet server.
+**Alpha software.** The Lua simulation, protocol, UI loading, and packaging have automated tests. Live Forever client testing is still required, particularly for addon-message restrictions and channel reach.
 
 ## Install and play
 
@@ -16,7 +16,7 @@ Type `/fb`. Use the arrow keys and Enter or Space to navigate the main menu. Aim
 - **Multiplayer training:** survive the two-minute clock on a solo board. Earn one point for each bubble beyond three in a clear, including any that fall. Incoming penalties use the versus rules. Random levels and training both offer chain reactions. Turn them on and a falling bubble can fly back up to complete another match. Training records separate scores for each ruleset.
 - **Endless:** clear the board for a new wave and a 500-point bonus.
 - **2P Game** shares one keyboard. On the right board, Left and Right aim, Up fires and Down centers. On the left, X and V aim, C fires and D centers. P pauses both boards. Each win adds a round to that player’s total. Choose **Next round** to keep the score.
-- **Online versus:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. Choose **Chain reactions on** in Multiplayer before you queue or challenge someone. The queue pairs players who selected the same rules. Both players need alpha 7 or newer for chain matches. You can watch the opponent aim, fire, and drop clusters on the left board. Hiding the window leaves the match running. Timeout or combat cancels the match without a result.
+- **Online duel:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. Choose **Chain reactions on** in Multiplayer before you queue or challenge someone. The queue pairs players who selected the same rules. Both players need alpha 7 or newer for chain matches. You can watch the opponent aim, fire, and drop clusters on the left board. Hiding the window leaves the match running. Timeout or combat cancels the match without a result.
 - **Editor:** paint ten-row boards and arrange up to 100 in a set. Insert adds a board before the current one, Append adds one after it, and Move changes the order. Undo restores paint strokes and board edits. Test plays the selected board. The editor keeps your draft across logout.
 - **Pick a starting level:** choose any of the 100 campaign boards or a board from a saved set. Practice leaves your campaign checkpoint and scores alone. In the library, Play starts the set at board 1 and Next level advances after each clear.
 
@@ -31,6 +31,10 @@ Click **Graphics** on the title screen to cycle from Full to Low to Medium and b
 Choose **Keys** on the main menu to bind aim, fire and center for each player. The last two prompts set the full-window and chat keys. All ten bindings save together. Escape cancels a partial change. By default, F fits the addon to your screen and F again restores its size and position.
 
 In **Multiplayer**, left-click **Victory limit** to raise the target or right-click to lower it. New profiles start at first to five. Upgrades keep Unlimited. Matchmaking pairs players who chose the same limit and chain rules. After both boards finish animating, either player can choose **Next round**. If the other player has the result screen in focus, both start a fresh board with the series score carried over. **Back to lobby** leaves a finished round without a forfeit. Both players need alpha 13 or later for series. Choose Unlimited to play a single round against an older client.
+
+Choose **Multiplayer → Arena rooms** to host a room for three to five players. Choose the chain rules and victory limit in Multiplayer before hosting. Guests can click a listed room or enter the host’s Player-Realm name. **Announce room** sends a listing from a click when automatic channel discovery is unavailable. Everyone needs alpha 15 or later.
+
+The host clicks **Start round** once at least three players have joined. Your board is in the center. With the pointer over it, F1–F4 target the top-left, top-right, bottom-left, and bottom-right opponents. F10 splits each penalty evenly among living opponents, rounding up. Press Enter to chat. A player whose board fills can watch the rest of the round. By default the remaining players may continue if a guest leaves. The host can turn this off before opening the room. The room closes when its host leaves or enters combat.
 
 After 20 seconds on the focused title screen, one of the four original recordings plays. The three- and five-player recordings use the desktop arena with a small board for each opponent. Click or press a key to return. To turn demos off, open WoW Settings → AddOns → Frozen Bubble Forever and clear **Play demos on the title screen**. Demos also stay off during matchmaking and with Reduce motion enabled.
 
@@ -62,7 +66,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.14` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.15` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

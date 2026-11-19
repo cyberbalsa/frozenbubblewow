@@ -15,10 +15,10 @@ function N.Send(kind, channel, target, ...)
     local message=packet(kind,...)
     if #message>240 or #N.outbox>=64 then return false end
     -- Coalesce snapshots and advertisements: a slow network must not build a stale backlog.
-    if kind=="STATE" or kind=="QUEUE" then
+    if kind=="STATE" or kind=="ASTATE" or kind=="QUEUE" then
         for i=#N.outbox,1,-1 do
             local entry=N.outbox[i]
-            if kind=="STATE" and entry.kind=="FIRE" and entry.target==target then break end
+            if (kind=="STATE" and entry.kind=="FIRE" or kind=="ASTATE" and entry.kind=="AFIRE") and entry.target==target then break end
             if entry.kind==kind and entry.channel==channel and entry.target==target then entry.message=message; return true end
         end
     end
@@ -85,6 +85,7 @@ function N.Accept()
     notify("Waiting for the match to start…")
 end
 function N.Leave()
+    if N.match and N.match.arena then FB.Arena.Leave(); return end
     N.queue=false; N.Broadcast("QUEUE",0)
     local m=N.match
     if m then
@@ -137,22 +138,80 @@ function N.Fire(g)
     local m=N.match
     if not m or m.phase~="playing" then return end
     m.seq=m.seq+1
-    N.Whisper("FIRE",m.id,m.seq,g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
+    local send=m.arena and FB.Arena.Fan or N.Whisper
+    send(m.arena and "AFIRE" or "FIRE",m.id,m.seq,g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
         g.current,g.next,g.rng,g:Pack())
 end
 function N.State()
     local m,g=N.match,FB.game
     if not m or m.phase~="playing" or not g then return end
+    if m.arena and now()-m.lastState<2 then return end
     m.seq=m.seq+1
     local fields={m.id,m.seq,g.shots,g.score,math.floor(g.ceiling*100+0.5),g.attack,g:Pack(),g.lockedShots,
         g.pending,math.floor(g.angle*1000+0.5),g.current,g.next}
     fields[13],fields[14]=g.tick,g.rng
     fields[15],fields[16]=FB.PeerView.PackRising(g),math.min(10000,math.floor(g.idle*50+0.5))
-    if not N.Whisper("STATE",unpackFields(fields)) then
+    if m.arena then FB.Arena.SendStates(m,fields)
+    elseif not N.Whisper("STATE",unpackFields(fields)) then
         -- Preserve the authoritative scoreboard and board even at the packet size limit.
         N.Whisper("STATE",unpackFields(fields,1,12))
     end
     m.lastState=now()
+end
+function N.ApplyState(m,p)
+    local seq=FB.Integer(p[4],1,10000000)
+    local shots=FB.Integer(p[5],0,1000000)
+    local score=FB.Integer(p[6],0,100000000)
+    local ceiling=FB.Integer(p[7],0,40000)
+    local attack=FB.Integer(p[8],0,10000000)
+    local offset=p[9] and #p[9]==97 and 1 or 0
+    local grid=FB.Engine.Unpack(p[9],offset)
+    if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
+    local locked=FB.Integer(p[10],math.max(0,shots-1),shots)
+    local pending=FB.Integer(p[11],0,10000000) or 0
+    local angle=FB.Integer(p[12],-1471,1471)
+    local current,nextColor=FB.Integer(p[13],1,8),FB.Integer(p[14],1,8)
+    if p[10] and (not locked or not angle or not current or not nextColor
+        or not FB.Integer(p[11],0,10000000)) then return end
+    local tick=FB.Integer(p[15],0,100000000)
+    local rng=FB.Integer(p[16],1,2147483646)
+    local rising=p[17] and FB.PeerView.UnpackRising(p[17],offset)
+    local idle=FB.Integer(p[18],0,10000)
+    if p[15] and (not tick or not rng or not rising or not idle or #p~=18) then return end
+    if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end
+    if locked then
+        local resolved=locked-(m.remoteLocked or 0)
+        if resolved<0 then return end
+        if m.chainReaction then
+            -- Return flights can score several times after the same shot attached.
+            local base=resolved>0 and m.remoteAttack or (m.chainBase or 0)
+            local budget=resolved>0 and resolved*(FB.Engine.ROWS*8+8) or (m.chainBudget or 0)
+            if attack-base>budget then return end
+            m.chainBase,m.chainBudget=base,budget
+        elseif attack-m.remoteAttack>96*resolved then return end
+    else
+        -- Older peers report launched shots even if the projectile is still in flight.
+        local base=shots==(m.remoteShots or 0) and (m.legacyAttackBase or 0) or m.remoteAttack
+        local limit=shots==(m.remoteShots or 0) and (m.legacyAttackLimit or 0) or 12*(shots-(m.remoteShots or 0))
+        if attack-base>limit then return end
+        m.legacyAttackBase,m.legacyAttackLimit=base,limit
+        locked=shots
+    end
+    m.remoteLocked=locked
+    m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=now()
+    if FB.game.status=="playing" then FB.game:AddGarbage(attack-m.remoteAttack) end
+    m.remoteAttack=attack
+    local remote=m.remote
+    FB.PeerView.Sync(remote,grid,offset,tick,shots,locked,rng,rising)
+    if idle then remote.idle,remote.timed=idle*0.02,true end
+    remote.ceiling=ceiling/100
+    remote.score,remote.shots,remote.lockedShots=score,shots,locked
+    local aim=(angle or 0)/1000
+    remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
+    remote.turnUntil=now()+0.15
+    remote.angle,remote.current,remote.next=aim,current,nextColor
+    remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
+    m.remote=remote
 end
 function N.RequestScores()
     if N.lastScoreRequest and now()-N.lastScoreRequest<15 then return end
@@ -167,6 +226,7 @@ function N.Receive(prefix,message,channel,sender)
     local p=FB.Split(message)
     if p[1]~="1" then return end
     local kind=p[2]
+    if FB.Arena.Receive(kind,p,channel,sender) then return end
     if FB.Debug and kind~="STATE" and kind~="QUEUE" then FB.Debug.Log("RECV",kind,channel,sender) end
     if kind=="QUEUE" and (channel=="CHANNEL" or channel=="GUILD" or channel=="PARTY" or channel=="RAID" or channel=="INSTANCE_CHAT") then
         local limit,chains=FB.Series.Decode(p[3])
@@ -194,6 +254,10 @@ function N.Receive(prefix,message,channel,sender)
         return
     end
     local m=N.match
+    if m and m.arena then
+        if kind=="OFFER" or kind=="CHAINOFFER" or kind=="LIMITOFFER" then N.Send("CANCEL","WHISPER",sender,p[3]) end
+        if kind~="END" and kind~="ENDACK" then return end
+    end
     if FB.Series.Receive(kind,p,sender) then return end
     if kind=="OFFER" or kind=="CHAINOFFER" or kind=="LIMITOFFER" then
         local seed=FB.Integer(p[4],1,2147483646)
@@ -245,7 +309,7 @@ function N.Receive(prefix,message,channel,sender)
             return
         end
     end
-    if not m or sender~=m.peer or p[3]~=m.id then return end
+    if not m or m.arena or sender~=m.peer or p[3]~=m.id then return end
     if kind=="CHAT" then
         FB.MatchChat.Receive(m,table.concat(p,"|",4))
     elseif kind=="ACCEPT" and m.host and m.phase=="offer" then
@@ -274,63 +338,13 @@ function N.Receive(prefix,message,channel,sender)
     elseif kind=="FIRE" and m.phase=="playing" then
         FB.PeerView.Fire(m,p)
     elseif kind=="STATE" and m.phase=="playing" then
-        local seq=FB.Integer(p[4],1,10000000)
-        local shots=FB.Integer(p[5],0,1000000)
-        local score=FB.Integer(p[6],0,100000000)
-        local ceiling=FB.Integer(p[7],0,40000)
-        local attack=FB.Integer(p[8],0,10000000)
-        local offset=p[9] and #p[9]==97 and 1 or 0
-        local grid=FB.Engine.Unpack(p[9],offset)
-        if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
-        local locked=FB.Integer(p[10],math.max(0,shots-1),shots)
-        local pending=FB.Integer(p[11],0,10000000) or 0
-        local angle=FB.Integer(p[12],-1471,1471)
-        local current,nextColor=FB.Integer(p[13],1,8),FB.Integer(p[14],1,8)
-        if p[10] and (not locked or not angle or not current or not nextColor
-            or not FB.Integer(p[11],0,10000000)) then return end
-        local tick=FB.Integer(p[15],0,100000000)
-        local rng=FB.Integer(p[16],1,2147483646)
-        local rising=p[17] and FB.PeerView.UnpackRising(p[17],offset)
-        local idle=FB.Integer(p[18],0,10000)
-        if p[15] and (not tick or not rng or not rising or not idle or #p~=18) then return end
-        if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end
-        if locked then
-            local resolved=locked-(m.remoteLocked or 0)
-            if resolved<0 then return end
-            if m.chainReaction then
-                -- Return flights can score several times after the same shot attached.
-                local base=resolved>0 and m.remoteAttack or (m.chainBase or 0)
-                local budget=resolved>0 and resolved*(FB.Engine.ROWS*8+8) or (m.chainBudget or 0)
-                if attack-base>budget then return end
-                m.chainBase,m.chainBudget=base,budget
-            elseif attack-m.remoteAttack>96*resolved then return end
-        else
-            -- Older peers report launched shots even if the projectile is still in flight.
-            local base=shots==(m.remoteShots or 0) and (m.legacyAttackBase or 0) or m.remoteAttack
-            local limit=shots==(m.remoteShots or 0) and (m.legacyAttackLimit or 0) or 12*(shots-(m.remoteShots or 0))
-            if attack-base>limit then return end
-            m.legacyAttackBase,m.legacyAttackLimit=base,limit
-            locked=shots
-        end
-        m.remoteLocked=locked
-        m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=now()
-        FB.game:AddGarbage(attack-m.remoteAttack); m.remoteAttack=attack
-        local remote=m.remote
-        FB.PeerView.Sync(remote,grid,offset,tick,shots,locked,rng,rising)
-        if idle then remote.idle,remote.timed=idle*0.02,true end
-        remote.ceiling=ceiling/100
-        remote.score,remote.shots,remote.lockedShots=score,shots,locked
-        local aim=(angle or 0)/1000
-        remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
-        remote.turnUntil=now()+0.15
-        remote.angle,remote.current,remote.next=aim,current,nextColor
-        remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
-        m.remote=remote
+        N.ApplyState(m,p)
     end
 end
 function N.Update(dt)
     local t=now()
-    N.tokens=math.min(4,N.tokens+dt*3)
+    local fanout=N.match and N.match.arena and math.max(1,#N.match.names-1) or 1
+    N.tokens=math.min(4*fanout,N.tokens+dt*3*fanout)
     if N.tokens>=1 and #N.outbox>0 then
         local entry=N.outbox[1]
         local available=N.Available()
@@ -359,7 +373,9 @@ function N.Update(dt)
         end
     end
     local m=N.match
+    FB.Arena.Expire(t)
     if not m then return end
+    if m.arena then FB.Arena.Update(m,dt,t); return end
     if m.phase=="playing" then
         FB.PeerView.Update(m,dt)
         if t-m.lastSeen>25 then N.Finish("aborted","Connection timed out. No win or loss recorded.",false); return end

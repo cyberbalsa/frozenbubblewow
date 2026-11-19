@@ -235,7 +235,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -423,6 +423,83 @@ test("a draw gives neither player a round and a departure closes a pending remat
     j.Series.Ready(); tick(2); assert(h.Net.match.peerReady)
     h.Net.Leave(); tick(3)
     assert(j.Net.match.departed and not j.Series.CanContinue(j.Net.match)); eq(j.db.wins,0); eq(h.db.losses,0)
+end)
+test("five-player arena joins, survives lost control packets, targets penalties and scores a series",function()
+    local team={}
+    for i,name in ipairs({"Orchid","Pine","Quartz","Rose","Sage"}) do team[i]=client(name) end
+    local h=team[1]; h.db.versusLimit=2; h.db.versusChains=true; h.db.arenaContinue=false
+    h.Arena.Host(); tick(2)
+    local host=h.PlayerName(); local room=h.Net.match.room
+    assert(team[2].Arena.rooms[host].chains); eq(team[2].Arena.rooms[host].limit,2)
+    drops.AJOIN=true; drops.ASEATS=true
+    for i=2,5 do team[i].Arena.Join(host) end
+    tick(17)
+    for _,fb in ipairs(team) do
+        eq(#fb.Net.match.names,5); eq(fb.Net.match.phase,"room"); eq(fb.Net.match.room,room)
+    end
+    local extra=client("Juniper"); extra.Arena.Join(host); tick(2); eq(extra.Net.match,nil)
+    drops.APREP=true; drops.APULSE=true; drops.AHOST=true; h.Arena.Start(); tick(15)
+    for _,fb in ipairs(team) do
+        eq(fb.Net.match.phase,"playing"); eq(fb.game:Pack(),h.game:Pack()); eq(fb.Net.match.round,1)
+        assert(fb.game.chainReaction and fb.game.onPenalty)
+    end
+    local opponent=h.Arena.Opponents(h.Net.match)[1].name
+    h.game.shots,h.game.lockedShots=1,1; h.game.onPenalty(5); tick(5)
+    for i=2,5 do eq(team[i].game.pending,2) end
+    h.Arena.Target(1); h.game.shots,h.game.lockedShots=2,2; h.game.onPenalty(6)
+    drops.ASTATE=true; tick(9)
+    for i=2,5 do
+        local fb=team[i]; eq(fb.game.pending,fb.PlayerName()==opponent and 8 or 2)
+        eq(fb.Net.match.players[host].target,opponent)
+    end
+    h.Arena.Target(0); assert(h.game:Shoot(0.34)); tick(1)
+    for i=2,5 do assert(team[i].Net.match.players[host].remote.shots>=3) end
+    local firstID=h.Net.match.id
+    team[2].game.status="lost"; tick(5)
+    for _,fb in ipairs(team) do eq(fb.Net.match.phase,"playing"); assert(fb.Net.match.players[team[2].PlayerName()].lost) end
+    for i=3,5 do team[i].game.status="lost" end
+    tick(8)
+    for _,fb in ipairs(team) do
+        local m=fb.Net.match
+        eq(m.phase,"done"); eq(m.names[m.winner],host); eq(m.players[host].wins,1)
+        fb.UI={CanAutoRematch=function() return true end,RefreshLobby=function() end}
+    end
+    team[3].Arena.Start(); tick(20)
+    for _,fb in ipairs(team) do eq(fb.Net.match.round,2); eq(fb.Net.match.phase,"playing"); eq(fb.game:Pack(),h.game:Pack()) end
+    local prior=h.Net.match.players[team[2].PlayerName()].remoteSeq
+    h.Net.Receive(h.PREFIX,"1|AFIRE|"..firstID.."|8|1|1|0|1|1|1|1|"..h.game:Pack(),"WHISPER",team[2].PlayerName())
+    eq(h.Net.match.players[team[2].PlayerName()].remoteSeq,prior)
+    for i=2,5 do team[i].game.status="lost" end
+    tick(10)
+    for _,fb in ipairs(team) do
+        assert(fb.Arena.Complete(fb.Net.match)); eq(fb.Net.match.players[host].wins,2)
+        eq(fb.db.wins,fb==h and 2 or 0); eq(fb.db.losses,fb==h and 0 or 2)
+    end
+    team[4].Net.Leave(); tick(3)
+    for _,fb in ipairs(team) do eq(fb.Net.match,nil) end
+end)
+test("room departures retain the other seats and all remaining players can draw and rematch",function()
+    local h=client("Cedar"); local j=client("Birch-"..string.rep("T",64)); local k=client("Ash")
+    local long=client("Oak-"..string.rep("R",65))
+    local host=h.PlayerName()
+    h.db.arenaTargeting=false; h.Arena.Host()
+    for _,fb in ipairs({j,k,long}) do fb.Arena.Join(host) end
+    tick(8); h.Arena.Start(); tick(9)
+    eq(h.Net.match.phase,"playing"); eq(long.Net.match.phase,"playing")
+    assert(not long.Net.match.targeting and long.Net.match.keepRoom); long.Arena.Target(1); eq(long.Net.match.target,nil)
+    local gone=k.PlayerName(); k.Arena.Leave(); tick(7)
+    for _,fb in ipairs({h,j,long}) do assert(fb.Net.match.players[gone].left); eq(fb.Net.match.phase,"playing") end
+    eq(k.db.losses,1)
+    h.game.status="lost"; j.game.status="lost"; long.game.status="lost"; tick(8)
+    for _,fb in ipairs({h,j,long}) do
+        local m=fb.Net.match; eq(m.winner,0); eq(m.phase,"done"); eq(fb.db.losses,0)
+        fb.Arena.Start()
+    end
+    tick(12)
+    for _,fb in ipairs({h,j,long}) do
+        local m=fb.Net.match; eq(m.round,2); eq(m.phase,"playing"); assert(m.players[gone].left and m.players[gone].lost)
+    end
+    h.Arena.Leave(); tick(4); eq(j.Net.match,nil); eq(long.Net.match,nil)
 end)
 test("remote rising penalties round-trip all seven lanes; malformed frames are ignored",function()
     for offset=0,1 do
@@ -615,7 +692,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("UI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -982,6 +1059,51 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.game.status="won"; eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
         eq(fb.game.customIndex,100); eq(fb.db.checkpoint,cp); eq(fb.db.unlocked,unlocked)
         fb.db.custom[id]=nil; ui:StartEditor(nil,true,nil,true)
+    end)
+    test("room controls render live miniature boards, targeting, chat, spectating and combat cancellation",function()
+        local ui=fb.UI
+        local oldMouse=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        local guest1,guest2=client("Larch"),client("Maple")
+        local guest3,guest4=client("Spruce"),client("Willow")
+        fb.db.versusLimit=1
+        ui:Panel("rooms"); ui.createRoom.scripts.OnClick()
+        local host=fb.PlayerName()
+        for _,peer in ipairs({guest1,guest2,guest3,guest4}) do peer.Arena.Join(host) end
+        tick(9)
+        eq(#fb.Net.match.names,5); ui.roomStart.scripts.OnClick(); tick(9)
+        eq(ui.screen,"opponent"); local m=fb.Net.match
+        ui:Update(0.02)
+        eq(ui.gameBackground.fbAsset,"arena-background")
+        eq(#ui.roomOpponents,4); assert(ui.miniBoards[1].shown and ui.miniBoards[4].shown and not ui.remoteBoard.shown)
+        eq(ui.miniBoards[1].shooter.fbAsset,"mini-cannon"); eq(ui.miniPenguins[1].fbAsset,"anime-shooter-rp1")
+        eq(ui.miniBoards[1].bubbles[1].fbAsset,"mini-bubble"..fb.game.grid[1])
+        ui.board.scripts.OnKeyDown(ui.board,"F2"); ui:Update(0.02)
+        eq(m.target,ui.roomOpponents[2].name); assert(ui.attackIcons[2].shown)
+        ui.board.scripts.OnKeyDown(ui.board,"F10"); eq(m.target,nil)
+        assert(guest1.MatchChat.Send("watch the left wall")); tick(2); ui:Update(0.02)
+        local index
+        for i,opponent in ipairs(ui.roomOpponents) do if opponent.name==guest1.PlayerName() then index=i end end
+        eq(ui.roomChats[index].line.text,"watch the left wall"); assert(ui.roomChats[index].shown)
+        fb.game.status="lost"; tick(6); ui:Update(0.02)
+        assert(m.players[host].lost and m.phase=="playing" and not ui.result.shown)
+        guest4.Arena.Leave(); tick(5)
+        local departed=ui.roomOpponents[4].name==guest4.PlayerName() and 4
+        if not departed then for i,opponent in ipairs(ui.roomOpponents) do if opponent.left then departed=i end end end
+        ui:Update(0.02); assert(ui.leftSigns[departed].shown and not ui.miniBoards[departed].shown)
+        guest1.game.status="lost"; guest3.game.status="lost"; tick(10)
+        eq(m.phase,"done"); eq(m.names[m.winner],guest2.PlayerName())
+        for i=1,200 do fb.game:Update(0.02); fb.Net.Update(0.02) end
+        ui:Update(0.02); assert(ui.result.shown); eq(ui.winnerName.text,guest2.PlayerName()); eq(ui.retryButton.text,"Back to lobby")
+        ui.retryButton.scripts.OnClick(); tick(3)
+        eq(fb.Net.match,nil); eq(guest2.Net.match,nil)
+        ui:Panel("rooms"); ui.createRoom.scripts.OnClick()
+        guest1.Arena.Join(host); guest2.Arena.Join(host); tick(6); ui.roomStart.scripts.OnClick(); tick(9)
+        env.InCombatLockdown=function() return true end
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
+        env.InCombatLockdown=function() return false end; eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED")
+        tick(3); eq(fb.Net.match,nil); eq(guest1.Net.match,nil); eq(guest2.Net.match,nil)
+        env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
     end)
     test("the original four demos play on the title screen and leave the paused game intact",function()
         local ui,demos=fb.UI,fb.Demos

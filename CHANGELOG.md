@@ -1,3 +1,9 @@
+# 0.1.0-alpha.15
+
+- Host or join a live three-to-five-player arena in Multiplayer. Everyone starts with the same board. The host sets the chain rules and victory limit and can allow targeting and continuing after a guest leaves.
+- F1 through F4 send your next penalty to a particular opponent. F10 splits it among the surviving opponents. Watch shots, rising penalties, chat, and eliminations on the original four small boards. The last player standing wins.
+- Stay to spectate after losing your board. Next round carries the score forward. Combat takes you out of play. Leaving as host closes the room. Everyone in a room needs alpha 15 or later.
+
 # 0.1.0-alpha.14
 
 - Leave the title screen open for 20 seconds to watch one of the four recordings shipped with Frozen Bubble. Watch a training run, a duel, or a three- or five-player match. The recordings use the original shots, sound cues, and closing wipe.

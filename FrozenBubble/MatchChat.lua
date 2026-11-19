@@ -9,13 +9,15 @@ end
 function Chat.Send(message)
     local m=FB.Net.match
     if not m or m.phase~="playing" or not valid(message) then return false end
+    if m.arena then return FB.Arena.Fan("ACHAT",m.id,message) end
     return FB.Net.Whisper("CHAT",m.id,message)
 end
 
-function Chat.Receive(m,message)
+function Chat.Receive(m,message,player)
     if m.phase~="playing" or not valid(message) then return end
-    m.chatText=message:gsub("|","||")
-    m.chatUntil=GetTime()+10
+    local recipient=player or m
+    recipient.chatText=message:gsub("|","||")
+    recipient.chatUntil=GetTime()+10
     FB.Sound("chatted")
 end
 
@@ -34,6 +36,9 @@ function Chat.Build(ui,text)
     local line=text(peer,"",3,2,12,art.w-6); line:SetJustifyH("CENTER"); line:SetWordWrap(false)
     peer:Hide()
 
+    function Chat.Position(arena)
+        input:ClearAllPoints(); input:SetPoint("TOPLEFT",hud,"TOPLEFT",arena and 215 or 390,-442)
+    end
     local recipient
     function Chat.Close()
         recipient=nil; input:ClearFocus(); input:Hide(); peer:Hide()

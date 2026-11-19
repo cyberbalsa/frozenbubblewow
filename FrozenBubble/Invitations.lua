@@ -132,7 +132,7 @@ function I.Update()
     if GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus() or busyCasting(UnitCastingInfo) or busyCasting(UnitChannelInfo) then
         I.Activity(); return
     end
-    if not I.idleOffered and now-I.lastActivity>=FB.db.idleSeconds then
+    if not I.idleOffered and now>=I.lastActivity+FB.db.idleSeconds then
         I.idleOffered=true; offer("idle")
     end
 end
