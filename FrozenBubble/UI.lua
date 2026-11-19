@@ -582,10 +582,11 @@ function U:PlaceBoard(board,x,y,scale)
         dot:ClearAllPoints(); dot:SetPoint("TOPLEFT",progressX,(versus and 12 or 16)-(i-1)*(FB.MediaInfo["progress-green"].h+1))
     end
 end
-function U:WindowControls(arena)
-    self.windowMinus:ClearAllPoints(); self.windowMinus:SetPoint("TOPLEFT",arena and 245 or 900,-4)
-    self.windowPlus:ClearAllPoints(); self.windowPlus:SetPoint("TOPLEFT",arena and 275 or 932,-4)
-    self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or 976,-4)
+function U:WindowControls(layout)
+    local arena,duel=layout=="arena",layout=="duel"
+    self.windowMinus:ClearAllPoints(); self.windowMinus:SetPoint("TOPLEFT",arena and 245 or duel and 461 or 900,-4)
+    self.windowPlus:ClearAllPoints(); self.windowPlus:SetPoint("TOPLEFT",arena and 275 or duel and 493 or 932,-4)
+    self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or duel and 525 or 976,-4)
 end
 function U:ShowMenu()
     FB.Recordings.playback=nil
@@ -806,16 +807,9 @@ function U:Panel(name)
     self.penguin:ClearAllPoints()
     self.panels.opponent:Hide()
     if versusLayout then
+        self:WindowControls("duel")
         FB.Animation.Frame(self.gameBackground,"versus-background",1)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
-        self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",648,-17.6); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
-        self.remoteLabel:ClearAllPoints()
-        self.remoteLabel:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",replay and 78 or 131,replay and -6 or -17.6)
-        self.remoteLabel:SetWidth(replay and 356 or 250)
-        if replay then
-            self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",590,-6)
-            self.hud:SetFont("Fonts\\ARIALN.TTF",16,"OUTLINE"); self.hud:SetWidth(356)
-        else self.hud:SetFont("Fonts\\ARIALN.TTF",22,"OUTLINE") end
         self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
         local m=replay and replay.arena or FB.Net.match
         if m and m.arena and (replay or m.played) then self:LayoutArena(m) end
@@ -831,18 +825,16 @@ function U:Panel(name)
     self.panels.replay:EnableKeyboard(name=="replay" and not self.combatInput)
     if replay then
         self.replayBack:ClearAllPoints(); self.replayTime:ClearAllPoints()
-        self.replayBack:SetPoint("TOPLEFT",versusLayout and 709 or 15,versusLayout and -27 or -728)
-        self.replayTime:SetPoint("TOPLEFT",versusLayout and 171 or 144,versusLayout and -31 or -738)
-        self.replayTime:SetJustifyH(versusLayout and "CENTER" or "LEFT")
-        if replay.left and not replay.duel and not replay.arena then
-            self.replayBack:ClearAllPoints(); self.replayBack:SetPoint("TOPLEFT",576,-10)
-            self.replayTime:ClearAllPoints(); self.replayTime:SetPoint("TOPLEFT",288,-14)
-        end
         if replay.arena then
-            self.replayBack:ClearAllPoints(); self.replayBack:SetPoint("TOPLEFT",356,-28)
-            self.replayTime:ClearAllPoints(); self.replayTime:SetPoint("TOPLEFT",488,-32)
-            self.hud:SetWidth(360); self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",332,-6)
+            self.replayBack:SetPoint("TOPLEFT",318,-621); self.replayTime:SetPoint("TOPLEFT",547,-624)
+        elseif replay.duel then
+            self.replayBack:SetPoint("TOPLEFT",337,-725); self.replayTime:SetPoint("TOPLEFT",568,-732)
+        elseif replay.left then
+            self.replayBack:SetPoint("TOPLEFT",576,-10); self.replayTime:SetPoint("TOPLEFT",288,-14)
+        else
+            self.replayBack:SetPoint("TOPLEFT",15,-728); self.replayTime:SetPoint("TOPLEFT",144,-738)
         end
+        self.replayTime:SetJustifyH(replay.left and not replay.duel and "CENTER" or "LEFT")
         self.result:Hide(); self.resultBadge:Hide(); self.winnerName:Hide(); self.resultDetail:Hide()
         self.nextButton:Hide(); self.retryButton:Hide(); self.resultScores:Hide(); self.leaveSeries:Hide()
         local training=replay.record.mode=="training"
@@ -1352,7 +1344,12 @@ function U:Update(dt)
         local onBoard=self.screen=="game" or self.screen=="opponent" or self.screen=="scoreEntry" and self.gameLayer:IsShown()
         local native=onBoard and FB.Plaques.Draw(self,game,shared and shared.wins)
         local points=(FB.run and FB.run.score or 0)+game.score
-        if not native then
+        if onBoard and versus and match and not shared then
+            local series=match.series
+            FB.Plaques.Duel(self,FB.PlayerName(),match.peer,
+                series and series.wins or (match.result=="won" and 1 or 0),
+                series and series.losses or (match.result=="lost" and 1 or 0))
+        elseif not native then
             local label=game.customSet and (game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards) or game.mode
             self.hud:SetText(versus and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or (label.."\n"..points.." points"))
         end
@@ -1378,9 +1375,7 @@ function U:Update(dt)
         end
         self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)
-        if not shared then
-            self.remoteLabel:SetText(match and (match.peer.."  ·  "..(series and series.losses or match.remote and match.remote.score or 0)) or "No active match")
-        end
+        if not remote then self.remoteLabel:SetText("No active match") end
     end
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then

@@ -328,8 +328,9 @@ function R.Render()
         if FB.db.graphicsLevel==3 then FB.Animation.Penguin(ui.remotePenguin,p.left,"p2",0) end
         ui.remotePenguin:SetShown(FB.db.graphicsLevel==3)
         if p.duel then
-            ui.remoteLabel:SetText(p.record.duel.peer.."  ·  "..(p.wins and p.wins[2] or p.left.score))
-            ui.hud:SetText(p.record.duel.player.."  ·  "..(p.wins and p.wins[1] or p.right.score))
+            FB.Plaques.Duel(ui,p.record.duel.player,p.record.duel.peer,
+                p.wins and p.wins[1] or (p.right.status=="won" and 1 or 0),
+                p.wins and p.wins[2] or (p.left.status=="won" and 1 or 0))
         else FB.Plaques.Draw(ui,p.right,p.wins) end
     elseif not FB.Plaques.Draw(ui,p.right) then
         ui.hud:SetText(labels[p.record.mode].."\n"..p.right.score.." points")

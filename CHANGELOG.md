@@ -1,3 +1,8 @@
+# 0.1.0-alpha.34
+
+- Duels, arena matches and their recordings show each character’s name and round wins on the wooden score plaques. The main board and the four miniature boards use the original game’s two lettering sizes. Duels show realm names when two characters share a name.
+- Window buttons and replay controls leave the score plaques clear. Player names appear during the opening wipe. Scripts outside the lettering atlas use WoW’s locale font and fade in with the board.
+
 # 0.1.0-alpha.33
 
 - In online duels and arenas you can watch the other player aim before they shoot. When they hold a turn key, their cannon rotates and their penguin leans. When they release it, the penguin straightens. Mouse aim and the center key also appear in recordings of those matches.

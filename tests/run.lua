@@ -310,7 +310,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","HUDArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","HUDArt","NameArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -1108,7 +1108,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         end
         eq(play.wins[1],1); eq(play.wins[2],0); eq(play.left.status,"draw")
         eq(fb.db.wins,wins); eq(fb.db.losses,losses); eq(fb.game,live); eq(#net.outbox,queue)
-        env.SlashCmdList.FROZENBUBBLE("replay"); eq(ui.screen,"replay"); assert(ui.remoteLabel.text:find("ReplayGuest",1,true))
+        env.SlashCmdList.FROZENBUBBLE("replay"); eq(ui.screen,"replay"); eq(fb.Plaques.left.fbName,"ReplayGuest"); assert(fb.Plaques.left.shown)
         ui:ShowMenu()
         -- A result for a closed round can still be corrected while a new round runs.
         id="78113-56"; start(fb,peer)
@@ -1758,6 +1758,33 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:Panel("editor"); assert(not p.solo.shown and not p.clock.shown)
         fb.StartCampaign(1)
     end)
+    test("multiplayer score plaques keep kerning, Unicode names and round counts across board sizes",function()
+        local p=fb.Plaques
+        local own,peer=p.DuelNames("Mira-Dawn","Mira-Dusk")
+        eq(own,"Mira-Dawn"); eq(peer,"Mira-Dusk")
+        own,peer=p.DuelNames("Élodie-Dawn","Олег-Dusk")
+        eq(own,"Élodie"); eq(peer,"Олег")
+        for _,size in ipairs({8,14}) do
+            local glyphs=fb.NameArt[size].glyphs
+            local visible={}
+            assert(p.NameLayout(80,"Teffi",27,size,132,function(g,x) visible[#visible+1]={g,x} end))
+            eq(visible[3][1],glyphs.ffi)
+            assert(p.NameLayout(80,string.rep("É",32).."Р",27,size,132,function(g,x)
+                assert(x>=14 and x+g.w<=146)
+            end))
+            local ink={}
+            p.NameLayout(80,string.rep("É",32),27,size,132,function(g) ink[#ink+1]=g end)
+            eq(ink[#ink-3],glyphs["…"]); eq(ink[#ink-1],glyphs["2"]); eq(ink[#ink],glyphs["7"])
+        end
+        local function unexpected() error("Partial caption drawn before font fallback") end
+        assert(not p.NameLayout(80,"雨",3,8,132,unexpected))
+        local f=p.Caption(fb.UI.gameLayer,80,11,1)
+        local from=#frames
+        f:SetNameScore("雨",3,8,132)
+        local localized=frames[#frames]; assert(#frames>from)
+        eq(localized.text,"雨: 3"); assert(localized.shown)
+        f:SetNameScore("Олег",12,8,132); assert(not localized.shown)
+    end)
     test("solo menu launches timed training, records it once, and retries",function()
         fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)
         fb.UI:SelectSolo(4); fb.UI:Update(0.10)
@@ -2202,11 +2229,22 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             if reveal.sprites[i].fbAsset:find("^mini%-bubble") then mini=mini+1 end
         end
         eq(mini,4*(38+1))
+        local faces,shadows=0,0
+        for i=1,reveal.used do
+            local sprite=reveal.sprites[i]
+            if sprite.fbReveal=="name-lettering-dark" then faces=faces+1
+            elseif sprite.fbReveal=="name-shadow-dark" then shadows=shadows+1 end
+        end
+        assert(faces>25); eq(shadows,faces)
         for i=1,reveal.patchCount do assert(#reveal.patches[i].fbCuts<=2) end
         fb.Options.Set("boardTransitions",false); env.math.random=random
         eq(ui.screen,"opponent"); local m=fb.Net.match
         ui:Update(0.02)
         eq(ui.gameBackground.fbAsset,"arena-background")
+        eq(fb.Plaques.center.fbName,m.players[host].label); assert(fb.Plaques.center.shown and not ui.hud.shown)
+        for i,v in ipairs(ui.roomOpponents) do
+            eq(ui.miniLabels[i].fbName,v.label); eq(ui.miniLabels[i].fbWins,0); eq(ui.miniLabels[i].fbFace,8)
+        end
         eq(#ui.roomOpponents,4); assert(ui.miniBoards[1].shown and ui.miniBoards[4].shown and not ui.remoteBoard.shown)
         eq(ui.roomOpponents[1].remote.effectFloor,918); eq(ui.roomOpponents[4].remote.effectFloor,462)
         eq(ui.roomOpponents[1].remote.chainTurnY,348); eq(ui.roomOpponents[4].remote.chainTurnY,352)
@@ -2307,8 +2345,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:Update(0.02); assert(not ui.result.shown)
         for _=1,200 do fb.game:Update(0.02); m.remote:Update(0.02) end
         ui:Update(0.02); assert(ui.result.shown and ui.leaveSeries.shown)
-        eq(ui.retryButton.text,"Next round"); eq(ui.hud.text,fb.PlayerName().."  ·  2")
-        eq(ui.remoteLabel.text,"Remote-TestRealm  ·  2"); eq(ui.resultDetail.text,"Round 4 · First to 5")
+        eq(ui.retryButton.text,"Next round"); eq(fb.Plaques.right.fbName,"UITester"); eq(fb.Plaques.right.fbWins,2)
+        eq(fb.Plaques.left.fbName,"Remote"); eq(fb.Plaques.left.fbWins,2); eq(ui.resultDetail.text,"Round 4 · First to 5")
         env.GetMouseFoci=function() return {} end
         assert(not ui:CanAutoRematch()); ui:ShowMenu(); assert(not ui:CanAutoRematch())
         ui:ShowGame(); env.GetMouseFoci=function() return {ui.board} end

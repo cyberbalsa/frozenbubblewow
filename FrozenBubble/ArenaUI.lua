@@ -42,8 +42,7 @@ function U:BuildRooms(text,button,input,makeBoard)
     self.miniLabels={}; self.miniPenguins={}; self.attackIcons={}; self.threats={}; self.miniBoards={}; self.roomChats={}; self.leftSigns={}
     for i,pos in ipairs(positions) do
         local slot="rp"..i
-        local label=text(self.arenaHUD,"",pos.scoreX-78,pos.scoreY,11,156)
-        label:SetJustifyH("CENTER"); label:SetWordWrap(false); self.miniLabels[i]=label
+        self.miniLabels[i]=FB.Plaques.Caption(self.arenaHUD,pos.scoreX,pos.scoreY,1)
         self.miniPenguins[i]=FB.Animation.Image(self.arenaHUD,"anime-shooter-"..slot,pos.penguinX,pos.penguinY)
         self.attackIcons[i]=FB.Animation.Image(self.arenaHUD,"target-"..slot,pos.attackX,pos.attackY)
         self.threats[i]=FB.Animation.Image(self.arenaHUD,"target-me-"..slot,185,448)
@@ -96,8 +95,8 @@ function U:RefreshRooms()
 end
 function U:LayoutArena(m)
     FB.Animation.Frame(self.gameBackground,"arena-background",1)
-    self:WindowControls(true)
-    self.menuControl:ClearAllPoints(); self.menuControl:SetPoint("TOPLEFT",321,-9)
+    self:WindowControls("arena")
+    self.menuControl:ClearAllPoints(); self.menuControl:SetPoint("TOPLEFT",318,-621)
     FB.MatchChat.Position(true)
     self.arenaHUD:Show(); self.remoteBoard:Hide(); self.remoteLabel:Hide(); self.remotePenguin:Hide()
     self:PlaceBoard(self.board,304,70.4,1.6)
@@ -108,8 +107,6 @@ function U:LayoutArena(m)
         self.loserIcons={}
         for i=1,4 do self.loserIcons[i]=FB.Animation.Image(self.roomBadges,"net-lose-local",0,118.4,64,49.6) end
     end
-    self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",352,-16)
-    self.hud:SetWidth(320); self.hud:SetJustifyH("CENTER"); self.hud:Show()
     self.penguin:ClearAllPoints(); self.penguin:SetPoint("TOPLEFT",644.8,-672)
     self.roomOpponents=A.Opponents(m)
     for i,pos in ipairs(positions) do
@@ -147,8 +144,8 @@ function U:AnimateArena(m,dt)
 end
 function U:RenderArena(m,dt,replayGame,lastFrame)
     local me=m.players[m.me]
-    self.hud:SetText(me.label.." · "..me.wins)
-    self.hud:Show(); self.footer:Hide(); self.pauseArt:Hide()
+    FB.Plaques.center:SetNameScore(me.label,me.wins,14,220); FB.Plaques.center:Show()
+    self.hud:Hide(); self.footer:Hide(); self.pauseArt:Hide()
     self.trainingClock:Hide(); self.nextButton:Hide()
     local ready=m.phase=="done"
     local winner=m.names[m.winner or 0]
@@ -158,10 +155,11 @@ function U:RenderArena(m,dt,replayGame,lastFrame)
         self.miniBoards[i]:SetShown(not v.left)
         self.leftSigns[i]:SetShown(v.left or false)
         if not v.left then self:RenderBoard(self.miniBoards[i],v.remote,true) end
-        self.miniLabels[i]:SetText(v.label.." · "..v.wins)
+        self.miniLabels[i]:SetNameScore(v.label,v.wins,8,132)
         local chat=self.roomChats[i]
         chat:SetShown(not v.left and v.chatUntil~=nil and GetTime()<v.chatUntil)
         if chat:IsShown() then chat.line:SetText(v.chatText) end
+        self.miniLabels[i]:SetShown(i<3 or not chat:IsShown())
         self.attackIcons[i]:SetShown(m.target==v.name)
         local threat=v.target==m.me and not v.lost and not FB.MatchChat.input:IsShown()
         self.threats[i]:SetShown(threat)
