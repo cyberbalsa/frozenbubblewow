@@ -1,3 +1,9 @@
+# 0.1.0-alpha.38
+
+- Room chat reaches the players seated in your arena before the round starts. Everyone in the room needs alpha.38 or later to use it. Public channel chat has a separate draft and history.
+- Tab completes player names. Type `/me` followed by an action, `/list` to see who is in the room or public lobby, and `/help` to see the available commands.
+- Hosts can remove guests with `/kick` and set a session-long exclusion with `/autokick`. Select the victory limit and press a number key for zero through nine, or cycle it with the arrow keys.
+
 # 0.1.0-alpha.37
 
 - Multiplayer and Arena rooms use the original world map and row highlight. Use Up, Down and Enter or click a listing. Selecting a queued duelist challenges them under their advertised rules.

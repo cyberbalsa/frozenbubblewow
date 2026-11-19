@@ -24,6 +24,12 @@ local function askForBoards(request)
     FB.Net.Send("GETBOARDS","WHISPER",request.peer,request.id,#request.boards+1)
 end
 function C.Update()
+    if C.who and C.who.untilTime and now()>=C.who.untilTime then
+        local names={}
+        for name in pairs(C.who.names) do names[#names+1]=name end
+        table.sort(names); C.Log("Players in lobby: "..table.concat(names,", "))
+        C.who.untilTime=nil
+    end
     for key,request in pairs(C.pending) do
         if request.boards and now()-request.sent>=4 and request.attempts<3 then
             askForBoards(request)
@@ -47,17 +53,23 @@ end
 function C.Broadcast(kind,...)
     if C.state=="ready" and C.id then return FB.Net.Send(kind,"CHANNEL",tostring(C.id),...) end
 end
-function C.Log(message,sender)
-    local line=((sender and (sender.."> ") or "*** ")..message):gsub("|","||")
+function C.Log(message,sender,room)
+    local action=sender and (message:match("^/me (.+)") or message:match("^/action (.+)"))
+    local line
+    if action then line="* "..sender.." "..action
+    elseif sender then line="<"..sender.."> "..message
+    else line="*** "..message end
+    if room then line="[Room] "..line end
+    line=line:gsub("|","||")
     C.log[#C.log+1]=line
     if #C.log>100 then table.remove(C.log,1) end
     if FB.UI and FB.UI.AppendLobbyLine then FB.UI:AppendLobbyLine(line) end
 end
-local function validChat(message)
+function C.ValidChat(message)
     return type(message)=="string" and #message<=160 and message:find("%S") and not message:find("%c")
 end
 function C.Say(message)
-    if not validChat(message) then return nil,"Enter a message of up to 160 bytes." end
+    if not C.ValidChat(message) then return nil,"Enter a message of up to 160 bytes." end
     if InCombatLockdown() then return nil,"Send lobby chat after combat." end
     if C.state=="manual" and C.id then
         if C.Manual("LOBBY",message) then return true end
@@ -65,6 +77,15 @@ function C.Say(message)
         if C.Broadcast("LOBBY",message) then return true end
     else return nil,"Join FrozenBubbleForever and wait for the channel check." end
     return nil,"Chat is busy. Press Enter to retry."
+end
+function C.Who()
+    if C.who and C.who.untilTime then return true end
+    local nonce=tostring(math.floor(now()*1000))
+    local sent
+    if C.state=="manual" then sent=C.Manual("LWHO",nonce) else sent=C.Broadcast("LWHO",nonce) end
+    if not sent then return nil,"Join the community channel and wait for delivery before listing players." end
+    C.who={nonce=nonce,untilTime=now()+4,expires=now()+30,names={[FB.PlayerName()]=true},count=1}
+    return true
 end
 function C.Manual(kind,...)
     -- Must be called directly by an OnClick handler. Never automate normal chat sends.
@@ -87,7 +108,7 @@ function C.Chat(message,sender,channelName)
     if channelName~=C.name or type(message)~="string" or message:sub(1,5)~="FBF1|" or #message>255 then return end
     -- Manual channel posts carry lobby text and discovery notices.
     local body=message:sub(6); local fields=FB.Split(body)
-    if fields[2]=="LOBBY" or fields[2]=="AROOM" or fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
+    if fields[2]=="LOBBY" or fields[2]=="LWHO" or fields[2]=="AROOM" or fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
         FB.Net.Receive(FB.PREFIX,body,"CHANNEL",sender)
     end
 end
@@ -266,7 +287,7 @@ function C.Receive(message,channel,sender)
     sender=FB.PlayerName(sender)
     if kind=="LOBBY" then
         local line=message:sub(9)
-        if channel=="CHANNEL" and C.joined and validChat(line) then
+        if channel=="CHANNEL" and C.joined and C.ValidChat(line) then
             C.Log(line,sender)
             if sender~=FB.PlayerName() and FB.UI and (FB.UI.screen=="rooms" or FB.UI.screen=="lobby") then FB.Sound("chatted") end
         end
@@ -277,7 +298,20 @@ function C.Receive(message,channel,sender)
         return true
     end
     if sender==FB.PlayerName() then return false end
-    if (kind=="LEVEL" or kind=="LEVELSET") and (channel=="CHANNEL" or channel=="WHISPER") then
+    if kind=="LWHO" then
+        local ui=FB.UI
+        if channel=="CHANNEL" and C.joined and ui and ui.frame and ui.frame:IsShown() and (ui.screen=="rooms" or ui.screen=="lobby")
+            and not FB.Net.match and p[3] and #p[3]<=16 and p[3]:match("^%d+$") and now()-(C.replyAt[sender..":who"] or -100)>=3 then
+            C.replyAt[sender..":who"]=now(); FB.Net.Send("LHERE","WHISPER",sender,p[3])
+        end
+        return true
+    elseif kind=="LHERE" then
+        local q=C.who
+        if channel=="WHISPER" and q and q.untilTime and now()<=q.untilTime and p[3]==q.nonce and q.count<100 and not q.names[sender] then
+            q.names[sender]=true; q.count=q.count+1
+        end
+        return true
+    elseif (kind=="LEVEL" or kind=="LEVELSET") and (channel=="CHANNEL" or channel=="WHISPER") then
         local size
         if kind=="LEVELSET" then
             size=FB.Integer(p[5],2,C.maxBoards)

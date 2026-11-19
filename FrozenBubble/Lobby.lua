@@ -1,6 +1,7 @@
 -- Online game selection uses the 640 x 480 smg_choose_game screen.
 local _,FB=...
 local U,N,A,C=FB.UI,FB.Net,FB.Arena,FB.Community
+local function chatMode(mode) return mode=="chat" or mode=="roomChat" end
 local locale=GetLocale and GetLocale()
 local localeFont=(locale=="koKR" or locale=="zhCN" or locale=="zhTW") and STANDARD_TEXT_FONT
 local font=localeFont or FB.media.."DejaVuSans.ttf"
@@ -24,14 +25,20 @@ local function stopEntry(page)
 end
 local function enter(page,mode)
     page.entryMode=mode
-    local chat=mode=="chat"
-    page.prompt:SetText(chat and "Say:" or "Player-Realm:")
+    local chat=chatMode(mode)
+    if mode=="roomChat" and page.fbDraftRoom~=N.match then
+        page.fbDraftRoom=N.match; page.roomSent={}; page.drafts.roomChat=nil
+    end
+    page.history=mode=="roomChat" and page.roomSent or page.sent
+    local channel=mode=="chat" and page.fbActiveRoom
+    page.prompt:SetText(mode=="roomChat" and "Room:" or channel and "Channel:" or chat and "Say:" or "Player-Realm:")
     page.input:ClearAllPoints()
-    page.input:SetPoint("TOPLEFT",chat and 115 or 175,-318)
-    page.input:SetWidth(chat and 480 or 420)
+    local left=channel and 140 or chat and 121 or 175
+    page.input:SetPoint("TOPLEFT",left,-318)
+    page.input:SetWidth(595-left)
     page.input:SetMaxBytes(chat and 160 or 100)
     page.input:SetText(page.drafts[mode] or ""); page.prompt:Show(); page.input:Show(); page.input:SetFocus()
-    page.historyIndex=#page.sent+1
+    page.historyIndex=#page.history+1
 end
 local function addLog(frame,line)
     frame:AddMessage(line,1,1,1)
@@ -65,21 +72,29 @@ function U:BuildLobby(text)
             if p.entryMode then p.drafts[p.entryMode]=box:GetText() end
         end)
         p.input:SetScript("OnEscapePressed",function() stopEntry(p) end)
+        p.input:SetScript("OnTabPressed",function(box)
+            if not chatMode(p.entryMode) then return end
+            local old=box:GetText()
+            local cursor=box:GetCursorPosition()
+            local completed=FB.LobbyCommands.Complete(old:sub(1,cursor),p.entryMode=="roomChat" and p.fbDraftRoom or nil)
+            if #completed+#old-cursor<=160 then box:SetText(completed..old:sub(cursor+1)); box:SetCursorPosition(#completed) end
+        end)
         p.input:SetScript("OnArrowPressed",function(box,key)
-            if p.entryMode~="chat" or key~="UP" and key~="DOWN" then return end
-            if p.historyIndex==#p.sent+1 then p.unsent=box:GetText() end
-            p.historyIndex=FB.Clamp(p.historyIndex+(key=="UP" and -1 or 1),1,#p.sent+1)
-            box:SetText(p.sent[p.historyIndex] or p.unsent or "")
+            if not chatMode(p.entryMode) or key~="UP" and key~="DOWN" then return end
+            if p.historyIndex==#p.history+1 then p.unsent=box:GetText() end
+            p.historyIndex=FB.Clamp(p.historyIndex+(key=="UP" and -1 or 1),1,#p.history+1)
+            box:SetText(p.history[p.historyIndex] or p.unsent or "")
             box:SetCursorPosition(#box:GetText())
         end)
         p.input:SetScript("OnEnterPressed",function(box)
             if InCombatLockdown() or self.inactive then return end
             local mode,value=p.entryMode,box:GetText()
-            if mode=="chat" then
-                local ok,err=C.Say(value)
+            if chatMode(mode) then
+                if mode=="roomChat" and (not p.fbDraftRoom or p.fbDraftRoom~=N.match) then stopEntry(p); return end
+                local ok,err=FB.LobbyCommands.Submit(value,mode=="roomChat" and p.fbDraftRoom or nil)
                 if not ok then C.Log(err); return end
-                p.sent[#p.sent+1]=value; if #p.sent>32 then table.remove(p.sent,1) end
-                p.historyIndex=#p.sent+1; p.unsent=""; box:SetText(""); return
+                p.history[#p.history+1]=value; if #p.history>32 then table.remove(p.history,1) end
+                p.historyIndex=#p.history+1; p.unsent=""; box:SetText(""); return
             elseif mode=="challenge" then
                 if not N.Challenge(value) then return end
             elseif mode=="join" then
@@ -100,11 +115,14 @@ function U:BuildLobby(text)
         p:SetScript("OnKeyDown",function(panel,key)
             if InCombatLockdown() then return end
             local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
-            local used=active and (key=="UP" or key=="DOWN" or key=="ENTER" or key=="NUMPADENTER" or key=="ESCAPE"
+            local current=p.byID[p.selected]
+            local rule=current and current.available and (current.id=="limit" or current.id=="chains" or current.id=="continue" or current.id=="targeting")
+            local adjust=rule and (key=="LEFT" or key=="RIGHT")
+            local digit=rule and current.id=="limit" and (key:match("^%d$") or key:match("^NUMPAD(%d)$"))
+            local used=active and (adjust or digit or key=="UP" or key=="DOWN" or key=="ENTER" or key=="NUMPADENTER" or key=="ESCAPE"
                 or key=="PAGEUP" or key=="PAGEDOWN")
             panel:SetPropagateKeyboardInput(not used)
             if not used then return end
-            local current=p.byID[p.selected]
             if key=="UP" or key=="DOWN" then
                 local step=key=="UP" and -1 or 1
                 local i=current and current.index+step or 1
@@ -115,7 +133,10 @@ function U:BuildLobby(text)
             elseif key=="PAGEUP" or key=="PAGEDOWN" then scroll(p,key=="PAGEUP")
             elseif not self.keys[key] then
                 self.keys[key]=true
-                if key=="ESCAPE" then back(p) else activate(p,current) end
+                if key=="ESCAPE" then back(p)
+                elseif digit then A.SetRule("versusLimit",tonumber(digit))
+                elseif adjust then activate(p,current,current.id=="limit" and key=="LEFT" and "RightButton" or "LeftButton")
+                else activate(p,current) end
             end
         end)
     end
@@ -152,7 +173,8 @@ end
 local function listPlayers(page,rooms)
     local names={}
     for name,item in pairs(rooms and A.rooms or N.peers) do
-        if rooms and item.count<5 or not rooms and item.queued then names[#names+1]=name end
+        local hidden=rooms and A.hiddenRoom and A.hiddenRoom.host==name and A.hiddenRoom.id==item.id
+        if rooms and item.count<5 and not hidden or not rooms and item.queued then names[#names+1]=name end
     end
     table.sort(names)
     local pages=math.max(1,math.ceil(#names/5))
@@ -195,7 +217,17 @@ function U:RefreshLobby()
     local free=not m and not N.queue
     local selected=p.selected
     p.byID={}; p.count=0
-    add(p,"chat","Chat",function() enter(p,"chat") end)
+    local activeRoom=room and room.phase=="room" and room or nil
+    local supported=A.CanChat(activeRoom)
+    if p.fbActiveRoom~=activeRoom then
+        if chatMode(p.entryMode) then stopEntry(p) end
+        p.fbActiveRoom=activeRoom
+        selected=supported and "roomChat" or "chat"
+    elseif p.entryMode=="roomChat" and not supported then stopEntry(p) end
+    if activeRoom then
+        add(p,"roomChat",supported and "Room chat" or "Room chat requires alpha.38 for all players",function() enter(p,"roomChat") end,supported)
+        add(p,"chat","Public channel chat",function() enter(p,"chat") end)
+    else add(p,"chat","Chat",function() enter(p,"chat") end) end
     if C.state~="ready" then
         add(p,"channel",C.state=="manual" and "Retry addon delivery" or ("Join "..C.name), C.Join)
     end
@@ -251,7 +283,7 @@ function U:RefreshLobby()
     add(p,"back",rooms and "Back to multiplayer" or "Main menu",function() back(p) end)
     for i=p.count+1,#p.rows do p.rows[i]:Hide() end
     local nextRow=p.byID[selected]
-    p.selected=nil; selectRow(p,nextRow and nextRow.available and nextRow or p.rows[1])
+    p.selected=nil; selectRow(p,nextRow and nextRow.available and nextRow or p.byID.chat)
     if room and #room.names>0 then
         local names={}
         for i,name in ipairs(room.names) do names[i]=room.players[name].label end

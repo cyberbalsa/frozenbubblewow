@@ -310,7 +310,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","HUDArt","NameArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","LobbyCommands","MediaInfo","HUDArt","NameArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -722,7 +722,7 @@ test("lobby chat uses the community channel and displays one escaped copy per ec
     assert(not c.Say("before joining")); c.Join(); peer.Community.Join(); tick(2)
     local message="Anyone for a round? |cffffffff"
     assert(c.Say(message)); tick(1)
-    local expected=host.PlayerName().."> Anyone for a round? ||cffffffff"
+    local expected="<"..host.PlayerName().."> Anyone for a round? ||cffffffff"
     eq(c.log[1],expected); eq(peer.Community.log[1],expected); eq(#c.log,1)
     peer.Net.Receive(peer.PREFIX,"1|LOBBY|wrong channel","GUILD",host.PlayerName())
     peer.Net.Receive(peer.PREFIX,"1|LOBBY|bad\nline","CHANNEL",host.PlayerName())
@@ -730,7 +730,7 @@ test("lobby chat uses the community channel and displays one escaped copy per ec
     c.Blocked(); assert(c.Say("meet | at 5")); eq(host.lastManual,"FBF1|1|LOBBY|meet | at 5")
     peer.Community.Chat(host.lastManual,host.PlayerName(),"General"); eq(#peer.Community.log,1)
     peer.Community.Chat(host.lastManual,host.PlayerName(),c.name)
-    eq(peer.Community.log[2],host.PlayerName().."> meet || at 5")
+    eq(peer.Community.log[2],"<"..host.PlayerName().."> meet || at 5")
     assert(not c.Say(string.rep("x",161))); assert(not c.Say("   "))
     for i=1,101 do c.Log(tostring(i)) end
     eq(#c.log,100); eq(c.log[1],"*** 2")
@@ -750,6 +750,80 @@ test("the host can revise all four room rules immediately before starting",funct
     end
     host.Arena.SetRule("versusLimit",1); eq(host.Net.match.limit,12)
     host.Arena.Leave(); tick(2)
+end)
+test("room chat and emotes reach only seated players, with names resolved against the right roster",function()
+    local host,guest,third,outside=client("TalkHost"),client("SnowOne"),client("SnowTwo"),client("Outsider")
+    for _,c in ipairs({host,guest,third,outside}) do c.Community.Join() end
+    host.Arena.Host(); guest.Arena.Join(host.PlayerName()); third.Arena.Join(host.PlayerName()); tick(5)
+    local m=guest.Net.match
+    local nobody=#outside.Community.log
+    assert(guest.LobbyCommands.Submit("/me waves | hello",m)); tick(2)
+    for _,c in ipairs({host,guest,third}) do eq(c.Community.log[#c.Community.log],"[Room] * "..guest.PlayerName().." waves || hello") end
+    eq(#outside.Community.log,nobody)
+    local before=#guest.Community.log
+    guest.Net.Receive(guest.PREFIX,"1|ARLINE|"..m.room.."|"..m.revision.."|1|foreign","WHISPER",outside.PlayerName())
+    eq(#guest.Community.log,before)
+    eq(guest.LobbyCommands.Complete("Sn",m),"Snow"); eq(guest.LobbyCommands.Complete("Tell Talk",m),"Tell "..host.PlayerName().." ")
+    eq(guest.LobbyCommands.Complete("talkh",m),host.PlayerName()..": ")
+    assert(not guest.LobbyCommands.Submit("/kick SnowTwo",m)); assert(not guest.LobbyCommands.Submit("/unknown",m))
+    assert(guest.LobbyCommands.Submit("/list",m)); assert(guest.Community.log[#guest.Community.log]:find(third.PlayerName(),1,true))
+    assert(guest.LobbyCommands.Submit("Public too",nil)); tick(2)
+    eq(outside.Community.log[#outside.Community.log],"<"..guest.PlayerName().."> Public too")
+    host.Arena.Leave(); tick(2)
+    assert(not guest.LobbyCommands.Submit("old draft",m)); eq(#outside.Community.log,nobody+1)
+end)
+test("mixed-version rooms keep their seats and disable private chat",function()
+    local host,guest=client("CrossHost"),client("CrossGuest")
+    host.Arena.Host(); guest.Arena.Join(host.PlayerName()); tick(5)
+    local m=host.Net.match
+    assert(guest.Arena.CanChat(guest.Net.match))
+    host.Net.Receive(host.PREFIX,"1|AJOIN|"..m.room.."|123-1","WHISPER","Older-TestRealm")
+    tick(3)
+    eq(#m.names,3); assert(not host.Arena.CanChat(m))
+    assert(not guest.Arena.CanChat(guest.Net.match)); assert(not guest.LobbyCommands.Submit("team only",guest.Net.match))
+    host.Net.Receive(host.PREFIX,"1|ALEAVE|"..m.room.."|123-1","WHISPER","Older-TestRealm")
+    tick(3); assert(guest.Arena.CanChat(guest.Net.match)); host.Arena.Leave(); tick(2)
+    guest.Arena.Join("Older-TestRealm")
+    local join=guest.Net.match
+    guest.Net.Receive(guest.PREFIX,"1|ASEATS|889-1|"..join.nonce.."|1|2|1|1|Older-TestRealm,"..guest.PlayerName().."|3","WHISPER","Older-TestRealm")
+    eq(join.phase,"room"); assert(not guest.Arena.CanChat(join)); guest.Arena.Leave(); tick(2)
+end)
+test("a kicked seat is reclaimed after lost delivery and stale packets cannot close a fresh join",function()
+    local host,guest,third=client("KickHost"),client("Floe"),client("Glacier")
+    host.Arena.Host(); guest.Arena.Join(host.PlayerName()); third.Arena.Join(host.PlayerName()); tick(5)
+    local room,join=host.Net.match,guest.Net.match
+    assert(not host.LobbyCommands.Submit("/kick KickHost",room))
+    drops.ACLOSE=true
+    assert(host.LobbyCommands.Submit("/kick floe practice | run",room)); eq(#room.names,2)
+    host.Net.Receive(host.PREFIX,"1|AJOIN|"..room.room.."|"..join.nonce,"WHISPER",guest.PlayerName())
+    eq(#room.names,2); tick(8)
+    eq(guest.Net.match,nil); eq(guest.Arena.hiddenRoom.id,room.room); assert(guest.Net.notice:find("practice | run",1,true))
+    eq(#third.Net.match.names,2)
+    guest.Arena.Join(host.PlayerName()); tick(5)
+    local again=guest.Net.match; eq(again.phase,"room"); assert(again.nonce~=join.nonce)
+    guest.Net.Receive(host.PREFIX,"1|ACLOSE|"..room.room.."|"..join.nonce.."|late","WHISPER",host.PlayerName())
+    eq(guest.Net.match,again)
+    assert(host.LobbyCommands.Submit("/autokick Floe members only",room)); tick(5); eq(guest.Net.match,nil)
+    guest.Arena.Join(host.PlayerName()); tick(5); eq(guest.Net.match,nil); eq(#room.names,2)
+    assert(host.LobbyCommands.Submit("/autokick",room)); assert(host.Community.log[#host.Community.log]:find(guest.PlayerName(),1,true))
+    assert(host.LobbyCommands.Submit("/autokick Floe",room)); guest.Arena.Join(host.PlayerName()); tick(5)
+    eq(#room.names,3); eq(guest.Net.match.phase,"room"); eq(guest.db.losses,0)
+    host.Arena.Leave(); tick(2)
+end)
+test("the public player list discovers open lobbies through a correlated whisper reply",function()
+    local caller,listener,absent=client("Lister"),client("SilentObserver"),client("AbsentObserver")
+    for _,c in ipairs({caller,listener,absent}) do c.Community.Join() end
+    tick(2)
+    listener.UI={screen="lobby",RefreshLobby=function() end,frame={IsShown=function() return true end}}
+    assert(caller.LobbyCommands.Submit("/list")); tick(5)
+    local q=caller.Community.who
+    assert(q.names[listener.PlayerName()]); eq(q.names[absent.PlayerName()],nil); eq(q.untilTime,nil)
+    eq(caller.LobbyCommands.Complete("Silent"),listener.PlayerName()..": ")
+    caller.Net.Receive(caller.PREFIX,"1|LHERE|"..q.nonce,"WHISPER",absent.PlayerName()); eq(q.count,2)
+    caller.Community.Blocked(); assert(caller.LobbyCommands.Submit("/list"))
+    listener.Community.Chat(caller.lastManual,caller.PlayerName(),caller.Community.name); tick(5)
+    assert(caller.Community.who.names[listener.PlayerName()])
+    listener.UI=nil
 end)
 test("level validation accepts original floating groups and rejects out-of-editor rows",function()
     local g=E.New({},1); g.grid={[17]=1}; assert(a.Community.Validate(g:Pack()))
@@ -2377,7 +2451,20 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local listing=p.byID[host.PlayerName()..":"..host.Net.match.room]
         listing.scripts.OnEnter(); press("ENTER"); tick(5)
         eq(fb.Net.match.peer,host.PlayerName()); eq(fb.Net.match.phase,"room")
-        eq(p.byID.chains.available,false); fb.Arena.Leave(); tick(1); host.Arena.Leave(); tick(1)
+        eq(p.byID.chains.available,false); eq(p.selected,"roomChat")
+        press("ENTER"); eq(p.entryMode,"roomChat"); eq(p.input:GetText(),"")
+        p.input:SetText("Private draft"); p.input.scripts.OnTextChanged(p.input); p.input.scripts.OnEscapePressed()
+        p.byID.chat.scripts.OnClick(); eq(p.entryMode,"chat"); assert(p.input:GetText()~="Private draft")
+        p.byID.roomChat.scripts.OnClick(); eq(p.input:GetText(),"Private draft")
+        p.input:SetText("Lod"); p.input.GetCursorPosition=function() return 3 end
+        p.input.scripts.OnTabPressed(p.input); eq(p.input:GetText(),host.PlayerName()..": "); p.input.GetCursorPosition=nil
+        p.input:SetText("/me waits"); p.input.scripts.OnEnterPressed(p.input); tick(2)
+        eq(host.Community.log[#host.Community.log],"[Room] * "..fb.PlayerName().." waits")
+        fb.Arena.Leave(); tick(1); assert(not p.input.shown); eq(p.selected,"chat"); host.Arena.Leave(); tick(1)
+        local oldLimit=fb.db.versusLimit
+        p.byID.limit.scripts.OnEnter(); press("NUMPAD7"); eq(fb.db.versusLimit,7)
+        press("LEFT"); eq(fb.db.versusLimit,6); press("9"); eq(fb.db.versusLimit,9)
+        fb.Arena.SetRule("versusLimit",oldLimit)
         fb.Arena.rooms=rooms; p.page=1
         local rival=client("Duelist"); rival.db.versusLimit=12; rival.db.versusChains=true
         rival.Net.SetQueue(true); tick(2); ui:ShowLobby()

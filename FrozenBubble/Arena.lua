@@ -2,7 +2,7 @@
 -- simulates their own shots and sends cumulative penalties to each opponent.
 local _, FB=...
 local N=FB.Net
-local A={rooms={}}
+local A={rooms={},autoKick={}}
 FB.Arena=A
 local unpackFields=unpack or table.unpack
 local function validName(s)
@@ -42,6 +42,32 @@ local function seat(m,name)
     end
     m.players[name]={index=#m.names,name=name,short=short,label=label,wins=0,seen=GetTime()}
 end
+local function roomLine(m,author,message)
+    FB.Community.Log(message,author,true)
+    if author~=m.me and FB.UI and (FB.UI.screen=="rooms" or FB.UI.screen=="lobby") then FB.Sound("chatted") end
+end
+local function relay(m,author,message)
+    if not N.CanQueue(#m.names-1) then return false end
+    -- Seat numbers fit alongside a full chat line even with long realm names.
+    if not A.Fan("ARLINE",m.room,m.revision,m.players[author].index,message) then return false end
+    roomLine(m,author,message)
+    return true
+end
+function A.CanChat(m)
+    if not m or not m.arena or m.phase~="room" then return false end
+    if not m.host then return m.roomChatReady==true end
+    for _,v in pairs(m.players) do if v.name~=m.me and not v.canChat then return false end end
+    return true
+end
+function A.Say(m,message)
+    if m~=N.match or not m or not m.arena or m.phase~="room" then return nil,"The room has changed." end
+    if not A.CanChat(m) then return nil,"Room chat requires alpha.38 or later for everyone in the room." end
+    if InCombatLockdown() or not FB.Community.ValidChat(message) then return nil,"Enter a room message of up to 160 bytes outside combat." end
+    local ok
+    if m.host then ok=relay(m,m.me,message) else ok=send(m.peer,"ARSAY",m.room,m.nonce,message) end
+    if ok then return true end
+    return nil,"Room chat is busy. Press Enter to retry."
+end
 local function announce(m,manual)
     local count=m.phase=="room" and #m.names or 0
     local code=FB.Series.Code(m.chainReaction,m.limit)
@@ -78,7 +104,7 @@ function A.Join(host)
     local listing=A.rooms[host]
     local m=room(host,listing and listing.id or "*")
     m.nonce=serial()
-    send(host,"AJOIN",m.room,m.nonce); m.pulse=GetTime()
+    send(host,"AJOIN",m.room,m.nonce,1); m.pulse=GetTime()
     N.Notify("Joining "..host.."'s room…")
 end
 function A.Expire(t)
@@ -88,7 +114,7 @@ local function seats(m,name)
     local words={}
     local code=FB.Series.Code(m.chainReaction,m.limit)
     local function part(first)
-        send(name,"ASEATS",m.room,m.players[name].nonce,m.revision,#m.names,first,code,table.concat(words,","),(m.keepRoom and 1 or 0)+(m.targeting and 2 or 0))
+        send(name,"ASEATS",m.room,m.players[name].nonce,m.revision,#m.names,first,code,table.concat(words,","),(m.keepRoom and 1 or 0)+(m.targeting and 2 or 0),A.CanChat(m) and 1 or 0)
     end
     local first,length=1,0
     for i,n in ipairs(m.names) do
@@ -121,8 +147,17 @@ local function acceptSeats(m,p)
     for i=1,count do seat(m,m.seats[i]) end
     m.revision,m.room,m.phase,m.limit,m.chainReaction=rev,p[3],"room",limit,chains
     m.keepRoom=flags%2==1; m.targeting=flags>=2
+    m.roomChatReady=p[11]=="1"
     m.lastHost=GetTime(); m.pulse=-100
     N.Notify(samePlayers and "The host updated the room rules." or ("In "..m.peer.."'s room. "..count.." of 5 seats filled."))
+    local pending=m.pendingLines or {}
+    m.pendingLines=nil
+    for _,line in ipairs(pending) do
+        if line.revision==rev and m.names[line.seat] then roomLine(m,m.names[line.seat],line.text)
+        elseif line.revision>rev then
+            m.pendingLines=m.pendingLines or {}; table.insert(m.pendingLines,line)
+        end
+    end
 end
 local function close(m,reason)
     if N.match~=m then return end
@@ -253,12 +288,12 @@ local function lost(m,v)
     FB.Recordings.OnlineEvent(m,"loss",v.index)
     A.ApplyLoss(m,v,FB.Sound)
 end
-local function depart(m,v)
+local function depart(m,v,reason)
     if m.phase=="room" then
         table.remove(m.names,v.index); m.players[v.name]=nil
         for i,n in ipairs(m.names) do m.players[n].index=i end
         m.revision=m.revision+1; m.pulse=-100; m.advert=-100
-        N.Notify(v.name.." left the room.")
+        N.Notify(reason or (v.name.." left the room."))
     elseif m.keepRoom then
         if not v.left then
             FB.Recordings.OnlineEvent(m,"left",v.index)
@@ -269,6 +304,23 @@ local function depart(m,v)
             end
         end
     else A.Leave(v.name.." left the room.") end
+end
+function A.Kick(m,name,reason)
+    if not m or N.match~=m or not m.host or m.phase~="room" then return nil,"Only the host can remove players before a round." end
+    local v=m.players[name]
+    if not v or name==m.me then return nil,"Choose another player in this room." end
+    reason=reason or ""
+    if reason~="" and (not FB.Community.ValidChat(reason) or #reason>120) then return nil,"Use a reason of up to 120 bytes." end
+    m.removed=m.removed or {}
+    m.removed[name..":"..v.nonce]={reason=reason,time=GetTime()}
+    send(name,"ACLOSE",m.room,v.nonce,reason)
+    depart(m,v,name.." was removed from the room."..(reason~="" and (" "..reason) or ""))
+    return true
+end
+local function kicked(m,reason)
+    if reason and reason~="" and (not FB.Community.ValidChat(reason) or #reason>120) then return end
+    A.hiddenRoom={host=m.peer,id=m.room}
+    FB.Sound("cancel"); close(m,"The host removed you from the room."..(reason and reason~="" and (" "..reason) or ""))
 end
 local function syncDepartures(m,mask)
     for _,v in pairs(m.players) do
@@ -305,7 +357,7 @@ local function pulse(m)
                 else send(v.name,"AHOST",m.room,m.revision,m.round,m.mask or 0,m.winner or -1,(m.requested or m.wantNext) and 1 or 0,m.leftMask) end
             end
         end
-    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce)
+    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce,1)
     else
         send(m.peer,"APULSE",m.room,m.nonce,m.revision,m.round,m.phase,
             m.players[m.me].lost and 1 or 0,m.mask or 0,m.wantNext and 1 or 0)
@@ -327,16 +379,44 @@ function A.Receive(kind,p,channel,sender)
     if m.phase=="joining" and (kind=="ASEATS" or kind=="AFULL") and sender:lower()==m.peer:lower() then m.peer=sender end
     if kind=="AJOIN" and m.host and m.phase=="room" and (p[3]=="*" or m.room==p[3]) then
         if not validName(sender) or not p[4] or not p[4]:match("^%d+%-%d+$") or #p[4]>32 then return true end
+        local removed=m.removed and m.removed[sender..":"..p[4]]
+        local excluded=A.autoKick[sender:lower()]
+        if removed or excluded then
+            send(sender,"AFULL",p[4],"KICK",m.room,(removed or excluded).reason)
+            return true
+        end
         local v=m.players[sender]
         if not v and #m.names>=5 then send(sender,"AFULL",p[4]); return true end
         if not v then
             seat(m,sender); v=m.players[sender]; m.revision=m.revision+1; m.advert=-100
+            v.canChat=p[5]=="1"
             N.Notify(sender.." joined the room.")
         end
         v.nonce=p[4]; v.seen=GetTime(); seats(m,sender); m.pulse=-100
     elseif kind=="ASEATS" and sender==m.peer then acceptSeats(m,p)
-    elseif kind=="AFULL" and sender==m.peer and m.phase=="joining" and p[3]==m.nonce then close(m,"That room is full.")
-    elseif kind=="ACLOSE" and not m.host and sender==m.peer and p[3]==m.room then close(m,"The host closed the room.")
+    elseif kind=="AFULL" and sender==m.peer and m.phase=="joining" and p[3]==m.nonce then
+        if p[4]=="KICK" and p[5] and (m.room=="*" or m.room==p[5]) then m.room=p[5]; kicked(m,table.concat(p,"|",6))
+        else close(m,"That room is full.") end
+    elseif kind=="ACLOSE" and not m.host and sender==m.peer and p[3]==m.room then
+        if not p[4] then close(m,"The host closed the room.")
+        elseif p[4]==m.nonce then kicked(m,table.concat(p,"|",5)) end
+    elseif kind=="ARSAY" and m.host and m.phase=="room" and p[3]==m.room then
+        local v=m.players[sender]; local message=table.concat(p,"|",5)
+        if v and v.nonce==p[4] and FB.Community.ValidChat(message) then
+            if not A.CanChat(m) or not relay(m,sender,message) then send(sender,"ARCHATBUSY",m.room,v.nonce) end
+        end
+    elseif kind=="ARCHATBUSY" and sender==m.peer and p[3]==m.room and p[4]==m.nonce then
+        FB.Community.Log("Room chat is busy. Recall your message with Up to retry.")
+    elseif kind=="ARLINE" and not m.host and sender==m.peer and m.phase=="room" and p[3]==m.room then
+        local rev,index=FB.Integer(p[4],m.revision,1000000),FB.Integer(p[5],1,5)
+        local line=table.concat(p,"|",6)
+        if rev and index and FB.Community.ValidChat(line) then
+            if rev==m.revision and m.names[index] then roomLine(m,m.names[index],line)
+            elseif rev>m.revision then
+                m.pendingLines=m.pendingLines or {}
+                if #m.pendingLines<32 then table.insert(m.pendingLines,{revision=rev,seat=index,text=line}) end
+            end
+        end
     elseif kind=="ALEAVE" and m.host and m.players[sender] and p[4]==m.players[sender].nonce and (p[3]==m.room or p[3]=="*") then
         depart(m,m.players[sender])
     elseif kind=="APREP" and not m.host and sender==m.peer and p[3]==m.room and tonumber(p[4])==m.revision then
@@ -347,6 +427,8 @@ function A.Receive(kind,p,channel,sender)
         end
     elseif kind=="APULSE" and m.host and p[3]==m.room then
         local v=m.players[sender]
+        local removed=p[4] and m.removed and m.removed[sender..":"..p[4]]
+        if removed then send(sender,"ACLOSE",m.room,p[4],removed.reason); return true end
         if v and not v.left and v.nonce==p[4] then
             v.seen=GetTime(); v.rev=FB.Integer(p[5],0,m.revision) or 0
             if tonumber(p[6])==m.round and v.rev==m.revision then
@@ -396,6 +478,9 @@ function A.Update(m,dt,t,stepped)
     if m.phase=="joining" and t-m.since>22 then close(m,"Room unavailable."); return end
     if m.phase~="joining" and not m.host and t-m.lastHost>35 then close(m,"Lost contact with the host."); return end
     if m.host then
+        if m.removed then
+            for key,entry in pairs(m.removed) do if t-entry.time>45 then m.removed[key]=nil end end
+        end
         for _,v in pairs(m.players) do
             if v.name~=m.me and not v.left and t-v.seen>35 then depart(m,v); return end
         end

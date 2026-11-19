@@ -12,6 +12,7 @@ end
 N.Notify=notify
 local unpackFields=unpack or table.unpack
 local function packet(kind,...) local a={"1",kind,...}; for i,v in ipairs(a) do a[i]=tostring(v) end; return table.concat(a,"|") end
+function N.CanQueue(count) return #N.outbox+count<=64 end
 function N.Send(kind, channel, target, ...)
     local message=packet(kind,...)
     if #message>240 then return false end
@@ -25,7 +26,7 @@ function N.Send(kind, channel, target, ...)
             end
         end
         if #N.outbox>=48 then return false end
-    elseif #N.outbox>=64 then return false end
+    elseif not N.CanQueue(1) then return false end
     -- Coalesce snapshots and advertisements: a slow network must not build a stale backlog.
     if kind=="STATE" or kind=="ASTATE" or kind=="QUEUE" then
         for i=#N.outbox,1,-1 do

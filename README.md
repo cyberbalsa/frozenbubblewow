@@ -72,6 +72,8 @@ Open Multiplayer and join `FrozenBubbleForever`. This dedicated in-game channel 
 
 On the multiplayer map, select an action with the mouse or with Up, Down and Enter. Choose **Chat**, type a message, and press Enter to send it to the channel. Up recalls a sent line and Down restores the text you were typing. Escape leaves the input. Page Up and Page Down scroll the log. In manual mode, sending posts a visible lobby packet to the dedicated channel.
 
+In an arena waiting room, **Room chat** sends messages to the seated players through the host. Everyone in the room needs alpha.38 or later for private chat. Choose **Public channel chat** to talk to the whole channel. Each input keeps its own draft and history. Tab completes player names. Type `/me waves` for an action, `/list` to see who is there, or `/help` for commands. Hosts can use `/kick Player-Realm [reason]` to remove a guest and `/autokick Player-Realm [reason]` to keep them out of rooms they host for the rest of the session. Repeat `/autokick Player-Realm` to let them rejoin.
+
 The addon probes channel delivery instead of treating a successful API return as proof of delivery. If the probe fails, it shows manual mode. **Announce queue**, **Share my best**, **Browse community**, and **Publish** send normal channel discovery packets from your click. These are visible text messages in the dedicated channel; the addon does not post to General or Trade, or automate protected normal chat sends. Recipients with the addon parse them into the lobby/library. Normal chat announcements are rate-limited to one per two seconds. Automatic addon traffic is bounded and throttled.
 
 **Channel scope is a client/server limitation.** Developers have reported blocked custom-channel addon messages and separate channel visibility across Forever's internal servers. Sharing a ruleset does not guarantee that two players can see each other. A direct Player-Realm challenge may work when public discovery does not. These limitations cannot be fixed by changing an addon.
@@ -90,7 +92,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.37` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.38` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 
