@@ -7,13 +7,14 @@ end
 
 -- Render the variable-width SDL bitmap font on signs. Player-supplied names
 -- outside its uppercase alphabet use the client's font at the same position.
-local function sign(parent,x,y,width,text)
+local function sign(parent,x,y,width,text,align,blue)
     local f=CreateFrame("Frame",nil,parent)
     f:SetSize(width,38); f:SetPoint("TOPLEFT",x,-y); f:EnableMouse(false)
-    local fallback=text(f,"",0,3,16,width); fallback:SetJustifyH("CENTER")
+    local fallback=text(f,"",0,3,16,width); fallback:SetJustifyH(align or "CENTER")
     local glyphs={}
     function f:GetText() return self.fbSignValue or "" end
     function f:SetText(value)
+        if self.fbSignValue==value then return end
         self.fbSignValue=value or ""
         value=self.fbSignValue:upper()
         local length=0
@@ -27,13 +28,15 @@ local function sign(parent,x,y,width,text)
         end
         fallback:Hide()
         local scale=math.min(1,width/math.max(1,length+6))
-        local pos=math.floor((width-length*scale)/2); local used=0
+        local space=width-length*scale
+        local pos=align=="LEFT" and 0 or align=="RIGHT" and math.floor(space) or math.floor(space/2)
+        local used=0
         for n=1,#value do
             local c=value:byte(n); local glyph=FB.EditorGlyphs[c==32 and 33 or c]
             if c~=32 then
                 used=used+1
                 local t=glyphs[used]
-                if not t then t=f:CreateTexture(nil,"ARTWORK"); t:SetTexture(FB.media.."Editor\\font.tga"); glyphs[used]=t end
+                if not t then t=f:CreateTexture(nil,"ARTWORK"); t:SetTexture(FB.media..(blue and "Editor\\font-hi.tga" or "Editor\\font.tga")); glyphs[used]=t end
                 t:ClearAllPoints(); t:SetPoint("TOPLEFT",pos-glyph[3]*scale,-(1-scale)*12)
                 t:SetSize((glyph[2]-glyph[1])*scale,38*scale)
                 t:SetTexCoord(glyph[1]/1024,glyph[2]/1024,1/64,39/64); t:Show()
@@ -128,7 +131,7 @@ function U:BuildEditor(text,button,input,fill)
         button(self.editorTools,option[1],18+(i-1)%2*155,47+math.floor((i-1)/2)*35,148,
             function() self:CloseEditorDialog(); action() end)
     end
-    self:BuildEditorBrowser(d,text)
+    self.editorBrowser=self:BuildSetBrowser(d,77,text,function(delta) self:BrowseEditorSet(delta) end)
 
     local prompt=self.panels.editorPrompt
     text(prompt,"Save your changes before opening another set?",0,54,20,340)
@@ -136,8 +139,13 @@ function U:BuildEditor(text,button,input,fill)
         local t=self.pendingEditor
         if not t then return end
         self.pendingEditor=nil
-        if save and not self:SaveEditor() then self:Panel("editor"); return end
-        self:StartEditor(t.id,t.fresh,t.index,true,t.title)
+        if save then
+            local id=self:SaveEditor()
+            if not id then self:Panel("editor"); return end
+            -- Edited layouts have a new content ID when they replace an owned set.
+            if t.reload and t.id~="default-levelset" and not FB.db.custom[t.id] then t.id=id end
+        end
+        self:StartEditor(t.id,t.fresh,t.index,true,t.title,t.reload)
     end
     button(prompt,"Save and open",0,150,150,function() proceed(true) end)
     button(prompt,"Discard edits",165,150,150,function() proceed(false) end)
@@ -151,52 +159,71 @@ function U:SelectEditorColor(color)
     self.brushSample:SetShown(color>0); self.editorDirty=true
 end
 
-function U:BuildEditorBrowser(d,text)
-    local b=CreateFrame("Frame",nil,d); b:SetSize(322,120); b:SetPoint("TOPLEFT",9,-77); self.editorBrowser=b
+function U:BuildSetBrowser(d,y,text,move)
+    local b=CreateFrame("Frame",nil,d); b:SetSize(322,120); b:SetPoint("TOPLEFT",9,-y)
     image(b,"files",0,0); image(b,"scroll",217,0)
-    b:EnableMouseWheel(true); b:SetScript("OnMouseWheel",function(_,delta) self:BrowseEditorSet(-delta) end)
-    self.editorRows={}
+    b:EnableMouseWheel(true); b:SetScript("OnMouseWheel",function(_,delta) move(-delta) end)
+    b.rows={}
     for i=1,4 do
         local line=i
-        local row=hit(b,3,10+25*(i-1),212,23,function() self:BrowseEditorSet(self.fileOffset+line-self.fileIndex) end)
+        local row=hit(b,3,10+25*(i-1),212,23,function() move(b.offset+line-b.index) end)
         local highlight=image(row,"selected",0,0,nil,nil,"BACKGROUND")
-        local label=text(row,"",5,3,15,201)
-        self.editorRows[i]={row=row,highlight=highlight,label=label}
+        local label=sign(row,7,-2,201,text,"LEFT",true)
+        b.rows[i]={row=row,highlight=highlight,label=label}
     end
     for i,kind in ipairs({"up","down"}) do
         local step=i==1 and -1 or 1
-        local arrow=hit(b,220,i==1 and 2 or 97,15,21,function() self:BrowseEditorSet(step) end)
+        local arrow=hit(b,220,i==1 and 2 or 97,15,21,function() move(step) end)
         image(arrow,kind,0,0)
     end
-    local preview=CreateFrame("Frame",nil,b); self.filePreview=preview
+    local preview=CreateFrame("Frame",nil,b); b.preview=preview
     preview:SetSize(84,117); preview:SetPoint("TOPLEFT",236,-2)
     local bg=A.Image(preview,"editor-background",0,0,84,117,"BACKGROUND")
     bg:SetTexCoord(148/1024,484/1024,0,468/512)
-    self.fileBubbles={}
+    b.bubbles={}
     for row=1,10 do for col=1,E.Columns(row) do
         local x,y=E.Position(row,col)
         local t=preview:CreateTexture(nil,"ARTWORK"); t:SetSize(8,8)
         t:SetPoint("CENTER",preview,"TOPLEFT",(190-148+x)/4,-(44+y)/4)
-        self.fileBubbles[E.Key(row,col)]=t
+        b.bubbles[E.Key(row,col)]=t
     end end
+    return b
 end
 
-function U:BrowseEditorSet(delta)
-    local files=self.editorFiles
-    self.fileIndex=math.max(1,math.min(#files,self.fileIndex+delta))
-    self.fileOffset=math.max(0,self.fileIndex-4,math.min(self.fileOffset,self.fileIndex-1))
-    local selected=files[self.fileIndex]
-    for i,r in ipairs(self.editorRows) do
-        local file=files[self.fileOffset+i]
+local function showSelection(b,files,index,board)
+    b.index=index
+    b.offset=math.max(0,index-4,math.min(b.offset or 0,index-1))
+    local selected=files[index]
+    for i,r in ipairs(b.rows) do
+        local file=files[b.offset+i]
         r.row:SetShown(file~=nil); r.label:SetText(file and file.title or "")
         r.highlight:SetShown(file and file==selected or false)
     end
-    self.filePreview:SetShown(selected~=nil); self.editorOK:SetEnabled(selected~=nil)
-    local grid=selected and E.Unpack(selected.boards[1])
-    for key,t in pairs(self.fileBubbles) do
+    b.preview:SetShown(selected~=nil)
+    local grid=selected and E.Unpack(selected.boards[board])
+    for key,t in pairs(b.bubbles) do
         if grid and grid[key] then FB.SetBubbleTexture(t,grid[key]); t:Show() else t:Hide() end
     end
-    self.dialogMessage:SetText(not selected and "No saved sets to delete." or "")
+end
+
+local function savedSets(includeDefault,defaultFirst,ui)
+    local files={}
+    for id,item in pairs(FB.db.custom) do files[#files+1]={id=id,title=item.title,boards=FB.Community.Boards(item)} end
+    local stock=includeDefault and {id="default-levelset",title="default-levelset",boards=ui:DefaultEditorBoards()}
+    if stock and not defaultFirst then files[#files+1]=stock end
+    table.sort(files,function(a,b)
+        if a.title==b.title then return a.id<b.id end
+        return a.title<b.title
+    end)
+    if stock and defaultFirst then table.insert(files,1,stock) end
+    return files
+end
+
+function U:BrowseEditorSet(delta)
+    self.fileIndex=FB.Clamp(self.fileIndex+delta,1,math.max(1,#self.editorFiles))
+    showSelection(self.editorBrowser,self.editorFiles,self.fileIndex,1)
+    self.editorOK:SetEnabled(#self.editorFiles>0)
+    self.dialogMessage:SetText(#self.editorFiles==0 and "No saved sets to delete." or "")
 end
 
 local titles={help="HELP - KEY SHORTCUTS", tools="EDITOR TOOLS", jump="JUMP TO LEVEL", rename="LEVELSET NAME",
@@ -224,14 +251,8 @@ function U:EditorDialog(kind)
         self.dialogValue:SetFocus(); self.dialogValue:HighlightText()
         if kind=="jump" then self.dialogMessage:SetText("Choose a board from 1 to "..#self.editBoards..".") end
     elseif browser then
-        local files={}
-        if kind=="open" then files[1]={id="default-levelset",title="default-levelset",boards=self:DefaultEditorBoards()} end
-        for id,item in pairs(FB.db.custom) do files[#files+1]={id=id,title=item.title,boards=FB.Community.Boards(item)} end
-        table.sort(files,function(a,b)
-            if a.title==b.title then return a.id<b.id end
-            return a.title<b.title
-        end)
-        self.editorFiles,self.fileIndex,self.fileOffset=files,1,0
+        self.editorFiles=savedSets(kind=="open",false,self)
+        self.fileIndex,self.editorBrowser.offset=1,0
         self:BrowseEditorSet(0)
     elseif kind=="confirm" then self.dialogMessage:SetText(self.deleteFile.title)
     elseif kind=="quit" then self.dialogMessage:SetText("Save this set to your library? Escape keeps the editor open.") end
@@ -260,7 +281,7 @@ function U:AcceptEditorDialog()
         local file=self.editorFiles[self.fileIndex]
         if not file then return end
         if kind=="delete" then self.deleteFile=file; self:EditorDialog("confirm"); return end
-        self:CloseEditorDialog(); self:StartEditor(file.id,false,1); return
+        self:CloseEditorDialog(); self:StartEditor(file.id,false,1,false,nil,true); return
     elseif kind=="confirm" then
         FB.db.custom[self.deleteFile.id]=nil
         if self.editID==self.deleteFile.id then self.editID=nil; self:StoreEditorDraft() end
@@ -299,4 +320,112 @@ function U:EditorKey(panel,key)
     elseif key=="Z" then self:UndoEditor()
     elseif key=="Q" or key=="ESCAPE" then self:ExitEditor()
     else self:EditorDialog(key=="F1" and "help" or key=="J" and "jump" or "open") end
+end
+
+-- The desktop play dialog shares its four-row file browser with the editor.
+function U:PickSet(delta)
+    self.fbPickHold=nil
+    if not delta then
+        self.pickFiles=savedSets(true,true,self)
+        self.pickBrowser.offset=0
+        self.pickPosition,self.pickLevel=1,1
+    else
+        self.pickPosition=FB.Clamp(self.pickPosition+delta,1,#self.pickFiles)
+    end
+    local file=self.pickFiles[self.pickPosition]
+    self.pickID=file.id~="default-levelset" and file.id or nil
+    self.pickCount=#file.boards
+    self:SetPickLevel(self.pickLevel)
+end
+
+function U:SetPickLevel(value,typing)
+    self.pickLevel=FB.Clamp(math.floor(tonumber(value) or 1),1,self.pickCount)
+    if not typing then self.level:SetText(tostring(self.pickLevel)) end
+    self.pickNumber:SetText(tostring(self.pickLevel))
+    showSelection(self.pickBrowser,self.pickFiles,self.pickPosition,self.pickLevel)
+    for delta,arrow in pairs(self.pickArrows) do
+        arrow:SetEnabled(delta<0 and self.pickLevel>1 or delta>0 and self.pickLevel<self.pickCount)
+    end
+end
+
+function U:BuildLevelPicker(text,input)
+    local p=self.panels.pick
+    p:ClearAllPoints(); p:SetScale(1.6); p:SetSize(341,280); p:SetPoint("CENTER",self.frame,"CENTER")
+    A.Image(p,"panel",0,0,nil,nil,"BACKGROUND")
+    sign(p,9,5,323,text):SetText("Select levelset to play")
+    self.pickBrowser=self:BuildSetBrowser(p,52,text,function(delta) self:PickSet(delta) end)
+    sign(p,15,190,137,text,"LEFT"):SetText("Start level:")
+    self.level=input(p,156,190,125,"1","Editor\\start-field"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
+    self.level:SetJustifyH("RIGHT"); self.level:SetTextColor(0,0,0,0)
+    self.pickNumber=sign(self.level,3,0,119,text,"RIGHT",true)
+    self.level:SetScript("OnEditFocusGained",function(box)
+        self.pickNumber:Hide(); box:SetTextColor(1,1,1,1); box:HighlightText()
+    end)
+    self.level:SetScript("OnTextChanged",function(box,typed)
+        local n=typed and FB.Integer(box:GetText(),1,self.pickCount)
+        if n then self:SetPickLevel(n,true) end
+    end)
+    self.level:SetScript("OnEditFocusLost",function(box)
+        self:SetPickLevel(box:GetText()); box:SetTextColor(0,0,0,0); self.pickNumber:Show()
+    end)
+    local function start()
+        if self.screen~="pick" or InCombatLockdown() then return end
+        local index=FB.Clamp(tonumber(self.level:GetText()) or self.pickLevel,1,self.pickCount)
+        self.level:ClearFocus()
+        if self.pickID then FB.PlayCustom(self.pickID,index)
+        else FB.StartCustomBoard({boards=FB.Levels,title="Campaign practice",builtin=true},index) end
+    end
+    self.level:SetScript("OnEnterPressed",start)
+    self.pickPlay=hit(p,213,235,113,36,start)
+    sign(self.pickPlay,0,0,113,text):SetText("OK")
+    local function cancel() self:Panel("solo"); self:SelectSolo(2,true) end
+    local back=hit(p,15,235,124,36,cancel)
+    sign(back,0,0,124,text):SetText("Back")
+
+    local delta,remaining,repeats
+    local function stop() self.fbPickHold=nil end
+    local function begin(key,amount)
+        if self.fbPickHold==key then return end
+        self.level:ClearFocus()
+        self:SetPickLevel(self.pickLevel+amount)
+        self.fbPickHold,delta,remaining,repeats=key,amount,0.4,0
+    end
+    self.pickArrows={}
+    for i,amount in ipairs({1,-1,10,-10}) do
+        local name=({"up","down","up-more","down-more"})[i]
+        local arrow=hit(p,i<=2 and 288 or 308,amount>0 and 180 or 202,15,21,function() end)
+        image(arrow,name,0,0); self.pickArrows[amount]=arrow
+        arrow:SetScript("OnMouseDown",function(_,button)
+            if button=="LeftButton" and not InCombatLockdown() then begin(arrow,amount) end
+        end)
+        arrow:SetScript("OnMouseUp",stop)
+        arrow:SetScript("OnLeave",function() if self.fbPickHold==arrow then stop() end end)
+    end
+    p:SetScript("OnUpdate",function(_,dt)
+        if not self.fbPickHold then return end
+        if self.inactive or InCombatLockdown() or not self:HasFocus() then stop(); return end
+        remaining=remaining-math.min(dt,0.25)
+        while remaining<=0 do
+            local n=self.pickLevel
+            self:SetPickLevel(n+delta)
+            if self.pickLevel==n then stop(); return end
+            repeats=repeats+1
+            remaining=remaining+(repeats<=5 and 0.4 or repeats<=10 and 0.15 or repeats<=20 and 0.08 or 0.035)
+        end
+    end)
+    p:SetScript("OnHide",function() stop(); self.level:ClearFocus() end)
+    p:SetPropagateKeyboardInput(true)
+    p:SetScript("OnKeyDown",function(panel,key)
+        if InCombatLockdown() then return end
+        local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        local used=active and (key=="LEFT" or key=="RIGHT" or key=="UP" or key=="DOWN" or key=="ENTER"
+            or key=="NUMPADENTER" or key=="ESCAPE" or key=="Q")
+        panel:SetPropagateKeyboardInput(not used)
+        if not used then return end
+        if key=="LEFT" or key=="RIGHT" then begin(key,key=="LEFT" and -1 or 1)
+        elseif key=="UP" or key=="DOWN" then self:PickSet(key=="UP" and -1 or 1)
+        elseif key=="Q" or key=="ESCAPE" then cancel()
+        else start() end
+    end)
+    p:SetScript("OnKeyUp",function(_,key) if self.fbPickHold==key then stop() end end)
 end

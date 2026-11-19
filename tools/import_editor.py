@@ -52,6 +52,8 @@ def main():
 
     # Preserve the clean editor backdrop for the original list-browser thumbnails.
     files = {"boards": board, "font": font, "help": Image.open(src/"key_shortcuts.png"),
+             "font-hi": Image.open(src/"font-hi.png"), "start-field": Image.open(src/"select_level_background.png"),
+             "up-more": Image.open(src/"list_arrow_up_more.png"), "down-more": Image.open(src/"list_arrow_down_more.png"),
              "files": Image.open(src/"file_list_background.png"), "scroll": Image.open(src/"scroll_list_background.png"),
              "up": Image.open(src/"list_arrow_up.png"), "down": Image.open(src/"list_arrow_down.png"),
              "selected": Image.open(src/"purple_hover.gif"), "hover": Image.open(src/"hover.gif")}

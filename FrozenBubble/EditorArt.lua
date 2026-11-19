@@ -4,6 +4,10 @@ local media=FB.MediaInfo
 media["Editor\\boards"]={w=640,h=480,tw=1024,th=512,columns=1,frames=1}
 media["Editor\\font"]={w=968,h=39,tw=1024,th=64,columns=1,frames=1}
 media["Editor\\help"]={w=341,h=280,tw=512,th=512,columns=1,frames=1}
+media["Editor\\font-hi"]={w=968,h=39,tw=1024,th=64,columns=1,frames=1}
+media["Editor\\start-field"]={w=125,h=24,tw=128,th=32,columns=1,frames=1}
+media["Editor\\up-more"]={w=15,h=21,tw=16,th=32,columns=1,frames=1}
+media["Editor\\down-more"]={w=15,h=21,tw=16,th=32,columns=1,frames=1}
 media["Editor\\files"]={w=217,h=119,tw=256,th=128,columns=1,frames=1}
 media["Editor\\scroll"]={w=19,h=119,tw=32,th=128,columns=1,frames=1}
 media["Editor\\up"]={w=15,h=21,tw=16,th=32,columns=1,frames=1}

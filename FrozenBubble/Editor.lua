@@ -90,7 +90,7 @@ function U:StoreEditorDraft()
         FB.db.editorDraft={boards={unpack(self:EditorBoards())},index=self.editIndex,title=self.levelTitle:GetText(),id=self.editID}
     end
 end
-function U:StartEditor(id,fresh,index,confirmed,title)
+function U:StartEditor(id,fresh,index,confirmed,title,reload)
     if not FB.CanStart() then return end
     local draft=not self.editGame and FB.db.editorDraft
     if type(draft)=="table" and type(draft.boards)=="table" and #draft.boards>=1 and #draft.boards<=FB.Community.maxBoards then
@@ -102,9 +102,9 @@ function U:StartEditor(id,fresh,index,confirmed,title)
             self:SelectEditorBoard(FB.Integer(draft.index,1,#self.editBoards) or 1)
         end
     end
-    local replace=fresh or id and self.editID~=id
+    local replace=fresh or reload or id and self.editID~=id
     if replace and self.editGame and not confirmed and self:EditorModified() then
-        self.pendingEditor={id=id,fresh=fresh,index=index,title=title}; self.frame:Show(); self:Panel("editorPrompt"); return
+        self.pendingEditor={id=id,fresh=fresh,index=index,title=title,reload=reload}; self.frame:Show(); self:Panel("editorPrompt"); return
     end
     if FB.game then FB.game.paused=true end
     if not self.editGame or replace then

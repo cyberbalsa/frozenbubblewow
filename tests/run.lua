@@ -1748,6 +1748,72 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:EditorDialog("delete"); ui:AcceptEditorDialog(); ui:AcceptEditorDialog(); eq(fb.db.custom[id],nil)
         env.GetMouseFoci=oldFocus
     end)
+    test("starting level browser previews the selected board and repeats arrow presses",function()
+        local ui=fb.UI
+        local panel=ui.panels.pick
+        local oldFocus,oldLibrary=env.GetMouseFoci,fb.db.custom
+        local oldColorblind=fb.db.colorblind
+        env.GetMouseFoci=function() return {panel} end
+        fb.db.custom={}; fb.db.colorblind=true
+        local boards=ui:DefaultEditorBoards()
+        local ids={}
+        for i,title in ipairs({"Ice","Lake","Peak","River","Snow"}) do
+            ids[i]=assert(fb.Community.SaveSet(title,{boards[i],boards[i+1],boards[i+2]}))
+        end
+        local function key(k)
+            panel.scripts.OnKeyDown(panel,k); panel.scripts.OnKeyUp(panel,k)
+        end
+        ui:Panel("pick")
+        eq(ui.pickCount,100); eq(ui.pickLevel,1)
+        local ten=ui.pickArrows[10]
+        ten.scripts.OnMouseDown(ten,"LeftButton"); eq(ui.pickLevel,11)
+        panel.scripts.OnUpdate(panel,0.20); eq(ui.pickLevel,11)
+        panel.scripts.OnUpdate(panel,0.21); eq(ui.pickLevel,21)
+        ten.scripts.OnLeave(); panel.scripts.OnUpdate(panel,0.25); eq(ui.pickLevel,21)
+        key("DOWN"); eq(ui.pickID,ids[1]); eq(ui.pickLevel,3)
+        key("LEFT"); eq(ui.pickLevel,2)
+        key("DOWN"); eq(ui.pickID,ids[2]); eq(ui.pickLevel,2)
+        for i=3,5 do key("DOWN") end
+        eq(ui.pickBrowser.offset,2); eq(ui.pickBrowser.rows[4].label:GetText(),"Snow")
+        assert(ui.pickBrowser.rows[4].highlight.shown)
+        local grid=fb.Engine.Unpack(boards[6])
+        for cell,texture in pairs(ui.pickBrowser.bubbles) do
+            eq(texture.shown,grid[cell]~=nil)
+            if grid[cell] then eq(texture.fbAsset,"bubble-symbol"..grid[cell]) end
+        end
+        ui.level:SetText("3"); ui.level.scripts.OnTextChanged(ui.level,true)
+        eq(ui.pickLevel,3); eq(ui.pickNumber:GetText(),"3")
+        panel.scripts.OnKeyDown(panel,"LEFT"); eq(ui.pickLevel,2)
+        env.GetMouseFoci=function() return {} end
+        panel.scripts.OnUpdate(panel,0.25)
+        env.GetMouseFoci=function() return {panel} end
+        for _=1,3 do panel.scripts.OnUpdate(panel,0.2) end
+        eq(ui.pickLevel,2)
+        key("ESCAPE"); eq(ui.screen,"solo"); eq(ui.soloIndex,2)
+        fb.db.custom=oldLibrary; fb.db.colorblind=oldColorblind; env.GetMouseFoci=oldFocus
+    end)
+    test("opening the current editor file can keep, discard or save a changed layout",function()
+        local ui=fb.UI
+        local oldLibrary=fb.db.custom; fb.db.custom={}
+        ui:StartEditor(nil,true,nil,true,"Ice cave")
+        ui:SelectEditorColor(1); ui:Paint("LeftButton",16,16)
+        local original=assert(ui:SaveEditor())
+        local function reopen(choice)
+            ui:EditorDialog("open"); eq(ui.editorFiles[ui.fileIndex].id,original)
+            ui:AcceptEditorDialog(); eq(ui.screen,"editorPrompt")
+            for _,f in ipairs(frames) do
+                if f.parent==ui.panels.editorPrompt and f.text==choice then f.scripts.OnClick(); return end
+            end
+            error("Missing editor choice "..choice)
+        end
+        ui:SelectEditorColor(2); ui:Paint("LeftButton",16,16)
+        reopen("Keep editing"); eq(ui.editGame.grid[1],2); assert(ui:EditorModified())
+        reopen("Discard edits"); eq(ui.editGame.grid[1],1); assert(not ui:EditorModified())
+        ui:SelectEditorColor(3); ui:Paint("LeftButton",16,16)
+        reopen("Save and open"); eq(ui.editGame.grid[1],3); assert(not ui:EditorModified())
+        assert(ui.editID~=original and fb.db.custom[ui.editID] and not fb.db.custom[original])
+        ui:StartEditor(nil,true,nil,true); fb.db.custom=oldLibrary
+    end)
     test("edit, reorder, export and play a custom set through its final board",function()
         local ui=fb.UI
         ui:StartEditor(nil,true,nil,true); ui.levelTitle:SetText("Test set")

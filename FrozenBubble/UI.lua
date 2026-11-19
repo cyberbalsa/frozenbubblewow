@@ -34,10 +34,10 @@ local function button(parent,label,x,y,width,fn)
     b:SetScript("OnClick",function(...) if not InCombatLockdown() then fn(...) end end)
     return b
 end
-local function input(parent,x,y,width,value)
+local function input(parent,x,y,width,value,background)
     local b=CreateFrame("EditBox",nil,parent)
     b:SetSize(width,24); b:SetPoint("TOPLEFT",x,-y); b:SetAutoFocus(false); b:SetMaxLetters(160)
-    FB.Animation.Image(b,"ui-button",0,0,width,24,"BACKGROUND")
+    FB.Animation.Image(b,background or "ui-button",0,0,width,24,"BACKGROUND")
     b:SetFont("Fonts\\ARIALN.TTF",14,"OUTLINE"); b:SetTextColor(1,1,1); b:SetTextInsets(8,8,2,2)
     b:SetText(value or ""); b:SetScript("OnEscapePressed",function(self) self:ClearFocus() end)
     b:SetScript("OnEnterPressed",function(self) self:ClearFocus() end)
@@ -239,7 +239,7 @@ function U:Build()
     for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="replay" and name~="editorText" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="replay" and name~="editorText" and name~="pick" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
@@ -476,12 +476,14 @@ function U:SetCombatInput(blocked)
     if blocked then FB.Transitions.Interrupt(); self.pauseScreen:EnableKeyboard(false); self.pauseCapture=false end
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.editor:EnableKeyboard(not blocked and self.screen=="editor")
+    self.panels.pick:EnableKeyboard(not blocked and self.screen=="pick")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
     self.panels.keys:EnableKeyboard(not blocked and self.screen=="keys")
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
     self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
     self.panels.replay:EnableKeyboard(not blocked and self.screen=="replay")
     if blocked then
+        self.fbPickHold=nil
         if FB.Demos.scene then self:ShowMenu() end
         FB.MatchChat.Close()
         self.mouseRestore={}
@@ -576,6 +578,7 @@ function U:ShowMenu()
     if canPauseGame() then FB.game.paused=true end
     self.panels.replay:EnableKeyboard(false)
     for _,panel in pairs(self.panels) do panel:Hide() end
+    self.panels.pick:EnableKeyboard(false)
     self.panels.solo:EnableKeyboard(false)
     self.panels.keys:EnableKeyboard(false); FB.MatchChat.Close()
     self.panels.chain:EnableKeyboard(false)
@@ -650,35 +653,7 @@ function U:BuildSolo()
             else self:StartChainGame(key=="Y") end
         end
     end)
-    local pick=self.panels.pick
-    text(pick,"Pick a starting level",0,24,22,340)
-    self.pickSetTitle=text(pick,"",0,70,16,340); self.pickSetTitle:SetJustifyH("CENTER")
-    button(pick,"Previous set",0,104,164,function() self:PickSet(-1) end)
-    button(pick,"Next set",176,104,164,function() self:PickSet(1) end)
-    self.pickRange=text(pick,"",0,161,14,340)
-    self.level=input(pick,0,193,90,"1"); self.level:SetNumeric(true); self.level:SetMaxLetters(3)
-    self.pickPlay=button(pick,"Play level",100,191,220,function()
-        local index=FB.Clamp(tonumber(self.level:GetText()) or 1,1,self.pickCount)
-        self.level:ClearFocus()
-        if self.pickID then FB.PlayCustom(self.pickID,index)
-        else FB.StartCustomBoard({boards=FB.Levels,title="Campaign practice",builtin=true},index) end
-    end)
-end
-function U:PickSet(delta)
-    local ids={}
-    for id in pairs(FB.db.custom) do ids[#ids+1]=id end
-    table.sort(ids,function(a,b)
-        local left,right=FB.db.custom[a].title,FB.db.custom[b].title
-        if left==right then return a<b end
-        return left<right
-    end)
-    self.pickPosition=((delta and self.pickPosition or 0)+(delta or 0))%(#ids+1)
-    self.pickID=ids[self.pickPosition]
-    local item=self.pickID and FB.db.custom[self.pickID]
-    self.pickCount=item and #FB.Community.Boards(item) or #FB.Levels
-    self.pickSetTitle:SetText(item and item.title or "Frozen Bubble")
-    self.pickRange:SetText("Starting board (1–"..self.pickCount..")")
-    self.level:SetText("1")
+    self:BuildLevelPicker(text,input)
 end
 function U:BackFromChain()
     if self.chainMode=="local" then self:ShowMenu() else self:Panel("solo") end
@@ -762,6 +737,7 @@ function U:Panel(name)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorPreview:Hide(); self:CloseEditorDialog(); self.editorDirty=true
     self.panels.editor:EnableKeyboard(self.editing and not self.combatInput)
+    self.panels.pick:EnableKeyboard(name=="pick" and not self.combatInput)
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
     self.panels.keys:EnableKeyboard(name=="keys" and not self.combatInput)
     if name=="keys" then K.Begin() end

@@ -22,7 +22,7 @@ Turn off **Use the local shot clock** in **Settings → AddOns → Frozen Bubble
 - **2P Game** shares one keyboard. On the right board, Left and Right aim, Up fires and Down centers. On the left, X and V aim, C fires and D centers. P pauses both boards. Each win adds a round to that player’s total. Choose **Next round** to keep the score.
 - **Online duel:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. Choose **Chain reactions on** in Multiplayer before you queue or challenge someone. The queue pairs players who selected the same rules. Both players need alpha 7 or newer for chain matches. You can watch the opponent aim, fire, and drop clusters on the left board. Hiding the window leaves the match running. Timeout or combat cancels the match without a result.
 - **Level editor** opens a working copy of the 100 original levels the first time you enter. Pick a bubble from the wooden palette, then drag to paint. Right-drag or select the ring to erase. Press **J** to jump to a board and **F1** for keyboard shortcuts. **New** starts a blank set. **Open** shows your saved sets with a preview. **Tools** holds Undo, Test board, Import, Export and Publish set. Your draft survives logout.
-- **Pick a starting level:** choose any of the 100 campaign boards or a board from a saved set. Practice leaves your campaign checkpoint and scores alone. In the library, Play starts the set at board 1 and Next level advances after each clear.
+- **Pick a starting level:** browse the 100 campaign boards and your saved sets. The preview shows the board you’ll play. Click the single or double arrows to move by one or ten boards, hold an arrow to scroll, or type a board number. Practice leaves your campaign checkpoint and scores alone. In the library, Play starts the set at board 1 and Next level advances after each clear.
 
 Export copies either an original Frozen Bubble level file or a WoW code. Import accepts both, including existing 98-character single-board codes. Publish offers the whole saved set to the community. Both players need alpha 12 or later to exchange multi-board sets. Sets with floating clusters need alpha 20 or later on the receiving client.
 
@@ -86,7 +86,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.28` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.29` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

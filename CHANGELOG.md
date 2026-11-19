@@ -1,3 +1,8 @@
+# 0.1.0-alpha.29
+
+- **Pick a starting level** now shows the original wooden file list, blue lettering and a preview of the selected board. Single arrows move one board, double arrows move ten, and holding an arrow keeps scrolling. Switching sets keeps your board number when the new set contains it.
+- Opening the set you’re already editing now lets you keep editing, discard changes, or save them before reopening. Returning from a test game still takes you back to your draft.
+
 # 0.1.0-alpha.28
 
 - When you clear a board, falling clusters and bursting bubbles pass in front of the wooden winner sign as they do in the desktop game. The buttons stay above the moving bubbles.
