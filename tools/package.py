@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def package(version: str) -> Path:
     if not re.fullmatch(r"v?\d+\.\d+\.\d+(?:-[a-zA-Z0-9.]+)?", version):
-        raise ValueError("Expected a semantic version such as v0.1.0-alpha.30")
+        raise ValueError("Expected a semantic version such as v0.1.0-alpha.31")
     version = version.removeprefix("v")
     addon = ROOT / "FrozenBubble"
     toc = (addon / "FrozenBubble.toc").read_text()
@@ -26,7 +26,7 @@ def package(version: str) -> Path:
         for file in sorted(addon.rglob("*")):
             if not file.is_file():
                 continue
-            if file.suffix not in allowed and file.name not in {"COPYING", "AUTHORS.upstream"}:
+            if file.suffix not in allowed and file.name not in {"COPYING", "COPYING.hud-font", "AUTHORS.upstream"}:
                 raise ValueError(f"Unexpected file in addon package: {file.relative_to(ROOT)}")
             data = file.read_bytes()
             if file.suffix == ".toc":
@@ -45,5 +45,5 @@ def package(version: str) -> Path:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("version", nargs="?", default="0.1.0-alpha.30")
+    parser.add_argument("version", nargs="?", default="0.1.0-alpha.31")
     package(parser.parse_args().version)

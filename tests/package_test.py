@@ -28,6 +28,7 @@ class Packaging(unittest.TestCase):
             self.assertIn("## Version: 0.1.0-alpha.1", toc)
             self.assertIn("## X-Curse-Project-ID: 1815958", toc)
             self.assertIn("FrozenBubble/COPYING", z.namelist())
+            self.assertIn("FrozenBubble/COPYING.hud-font", z.namelist())
             self.assertIn("FrozenBubble/AUTHORS.upstream", z.namelist())
             for member in z.namelist():
                 if member.endswith(".tga"):
@@ -74,7 +75,7 @@ class Packaging(unittest.TestCase):
             for page in range(1, (int(steps) - 1) // int(capacity) + 2):
                 names.add(f"{key}-{page}.blp")
         self.assertTrue({"bars-1.blp","circle-in-4.blp","arena-light-4.blp","mini-bubble-symbol8-dark-1.blp"} <= names)
-        for key in ("compressor","progress-red","bubble-symbol1","mini-rim"):
+        for key in ("compressor","progress-red","bubble-symbol1","mini-rim","opening-training-clock","hud-lettering"):
             self.assertTrue((reveals / (key+"-cut.blp")).is_file())
         self.assertEqual(names, {p.name for p in reveals.glob("*.blp") if not p.name.endswith("-cut.blp")})
         for path in reveals.glob("*.blp"):

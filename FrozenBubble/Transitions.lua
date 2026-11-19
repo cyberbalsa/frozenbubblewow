@@ -18,7 +18,7 @@ local function choose(layout)
     return roll==7 and "bars" or "squares"
 end
 
-local function maskFrame(mask,key,step,flipX,flipY)
+local function maskFrame(mask,key,step,flipX,flipY,glyph)
     local spec=FB.RevealData[key]
     local page=math.floor(step/spec.capacity)+1
     local cell=step%spec.capacity
@@ -28,8 +28,10 @@ local function maskFrame(mask,key,step,flipX,flipY)
         mask.fbKey,mask.fbPage=key,page
     end
     local x,y=cell%spec.cols*spec.w,math.floor(cell/spec.cols)*spec.h
-    local l,r=x/sheet[1],(x+spec.w)/sheet[1]
-    local t,b=y/sheet[2],(y+spec.h)/sheet[2]
+    local w,h=spec.w,spec.h
+    if glyph then y=y+glyph.y; w,h=glyph.w+1,glyph.h+1 end
+    local l,r=x/sheet[1],(x+w)/sheet[1]
+    local t,b=y/sheet[2],(y+h)/sheet[2]
     if flipX then l,r=r,l end
     if flipY then t,b=b,t end
     mask:SetTexCoord(l,r,t,b)
@@ -59,13 +61,18 @@ local function padded(v)
     return size
 end
 
-local function sprite(asset,x,y,w,h,order,atlasX,atlasY)
+local function sprite(asset,x,y,w,h,order,atlasX,atlasY,glyph)
     T.used=T.used+1
     local t=T.sprites[T.used]
     if not t then t=T.frame:CreateTexture(); T.sprites[T.used]=t end
     t:SetDrawLayer("ARTWORK",order or 0)
     t:ClearAllPoints(); t:SetPoint("TOPLEFT",x,-y); t:SetSize(w,h)
-    if atlasX then
+    t.fbGlyph=glyph
+    if glyph then
+        local art=FB.HUDArt
+        t:SetTexture(FB.media..asset..".tga"); t.fbAsset=asset
+        t:SetTexCoord(0,w/art.width,glyph.y/art.height,(glyph.y+h)/art.height); t:Show()
+    elseif atlasX then
         t:SetTexture(FB.media..asset..".tga"); t.fbAsset=asset
         t:SetTexCoord(atlasX/1024,(atlasX+w)/1024,atlasY/1024,(atlasY+h)/1024); t:Show()
     elseif FB.MediaInfo[asset] then FB.Animation.Frame(t,asset,1)
@@ -82,7 +89,9 @@ local function sprite(asset,x,y,w,h,order,atlasX,atlasY)
         t.fbCut:SetAllPoints(t)
         t.fbCut:SetTexture(FB.media.."Reveals\\"..asset.."-cut.blp","CLAMP","CLAMP","NEAREST")
         local spec=FB.RevealData[key]
-        t.fbCut:SetTexCoord(0,spec.w/padded(spec.w),0,spec.h/padded(spec.h))
+        if glyph then
+            t.fbCut:SetTexCoord(0,w/FB.HUDArt.width,glyph.y/FB.HUDArt.height,(glyph.y+h)/FB.HUDArt.height)
+        else t.fbCut:SetTexCoord(0,spec.w/padded(spec.w),0,spec.h/padded(spec.h)) end
         T.boxes[#T.boxes+1]={x=x,y=y,r=x+w,b=y+h,cut=t.fbCut}
     else t.fbMask=T.mask end
     t:AddMaskTexture(t.fbMask)
@@ -108,17 +117,29 @@ local function board(game,x,y,scale,dotX,dotY,nextY,rimX,rimY)
     for i=1,game.rootPeriod do sprite(i==1 and "progress-red" or "progress-green",dotX,dotY+8*(i-1),7,7) end
 end
 
+local function plaque(center,y,prefix,value)
+    FB.Plaques.Layout(center,prefix,value,function(g,x)
+        sprite("hud-lettering",x,y,g.w+1,g.h+1,1,nil,nil,g)
+    end)
+end
+
 local function fill(layout)
     local g=FB.game
     sprite(layout.."-background",0,0,640,480,-8)
     if layout=="solo" then
         sprite("compressor",192,-7,252,51,-1)
-        if g.mode=="training" then sprite("training-clock",32,152,96,75,-1) end
+        if g.mode=="training" then sprite("opening-training-clock",32,152,96,75,-1) end
+        local prefix,value=FB.Plaques.Solo(g)
+        if prefix then plaque(74,103,prefix,value) end
         board(g,190,44,1,447,28,440,-3,-3)
     elseif layout=="versus" then
         board(g,354,40,1,345,28,440,-4,-3)
         local other=FB.LocalVersus.match and FB.LocalVersus.match.left or (FB.Net.match and FB.Net.match.remote) or g
         board(other,30,40,1,287,28,440,-4,-3)
+        if FB.LocalVersus.match then
+            local wins=FB.LocalVersus.match.wins
+            plaque(160,11,nil,wins[2]); plaque(480,11,nil,wins[1])
+        end
     else
         board(g,190,44,1,447,28,440,-4,-3)
         for i,v in ipairs(FB.Arena.Opponents(FB.Net.match)) do
@@ -184,7 +205,7 @@ local function display(step)
     if T.suffix then
         for i=1,T.used do
             local t=T.sprites[i]
-            if t.fbReveal then maskFrame(t.fbLocalMask,t.fbReveal,step) end
+            if t.fbReveal then maskFrame(t.fbLocalMask,t.fbReveal,step,nil,nil,t.fbGlyph) end
         end
     end
 end

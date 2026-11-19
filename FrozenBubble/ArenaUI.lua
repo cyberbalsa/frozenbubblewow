@@ -149,7 +149,7 @@ function U:RenderArena(m,dt,replayGame,lastFrame)
     local me=m.players[m.me]
     self.hud:SetText(me.label.." · "..me.wins)
     self.hud:Show(); self.footer:Hide(); self.pauseArt:Hide()
-    self.trainingClock:Hide(); self.trainingTime:Hide(); self.nextButton:Hide()
+    self.trainingClock:Hide(); self.nextButton:Hide()
     local ready=m.phase=="done"
     local winner=m.names[m.winner or 0]
     local winnerArt="net-win-local"

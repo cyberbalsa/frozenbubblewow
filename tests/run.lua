@@ -310,7 +310,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","HUDArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -950,9 +950,10 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(entry and fb.Scores.Pending(entry))
         eventFrame.scripts.OnEvent(nil,"PLAYER_LOGOUT"); eq(r.capture,nil)
         env.SlashCmdList.FROZENBUBBLE("replay"); local play=r.playback
-        eq(play.record.mode,"training"); assert(ui.trainingClock.shown)
+        eq(play.record.mode,"training"); assert(ui.trainingClock.shown and fb.Plaques.clock.shown)
+        eq(fb.Plaques.clock.fbDigits,"2'00\"")
         while play.frame<play.record.frames do r.Update(0.02) end
-        r.Render(); assert(ui.trainingResult.shown and ui.result.shown); eq(ui.trainingScore.text,tostring(game.score))
+        r.Render(); assert(ui.trainingResult.shown and ui.result.shown); eq(ui.trainingScore.text,tostring(game.score)); eq(fb.Plaques.clock.fbDigits,"0'00\"")
         eq(play.right:Pack(),game:Pack()); eq(play.right.status,game.status); eq(play.right.tick,game.tick)
         eq(fb.Scores.Pending(entry),entry); eq(fb.game,game)
         ui.panels.replay.scripts.OnKeyDown(ui.panels.replay,"SPACE"); eq(ui.screen,"recordings")
@@ -1118,6 +1119,12 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             if t.suffix then
                 assert(t.patchCount>1 and not t.sprites[1]:IsShown() and #t.boxes>1)
                 eq(t.sprites[2].fbReveal,"compressor"..t.suffix)
+                local digit=t.sprites[4]
+                eq(digit.fbGlyph,fb.HUDArt.labels["1"]); eq(digit.fbReveal,"hud-lettering"..t.suffix)
+                local spec=fb.RevealData[digit.fbReveal]
+                local sheet=spec.sheets[1]; local left=t.step*spec.w
+                eq(digit.fbLocalMask.fbCoords,table.concat({left/sheet[1],(left+digit.fbGlyph.w+1)/sheet[1],
+                    digit.fbGlyph.y/sheet[2],(digit.fbGlyph.y+digit.fbGlyph.h+1)/sheet[2]},","))
                 for i=1,t.patchCount do assert(#t.patches[i].fbCuts<=2) end
             end
             local steps=fb.RevealData[t.effect].steps
@@ -1131,7 +1138,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         pick(7); fb.StartCampaign(1); ui.frame:Hide()
         assert(not t.target and fb.game.paused)
         ui.frame:Show(); ui:ShowGame(); assert(not fb.game.paused and not t.target)
-        pick(7); fb.StartSolo("training"); fb.Options.Set("reducedMotion",true)
+        pick(7); fb.StartSolo("training"); eq(t.sprites[3].fbAsset,"opening-training-clock")
+        fb.Options.Set("reducedMotion",true)
         assert(not t.target); fb.StartCampaign(1); assert(not t.target)
         fb.Options.Set("reducedMotion",false); fb.Options.Set("graphicsLevel",1)
         fb.StartCampaign(1); assert(not t.target)
@@ -1547,7 +1555,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(m.left.status,"won"); eq(m.wins[2],1)
         for i=1,40 do fb.LocalVersus.Update(0.20,{}) end
         ui:Update(0); assert(ui.result.shown and not ui.resultBadge.shown)
-        eq(ui.resultArt.fbAsset,"local-win-p2"); eq(ui.remoteLabel.text,"1"); eq(ui.retryButton.text,"Next round")
+        eq(ui.resultArt.fbAsset,"local-win-p2"); eq(fb.Plaques.left.fbDigits,"1"); eq(ui.retryButton.text,"Next round")
         ui.retryButton.scripts.OnClick(); m=fb.LocalVersus.match
         assert(m.right.chainReaction and m.left.chainReaction); eq(m.right.shots,0); eq(m.wins[2],1)
         m.left.status="lost"; fb.LocalVersus.Update(0.02,{}); eq(m.right.status,"won"); eq(m.wins[1],1)
@@ -1656,13 +1664,38 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.StartCampaign(1); ui:Update(0)
         assert(ui.board.fxLayer:GetFrameLevel()<ui.result:GetFrameLevel())
     end)
+    test("the original plaques follow the board, clock and saved game mode",function()
+        local ui,p=fb.UI,fb.Plaques
+        fb.StartCampaign(1); ui:Update(0)
+        eq(p.solo.fbPrefix,"Level "); eq(p.solo.fbDigits,"1")
+        assert(p.solo.shown and not ui.hud.shown and not p.left.shown)
+        assert(ui.footer:GetText():find("0 points",1,true))
+        local coords={}
+        p.Layout(74,"Level ",17,function(_,x) coords[#coords+1]=x end)
+        eq(table.concat(coords,","),"35,89,101")
+
+        fb.StartSolo("training"); fb.game.score=12345; fb.game.tick=3050; ui:Update(0)
+        eq(p.solo.fbPrefix,"Score: "); eq(p.solo.fbDigits,"12345")
+        eq(p.clock.fbDigits,"0'59\""); assert(p.clock.shown)
+        fb.StartSolo("random"); ui:Update(0); eq(p.solo.fbPrefix,"Random level"); assert(not p.clock.shown)
+        fb.LocalVersus.Start(false)
+        local m=fb.LocalVersus.match; m.wins={2,12}; ui:Update(0)
+        eq(p.right.fbDigits,"2"); eq(p.left.fbDigits,"12")
+        assert(p.right.shown and p.left.shown and not p.solo.shown and not ui.remoteLabel.shown)
+        fb.StartCustom(ui:DefaultEditorBoards()[1]); ui:Update(0)
+        assert(ui.hud.shown and not p.left.shown and not p.solo.shown)
+        fb.StartCustomBoard({builtin=true,title="Campaign practice",boards=fb.Levels},17); ui:Update(0)
+        eq(p.solo.fbDigits,"17"); assert(p.solo.shown)
+        ui:Panel("editor"); assert(not p.solo.shown and not p.clock.shown)
+        fb.StartCampaign(1)
+    end)
     test("solo menu launches timed training, records it once, and retries",function()
         fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)
         fb.UI:SelectSolo(4); fb.UI:Update(0.10)
         eq(fb.UI.soloEntries[4].glow.fbFrame,6)
         fb.UI.soloEntries[4].activate(); eq(fb.UI.screen,"chain"); fb.UI.chainNo.scripts.OnClick()
         eq(fb.game.mode,"training"); fb.UI:Update(0.02)
-        eq(fb.UI.trainingTime.text,"2'00\""); assert(fb.UI.trainingClock.shown)
+        eq(fb.Plaques.clock.fbDigits,"2'00\""); assert(fb.UI.trainingClock.shown)
         fb.game.tick=6049; fb.game.score=14
         for _=1,3 do eventFrame.scripts.OnUpdate(eventFrame,0.02) end
         eq(fb.game.status,"finished"); eq(#fb.Scores.Rows(false,"training"),0)

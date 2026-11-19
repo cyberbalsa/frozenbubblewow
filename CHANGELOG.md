@@ -1,3 +1,8 @@
+# 0.1.0-alpha.31
+
+- The campaign level, random-level sign, training score and clock, and both shared-keyboard round counters use the original game’s white lettering and black shadow. They appear on the wooden plaques as the board opens and during play and replays.
+- Campaign and random-game points appear beside the ceiling countdown. In shared-keyboard replays the controls leave both round counters visible.
+
 # 0.1.0-alpha.30
 
 - In shared-keyboard play, either player can press a key for the next round once the losing board freezes. Escape starts the rematch immediately. The key that starts the round stays out of the new game until you release it.

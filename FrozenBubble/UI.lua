@@ -236,7 +236,7 @@ function U:Build()
     self.penguin=A.Image(self.gameLayer,"anime-shooter-p1",646.4,672,128,96)
     self.remotePenguin=A.Image(self.gameLayer,"anime-shooter-p2",-8,672,128,96); self.remotePenguin:Hide()
     self.trainingClock=A.Image(self.gameLayer,"training-clock",51.2,243.2,153.6,120)
-    self.trainingTime=text(self.gameLayer,"",51.2,283.2,23,153.6); self.trainingTime:SetJustifyH("CENTER")
+    FB.Plaques.Build(self)
     self.panels={}
     for _,name in ipairs({"editorText","editorPrompt","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
@@ -744,6 +744,7 @@ function U:Options()
     if self.musicValue then self.musicValue:SetText(math.floor((FB.db.musicVolume or 0.8)*100+0.5).."%") end
 end
 function U:Panel(name)
+    FB.Plaques.Clear()
     if name~="replay" then FB.Recordings.playback=nil end
     FB.Transitions.Cancel()
     FB.Demos.Close()
@@ -816,6 +817,10 @@ function U:Panel(name)
         self.replayBack:SetPoint("TOPLEFT",versusLayout and 709 or 15,versusLayout and -27 or -728)
         self.replayTime:SetPoint("TOPLEFT",versusLayout and 171 or 144,versusLayout and -31 or -738)
         self.replayTime:SetJustifyH(versusLayout and "CENTER" or "LEFT")
+        if replay.left and not replay.duel and not replay.arena then
+            self.replayBack:ClearAllPoints(); self.replayBack:SetPoint("TOPLEFT",576,-10)
+            self.replayTime:ClearAllPoints(); self.replayTime:SetPoint("TOPLEFT",288,-14)
+        end
         if replay.arena then
             self.replayBack:ClearAllPoints(); self.replayBack:SetPoint("TOPLEFT",356,-28)
             self.replayTime:ClearAllPoints(); self.replayTime:SetPoint("TOPLEFT",488,-32)
@@ -824,7 +829,7 @@ function U:Panel(name)
         self.result:Hide(); self.resultBadge:Hide(); self.winnerName:Hide(); self.resultDetail:Hide()
         self.nextButton:Hide(); self.retryButton:Hide(); self.resultScores:Hide(); self.leaveSeries:Hide()
         local training=replay.record.mode=="training"
-        self.trainingClock:SetShown(training); self.trainingTime:SetShown(training)
+        self.trainingClock:SetShown(training)
     end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
     if not gameplay and canPauseGame() then FB.game.paused=true end
@@ -1321,21 +1326,25 @@ function U:Update(dt)
     self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or game and game.mode=="campaign" and FB.run and FB.run.closed and "New campaign" or "Try again")
     self.retryButton:SetShown(ended and not canAdvance and (not shared or sharedReady) or false)
     local training=game and game.mode=="training" and not self.editing
-    self.trainingClock:SetShown(training or false); self.trainingTime:SetShown(training or false)
-    if training then
-        local seconds=math.floor(game:TrainingTimeLeft())
-        self.trainingTime:SetText(string.format("%d'%02d\"",math.floor(seconds/60),seconds%60))
-    end
+    self.trainingClock:SetShown(training or false)
     if self.editing then
         self.hud:SetText("Editor  ·  Color "..self.editorColor)
         self.footer:SetText("Paint your layout, then Save, Test, or Publish.")
     elseif game then
-        local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
-        if game.customSet then label=game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards end
-        self.hud:SetText(training and ("Score: "..game.score) or shared and tostring(shared.wins[1]) or game.mode=="versus" and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or
-            (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
-        self.footer:SetShown(not training and game.mode~="versus")
-        self.footer:SetText(game.status=="playing" and ((game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots") or "")
+        local onBoard=self.screen=="game" or self.screen=="opponent" or self.screen=="scoreEntry" and self.gameLayer:IsShown()
+        local native=onBoard and FB.Plaques.Draw(self,game,shared and shared.wins)
+        local points=(FB.run and FB.run.score or 0)+game.score
+        if not native then
+            local label=game.customSet and (game.customSet.title.."  "..game.customIndex.." / "..#game.customSet.boards) or game.mode
+            self.hud:SetText(versus and (FB.PlayerName().."  ·  "..(series and series.wins or game.score)) or (label.."\n"..points.." points"))
+        end
+        self.footer:SetShown(not training and not versus)
+        local footer=""
+        if game.status=="playing" then
+            footer=(game.penaltyRules and "Next row in " or "Ceiling in ")..(game.rootPeriod-game.lockedShots%game.rootPeriod).." shots"
+            if native and not training and not versus then footer=points.." points  ·  "..footer end
+        end
+        self.footer:SetText(footer)
         if game.status~="playing" then
             local art=shared and winner and (winner==game and "local-win-p1" or "local-win-p2") or winner and (winner==game and "net-win-local" or "net-win-remote")
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
@@ -1351,7 +1360,9 @@ function U:Update(dt)
         end
         self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)
-        self.remoteLabel:SetText(shared and tostring(shared.wins[2]) or match and (match.peer.."  ·  "..(series and series.losses or match.remote and match.remote.score or 0)) or "No active match")
+        if not shared then
+            self.remoteLabel:SetText(match and (match.peer.."  ·  "..(series and series.losses or match.remote and match.remote.score or 0)) or "No active match")
+        end
     end
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then

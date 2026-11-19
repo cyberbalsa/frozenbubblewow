@@ -330,12 +330,11 @@ function R.Render()
         if p.duel then
             ui.remoteLabel:SetText(p.record.duel.peer.."  ·  "..(p.wins and p.wins[2] or p.left.score))
             ui.hud:SetText(p.record.duel.player.."  ·  "..(p.wins and p.wins[1] or p.right.score))
-        else
-            ui.remoteLabel:SetText(tostring(p.wins[2]))
-            ui.hud:SetText(tostring(p.wins[1]))
-        end
-    else
+        else FB.Plaques.Draw(ui,p.right,p.wins) end
+    elseif not FB.Plaques.Draw(ui,p.right) then
         ui.hud:SetText(labels[p.record.mode].."\n"..p.right.score.." points")
+    elseif p.record.mode=="random" then
+        ui.footer:SetText(p.right.score.." points"); ui.footer:Show()
     end
     local game=p.right
     if game.status~="playing" then
@@ -361,8 +360,4 @@ function R.Render()
         end
     end
     ui.replayTime:SetText(clock(p.frame).." / "..clock(p.record.frames))
-    if p.record.mode=="training" then
-        local seconds=math.floor(p.right:TrainingTimeLeft())
-        ui.trainingTime:SetText(string.format("%d'%02d\"",math.floor(seconds/60),seconds%60))
-    end
 end

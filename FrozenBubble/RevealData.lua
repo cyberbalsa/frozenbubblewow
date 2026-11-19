@@ -91,4 +91,8 @@ FB.RevealData={
     ["progress-green-light"]={w=7,h=7,steps=40,cols=40,capacity=40,sheets={{512,8}}},
     ["progress-red-dark"]={w=7,h=7,steps=40,cols=40,capacity=40,sheets={{512,8}}},
     ["progress-red-light"]={w=7,h=7,steps=40,cols=40,capacity=40,sheets={{512,8}}},
+    ["opening-training-clock-dark"]={w=96,h=75,steps=40,cols=21,capacity=42,sheets={{2048,256}}},
+    ["opening-training-clock-light"]={w=96,h=75,steps=40,cols=21,capacity=42,sheets={{2048,256}}},
+    ["hud-lettering-dark"]={w=128,h=480,steps=40,cols=16,capacity=48,sheets={{2048,2048}}},
+    ["hud-lettering-light"]={w=128,h=480,steps=40,cols=16,capacity=48,sheets={{2048,2048}}},
 }
