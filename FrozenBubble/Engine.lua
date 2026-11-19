@@ -321,13 +321,15 @@ function E:TrainingTimeLeft()
 end
 -- At full graphics upstream ejects or freezes one attached bubble on every
 -- even frame. Keep the final board intact for a late simultaneous-loss draw.
-function E:StepEnding()
+function E:StepEnding(frameParity)
     if self.endingStatus~=self.status then
         if self.endingStatus then self.effects={} end
         self.endingStatus,self.endIndex,self.endCells=self.status,0,{}
-        -- The first displayed campaign frame is frame zero in update_lost.
+        -- Desktop counts displayed frames from zero. Both local players share
+        -- that clock across rematches, including the time spent on a result.
         self.endTick=self.tick
-        if self.mode=="campaign" or self.mode=="custom" then self.endTick=self.tick-1 end
+        if frameParity~=nil then self.endTick=frameParity-1
+        elseif self.mode=="campaign" or self.mode=="custom" then self.endTick=self.tick-1 end
         if self.projectile then
             local shot=self.projectile
             local fx=burst(self,shot.x,shot.y,shot.color)
@@ -352,9 +354,9 @@ function E:StepEnding()
     if freeze and self.mode~="versus" and self.endIndex==#self.endOrder then self.sound("noh") end
     if not freeze and self.grid[key] then self.effects[#self.effects+1]=self:Effect(key,"pop") end
 end
-local function advanceGame(self,dt,input)
+local function advanceGame(self,dt,input,frameParity)
     if self.status~="playing" then
-        if self.status=="won" or self.status=="lost" or self.status=="draw" then self:StepEnding() end
+        if self.status=="won" or self.status=="lost" or self.status=="draw" then self:StepEnding(frameParity) end
         return
     end
     self.tick=self.tick+1
@@ -400,10 +402,10 @@ local function advanceGame(self,dt,input)
         self:MoveChains()
     end
 end
-function E:Step(dt,input)
+function E:Step(dt,input,frameParity)
     if self.paused then return end
     local wasPlaying=self.status=="playing"
-    advanceGame(self,dt,input)
+    advanceGame(self,dt,input,frameParity)
     if wasPlaying and self.status=="lost" and (self.mode=="campaign" or self.mode=="custom") then
         self.stick=nil; self.hurryVisible=false
         self.lossSoundPlayed=true

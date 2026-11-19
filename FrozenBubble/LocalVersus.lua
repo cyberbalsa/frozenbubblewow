@@ -2,20 +2,22 @@ local _, FB = ...
 local L = {}
 FB.LocalVersus = L
 
-function L.New(seed,chains,wins,sound,desktopRandom)
+function L.New(seed,chains,wins,sound,desktopRandom,openingParity)
     local right=FB.Engine.New(nil,seed,"versus",chains,sound,desktopRandom)
     local left=FB.Engine.New(nil,seed,"versus",chains,sound,desktopRandom)
     -- Both launchers draw from the same random stream after the shared opening.
     if desktopRandom then left.randomOwner=right
     else left.Random=function(_,n) return right:Random(n) end end
-    return {right=right,left=left,wins=wins or {0,0},elapsed=0}
+    local parity
+    if desktopRandom then parity=openingParity==1 and 1 or 0 end
+    return {right=right,left=left,wins=wins or {0,0},elapsed=0,frameParity=parity}
 end
 
 function L.Start(chains, previous)
     if not FB.CanStart() then return end
     FB.LeaveBoard()
     local seed=FB.GameSeed()
-    local m=L.New(seed,chains,previous and previous.wins,FB.Sound,true)
+    local m=L.New(seed,chains,previous and previous.wins,FB.Sound,true,previous and previous.frameParity)
     m.right.lowGraphics=FB.db.graphicsLevel==1; m.left.lowGraphics=m.right.lowGraphics
     m.right.timed=FB.db.shotClock~=false; m.left.timed=m.right.timed
     local function playerInput(game,first,launchTick)
@@ -42,7 +44,8 @@ end
 function L.Step(m,rightInput,leftInput)
     local right,left=m.right,m.left
     local rightAttack,leftAttack=right.attack,left.attack
-    right:Step(0.02,rightInput); left:Step(0.02,leftInput)
+    right:Step(0.02,rightInput,m.frameParity); left:Step(0.02,leftInput,m.frameParity)
+    if m.frameParity~=nil then m.frameParity=1-m.frameParity end
     if not m.finished then
         if right.status=="lost" or left.status=="lost" then
             if right.status==left.status then

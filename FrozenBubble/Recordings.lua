@@ -96,7 +96,10 @@ function R.Begin(seed,right,match)
         record.duel={events={},player=FB.PlayerName(),peer=match.peer,round=match.round,limit=match.limit}
         if match.series then record.wins={match.series.wins,match.series.losses} end
         match.recording=record
-    elseif match then record.wins={match.wins[1],match.wins[2]} end
+    elseif match then
+        record.wins={match.wins[1],match.wins[2]}
+        record.openingParity=match.frameParity
+    end
     R.capture={record=record,right=right,left=match and match.left}
     if record.duel or record.arena then R.capture.online=match end
     local function attach(game)
@@ -189,7 +192,7 @@ function R.NewPlayback(record,sound)
     elseif record.mode=="duel" then
         play=FB.DuelReplay.New(record,sound)
     elseif record.mode=="versus" then
-        play=FB.LocalVersus.New(record.seed,record.chains,{record.wins[1],record.wins[2]},sound,record.version==2)
+        play=FB.LocalVersus.New(record.seed,record.chains,{record.wins[1],record.wins[2]},sound,record.version==2,record.openingParity)
     else
         play={right=FB.Engine.New(nil,record.seed,record.mode,record.chains,sound,record.version==2)}
     end
@@ -337,7 +340,7 @@ function R.Render()
     local game=p.right
     if game.status~="playing" then
         local winner=p.left and (game.status=="won" and game or game.status=="lost" and p.left)
-        ui.result:SetShown(ui:ResultReady(game,p.left,winner) or false)
+        ui.result:SetShown(ui:ResultReady(game,p.left,winner,p.left and not p.duel) or false)
         if game.status=="finished" then
             ui.resultArt:Hide(); ui:ShowTrainingResult(true); ui.trainingScore:SetText(tostring(game.score))
         else

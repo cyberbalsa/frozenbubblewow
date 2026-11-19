@@ -1551,12 +1551,110 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui.retryButton.scripts.OnClick(); m=fb.LocalVersus.match
         assert(m.right.chainReaction and m.left.chainReaction); eq(m.right.shots,0); eq(m.wins[2],1)
         m.left.status="lost"; fb.LocalVersus.Update(0.02,{}); eq(m.right.status,"won"); eq(m.wins[1],1)
-        ui:Update(0); eq(ui.resultArt.fbAsset,"local-win-p1")
+        for i=1,40 do fb.LocalVersus.Update(0.20,{}) end
+        ui:Update(0); eq(ui.resultArt.fbAsset,"local-win-p1"); assert(ui.resultArt.shown)
         fb.LocalVersus.Rematch(); m=fb.LocalVersus.match
         m.right.status="lost"; m.left.status="lost"; fb.LocalVersus.Update(0.04,{})
         eq(m.right.status,"draw"); eq(m.left.status,"draw"); eq(m.wins[1],1); eq(m.wins[2],1)
         eq(fb.db.wins,wins); eq(fb.db.losses,losses); eq(fb.Net.match,nil)
         fb.StartCampaign(1); eq(fb.LocalVersus.match,nil)
+    end)
+    test("local results match the freeze and winner-sign frames captured in SDL",function()
+        -- Seed 12345. In the desktop game keep the first attached bubble on
+        -- one board, then call lose(p2) after the first displayed frame.
+        for _,small in ipairs({"winner","loser"}) do
+            local m=fb.LocalVersus.New(12345,false,nil,nil,true)
+            fb.LocalVersus.Step(m)
+            local board=small=="winner" and m.right or m.left
+            board.grid={[1]=board.grid[1]}
+            m.right.status,m.left.status,m.finished="won","lost",true
+            local sign,freeze
+            for tick=1,150 do
+                fb.LocalVersus.Step(m)
+                if not freeze and m.left.endIndex==#m.left.endOrder then freeze=tick end
+                if not sign and fb.UI:ResultReady(m.right,m.left,m.right,true) then sign=tick end
+            end
+            eq(sign,small=="winner" and 50 or 126); eq(freeze,small=="winner" and 76 or 2)
+        end
+    end)
+    test("shared-keyboard results time the winner sign and the next round independently",function()
+        local ui,localGame=fb.UI,fb.LocalVersus
+        local focus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        local down,up=ui.board.scripts.OnKeyDown,ui.board.scripts.OnKeyUp
+        local function lose(left,largeLoser)
+            localGame.Start(true)
+            local m=localGame.match
+            local winner,loser=m.right,m.left
+            if not left then winner,loser=loser,winner end
+            if largeLoser then winner.grid={[1]=1} else loser.grid={[1]=1} end
+            localGame.Update(0.02,{})
+            loser.status="lost"
+            localGame.Update(0.02,{}); ui:Update(0)
+            return m,winner,loser
+        end
+        local m,winner=lose(false,false)
+        down(ui.board,"X"); eq(localGame.match,m)
+        for i=1,4 do localGame.Update(0.02,{}); ui:Update(0) end
+        assert(ui.retryButton.shown and ui.result.shown and not ui.resultArt.shown)
+        assert(#winner.effects>0)
+        down(ui.board,"X"); eq(localGame.match,m) -- a held key cannot accept twice
+        up(ui.board,"X"); down(ui.board,"X")
+        assert(m~=localGame.match); eq(localGame.match.frameParity,m.frameParity)
+        local rec=fb.Recordings.capture.record
+        eq(rec.openingParity,m.frameParity); eq(fb.Recordings.NewPlayback(rec).frameParity,m.frameParity)
+        eq(localGame.match.wins[2],1); assert(localGame.match.right.chainReaction)
+        down(ui.board,"X"); localGame.Update(0.08,ui.keys); eq(localGame.match.left.angle,0)
+        up(ui.board,"X"); down(ui.board,"X"); localGame.Update(0.02,ui.keys)
+        assert(localGame.match.left.angle<0); up(ui.board,"X")
+
+        m,winner=lose(true,true)
+        -- A packet of falling bubbles may still be on screen after the last burst.
+        winner.effects={{kind="fall",x=16,y=16,vx=0,vy=0,wait=200,color=3}}
+        for i=1,60 do
+            localGame.Update(0.02,{}); ui:Update(0)
+            if ui.resultArt.shown and ui.result.shown then break end
+        end
+        assert(ui.result.shown and ui.resultArt.shown and not ui.retryButton.shown)
+        eq(ui.resultArt.fbAsset,"local-win-p1"); assert(#winner.effects>0)
+        down(ui.board,"SPACE"); up(ui.board,"SPACE"); eq(localGame.match,m)
+        env.GetMouseFoci=function() return {} end
+        down(ui.board,"ESCAPE"); eq(localGame.match,m)
+        env.GetMouseFoci=function() return {ui.board} end
+        fb.Options.Set("boardTransitions",true)
+        down(ui.board,"ESCAPE"); assert(localGame.match~=m)
+        eq(localGame.match.wins[1],1); eq(fb.Transitions.target,"opponent")
+        local cover=fb.Transitions.frame
+        cover.scripts.OnKeyDown(cover,"ESCAPE"); eq(fb.Transitions.target,"opponent")
+        fb.Transitions.Finish(); eq(ui.keys.resultKey,"ESCAPE")
+        up(ui.board,"ESCAPE"); eq(ui.keys.resultKey,nil)
+        fb.Options.Set("boardTransitions",false)
+        fb.StartCampaign(1); env.GetMouseFoci=focus
+    end)
+    test("the solo freeze paints icicles from the bottom up and keeps debris above the sign",function()
+        local ui=fb.UI
+        fb.StartCampaign(1)
+        local g=fb.game
+        g.grid={[1]=2,[2]=3,[9]=1}; g.status="lost"
+        for i=1,8 do g:Step(0.02) end
+        g.effects={g:Effect(1,"fall")}
+        ui:Update(0)
+        assert(ui.resultArt.shown and ui.result.shown); eq(ui.resultArt.fbAsset,"lose-panel")
+        assert(ui.board.fxLayer:GetFrameLevel()>ui.result:GetFrameLevel())
+        assert(ui.board.fxLayer:GetFrameLevel()<ui.retryButton:GetFrameLevel())
+        local overlays=ui.board.boardOverlays
+        local positions={}
+        for i=1,3 do
+            overlays[i].SetPoint=function(_,_,_,_,x,y) positions[i]={x,y} end
+        end
+        ui:RenderBoard(ui.board,g)
+        for i,key in ipairs({9,2,1}) do
+            local r,c=fb.Engine.Cell(key); local x,y=fb.Engine.Position(r,c)
+            eq(positions[i][1],x); eq(positions[i][2],-(y+7))
+            overlays[i].SetPoint=nil
+        end
+        fb.StartCampaign(1); ui:Update(0)
+        assert(ui.board.fxLayer:GetFrameLevel()<ui.result:GetFrameLevel())
     end)
     test("solo menu launches timed training, records it once, and retries",function()
         fb.UI:Panel("solo"); eq(fb.UI.soloIndex,1)

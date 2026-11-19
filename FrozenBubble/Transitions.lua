@@ -42,12 +42,13 @@ local function build()
     frame:SetFrameLevel(ui.layers.chrome-1); frame:SetClipsChildren(true)
     frame:EnableMouse(true); frame:EnableMouseWheel(true)
     frame:SetScript("OnMouseDown",T.Interrupt)
-    frame:SetScript("OnKeyDown",function(f)
+    frame:SetScript("OnKeyDown",function(f,key)
         local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
         local skip=not InCombatLockdown() and ui:HasFocus() and not focus
         f:SetPropagateKeyboardInput(not skip)
-        if skip then T.Interrupt() end
+        if skip and (not key or key~=ui.keys.resultKey) then T.Interrupt() end
     end)
+    frame:SetScript("OnKeyUp",function(_,key) if ui.keys.resultKey==key then ui.keys.resultKey=nil end end)
     T.frame=frame
     T.mask=frame:CreateMaskTexture(); T.mask:SetAllPoints(frame)
 end
@@ -213,7 +214,13 @@ function T.Finish()
     local target,demo=T.target,T.demo
     if not target then return end
     T.Cancel()
-    if demo then FB.Demos.Play(demo) else FB.UI:Panel(target); FB.Music() end
+    if demo then FB.Demos.Play(demo)
+    else
+        local resultKey=FB.UI.keys.resultKey
+        FB.UI:Panel(target)
+        FB.UI.keys.resultKey=resultKey
+        FB.Music()
+    end
 end
 function T.Interrupt()
     if T.demo then FB.UI:ShowMenu() else T.Finish() end

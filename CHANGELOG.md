@@ -1,3 +1,9 @@
+# 0.1.0-alpha.30
+
+- In shared-keyboard play, either player can press a key for the next round once the losing board freezes. Escape starts the rematch immediately. The key that starts the round stays out of the new game until you release it.
+- The two-player winner sign appears when the winner’s last bursting bubble leaves the screen. At low graphics it appears when the loser freezes. Recordings use the same timing as live play.
+- On a solo loss, icicles overlap the row below and loose bubbles can fall in front of the result sign.
+
 # 0.1.0-alpha.29
 
 - **Pick a starting level** now shows the original wooden file list, blue lettering and a preview of the selected board. Single arrows move one board, double arrows move ten, and holding an arrow keeps scrolling. Switching sets keeps your board number when the new set contains it.
