@@ -315,6 +315,7 @@ end
 
 function R.Render()
     local p,ui=R.playback,FB.UI
+    FB.MatchChat.Refresh(p)
     ui:RenderBoard(ui.board,p.right)
     ui.penguin:SetShown(FB.db.graphicsLevel==3)
     if FB.db.graphicsLevel==3 then FB.Animation.Penguin(ui.penguin,p.right,"p1",0) end

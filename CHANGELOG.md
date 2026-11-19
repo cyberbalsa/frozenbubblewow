@@ -1,3 +1,9 @@
+# 0.1.0-alpha.39
+
+- The lower two arena cannons, next-bubble rims and low-graphics aiming dots line up with the original miniature boards. Aiming dots move on whole desktop pixels.
+- In-game chat uses the desktop lettering colors, typewriter sound and five-second display time. The next bubble and penguin disappear behind the input while you type. The cannon still runs its normal shot clock.
+- New duel and arena recordings replay incoming match messages under the sender’s board, with the chat sound on the frame the message arrived.
+
 # 0.1.0-alpha.38
 
 - Room chat reaches the players seated in your arena before the round starts. Everyone in the room needs alpha.38 or later to use it. Public channel chat has a separate draft and history.

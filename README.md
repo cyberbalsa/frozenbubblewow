@@ -40,7 +40,7 @@ Press **P** or **Pause** during a solo or shared-keyboard round to see the origi
 
 Press **Print Screen** with the pointer over the board, or type `/fb record`, to keep the round from its first shot. You can do this partway through a random, endless, training, shared-keyboard, online duel or arena round. To keep every round, enable **Automatically save recordings** in the addon settings. The ten most recent recordings stay in your account’s SavedVariables.
 
-Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a shared-keyboard game or online duel, both launchers play back together. Duel recordings show the opponent as you saw them, including corrections that arrived after a shot. An arena replay puts your board in the center and every opponent in their original corner. It shows who targeted whom, who left, and who won. Leave multiplayer before starting playback. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
+Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a shared-keyboard game or online duel, both launchers play back together. Duel recordings show the opponent as you saw them, including corrections that arrived after a shot. Online rounds recorded with alpha.39 or later also save incoming match chat with the recording and play its sound when the message appears. An arena replay puts your board in the center and every opponent in their original corner. It shows who targeted whom, who left, and who won. Leave multiplayer before starting playback. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
 
 To watch a desktop recording, choose **Options → Recordings → Import**, paste the uncompressed text, then click **Import** and select the new entry. The importer reads Frozen Bubble’s protocol 0 random, training and shared-keyboard games. Desktop files omit the graphics level and command-line settings, so playback uses the desktop defaults for those. For a sample, copy the contents of the [original training recording](tests/demo1.record).
 
@@ -58,7 +58,7 @@ The host clicks **Start game** once at least three players have joined. Your boa
 
 After 20 seconds on the focused title screen, one of the four original recordings plays. The three- and five-player recordings use the desktop arena with a small board for each opponent. Click or press a key to return. To turn demos off, open WoW Settings → AddOns → Frozen Bubble Forever and clear **Play demos on the title screen**. Demos also stay off during matchmaking and with Reduce motion enabled.
 
-During an online round, press Enter over your board to chat. Type your message and press Enter to send or Escape to discard it. Your opponent sees it below their left board for ten seconds. Both players need alpha 10 or later for match chat.
+During an online round, press Enter over your board to chat. Type your message and press Enter to send or Escape to discard it. In a duel the message appears below the left board. In an arena it appears below the sender’s miniature board. It stays for five seconds of play. The input uses the desktop panel’s width, so wide letters fill it sooner than narrow ones. Both players need alpha 10 or later for match chat.
 
 ## Addon settings
 
@@ -92,7 +92,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.38` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.39` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

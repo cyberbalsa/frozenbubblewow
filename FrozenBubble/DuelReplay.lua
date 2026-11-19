@@ -33,6 +33,7 @@ function D.Apply(play)
     while event and event[1]==play.frame do
         local kind,value=event[2],event[3]
         if kind=="localFire" then play.right:Shoot(tonumber(value))
+        elseif kind=="chat" then FB.MatchChat.Display(play.left,event[4])
         elseif kind=="result" then
             play.duel.phase="done"
             play.right.status=value

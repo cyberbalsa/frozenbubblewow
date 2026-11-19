@@ -68,8 +68,9 @@ function U:BuildLobby(text)
         p.prompt=text(p,"",78,320,13,98); lettering(p.prompt,font); p.prompt:Hide()
         p.input=CreateFrame("EditBox",nil,p)
         p.input:SetAutoFocus(false); p.input:SetHeight(18); p.input:SetFont(font,40/3,""); p.input:Hide()
-        p.input:SetScript("OnTextChanged",function(box)
+        p.input:SetScript("OnTextChanged",function(box,typed)
             if p.entryMode then p.drafts[p.entryMode]=box:GetText() end
+            if typed and chatMode(p.entryMode) then FB.Sound("typewriter") end
         end)
         p.input:SetScript("OnEscapePressed",function() stopEntry(p) end)
         p.input:SetScript("OnTabPressed",function(box)

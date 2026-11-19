@@ -484,13 +484,17 @@ test("match chat travels only to the active opponent and preserves literal pipes
     local m=b.Net.match
     local message="Almost! |cffff0000 | wow"
     assert(a.MatchChat.Send(message)); tick(1)
-    eq(m.chatText,"Almost! ||cffff0000 || wow"); assert(m.chatUntil>clock)
+    eq(m.remote.chatText,"Almost! ||cffff0000 || wow"); assert(m.remote.chatFrames>0)
     for _,sample in ipairs({{"WHISPER","Wrong-TestRealm",m.id,"bad"},{"CHANNEL",m.peer,m.id,"bad"},
         {"WHISPER",m.peer,"wrong","bad"},{"WHISPER",m.peer,m.id,string.rep("a",121)},
         {"WHISPER",m.peer,m.id,"bad\ntext"}}) do
         b.Net.Receive(b.PREFIX,"1|CHAT|"..sample[3].."|"..sample[4],sample[1],sample[2])
     end
-    eq(m.chatText,"Almost! ||cffff0000 || wow")
+    eq(m.remote.chatText,"Almost! ||cffff0000 || wow")
+    b.MatchChat.Receive(m,"second line"); eq(m.remote.chatFrames,250)
+    for _=1,249 do b.PeerView.StepDuel(m) end
+    eq(m.remote.chatFrames,1); eq(m.remote.chatText,"second line")
+    b.PeerView.StepDuel(m); eq(m.remote.chatText,nil)
     assert(not a.MatchChat.Send("") and not a.MatchChat.Send(string.rep("a",121)))
 end)
 test("stale, foreign, invalid and excessive attack packets are ignored",function()
@@ -1196,7 +1200,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         end
         local function board(g)
             local fields={g:Pack(),g.tick,g.status,g.current,g.next,g.ceiling,g.angle,g.turning or 0,g.shots,g.lockedShots,
-                g.score,g.pending,g.attack,g.rng,g.effectRng,#g.effects,#g.chains,#g.rising,g.endIndex or 0}
+                g.score,g.pending,g.attack,g.rng,g.effectRng,#g.effects,#g.chains,#g.rising,g.endIndex or 0,g.chatText or "-",g.chatFrames or 0}
             if g.projectile then
                 for _,k in ipairs({"color","x","y","vx","vy"}) do fields[#fields+1]=g.projectile[k] end
             end
@@ -1223,6 +1227,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         peer.Net.SendTurn(peer.Net.match,peer.game,clock); local turn=sendFromPeer("TURN")
         eq(m.remote.turning,1); eq(m.recording.duel.events[#m.recording.duel.events][2],"TURN")
         net.Receive(fb.PREFIX,turn,"WHISPER",peer.PlayerName())
+        assert(peer.MatchChat.Send("nice | shot")); sendFromPeer("CHAT"); eq(m.remote.chatFrames,250)
         snapshot()
         for _=1,7 do update(0.006); update(0.094) end
         env.SlashCmdList.FROZENBUBBLE("record"); assert(r.capture.marked)
@@ -1569,7 +1574,20 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local function open()
             ui.board.scripts.OnKeyDown(ui.board,"ENTER"); ui.board.scripts.OnKeyUp(ui.board,"ENTER"); assert(chat.input.shown)
         end
-        open(); chat.input:SetText("don't send"); chat.input.scripts.OnEscapePressed(); assert(not chat.input.shown)
+        open(); ui:Update(0)
+        assert(not ui.penguin.shown and not ui.board.next.shown and not ui.board.nextRim.shown and ui.board.current.shown)
+        local angle=fb.game.angle
+        ui.board.scripts.OnMouseDown(ui.board,"LeftButton"); ui.board.scripts.OnMouseWheel(ui.board,1)
+        eq(fb.game.shots,0); eq(fb.game.angle,angle)
+        local measureWidth=methods.GetStringWidth
+        methods.GetStringWidth=function(region) return #region:GetText()*10 end
+        chat.input.GetCursorPosition=function(box) return #box:GetText() end
+        chat.input:SetText("don't send"); chat.input.scripts.OnTextChanged(chat.input,true)
+        chat.input:SetText(string.rep("W",19)); chat.input.scripts.OnTextChanged(chat.input,true)
+        eq(chat.input:GetText(),"don't send")
+        methods.GetStringWidth=measureWidth; chat.input.GetCursorPosition=nil
+        chat.input.scripts.OnEscapePressed(); assert(not chat.input.shown)
+        ui:Update(0); assert(ui.penguin.shown and ui.board.next.shown and ui.board.nextRim.shown)
         open(); chat.input:SetText("nice shot"); chat.input.scripts.OnEnterPressed()
         eq(fb.Net.outbox[#fb.Net.outbox].message,"1|CHAT|37-1|nice shot")
         open(); fb.Net.match=nil; chat.Refresh(); assert(not chat.input.shown)
@@ -1587,7 +1605,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local dotAnchor
         ui.board.shooter.SetPoint=function(_,...) dotAnchor={...} end
         ui:Update(0); eq(ui.board.shooter.fbAsset,"aim-dot"); eq(ui.board.shooter.width,2)
-        eq(dotAnchor[4],127+60*math.sin(math.pi/4)); eq(dotAnchor[5],-(365-60*math.cos(math.pi/4)))
+        eq(dotAnchor[4],169); eq(dotAnchor[5],-322)
         eq(ui.remoteBoard.shooter.fbAsset,"aim-dot"); assert(not ui.penguin.shown and not ui.remotePenguin.shown)
         fb.Options.controls.graphicsLevel.set(2)
         ui:Update(0); eq(ui.board.shooter.fbAsset,"cannon-angles"); eq(ui.board.shooter.fbFrame,51)
@@ -2312,7 +2330,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local function board(g)
             local p=g.projectile
             return table.concat({g:Pack(),g.status,g.tick,g.rng,g.effectRng,g.shots,g.lockedShots,g.attack,
-                g.pending,#g.chains,#g.rising,#g.effects,g.current,g.next,g.angle,p and p.x or "-",p and p.y or "-"},"/")
+                g.pending,#g.chains,#g.rising,#g.effects,g.current,g.next,g.angle,p and p.x or "-",p and p.y or "-",
+                g.chatText or "-",g.chatFrames or 0},"/")
         end
         local function state(room,game)
             local fields={room.phase,room.mask,room.leftMask,room.target or "-",room.winner or "-",board(game)}
@@ -2343,6 +2362,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         r.Mark(); departing.Recordings.Mark()
         local function shot(peer,angle) assert(peer.game:Shoot(angle)) end
         shot(fb,0.43); shot(guests[1],-0.26); shot(guests[2],0.36)
+        assert(guests[1].MatchChat.Send("gg")); assert(guests[3].MatchChat.Send("watch | left"))
         guests[1].Controls.Aim(guests[1].game,true,false,false,0.03)
         fb.Arena.Target(3); remember(); run(45)
         local v=m.players[guests[1].PlayerName()]
@@ -2516,6 +2536,26 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(ui.roomOpponents[1].remote.effectFloor,918); eq(ui.roomOpponents[4].remote.effectFloor,462)
         eq(ui.roomOpponents[1].remote.chainTurnY,348); eq(ui.roomOpponents[4].remote.chainTurnY,352)
         eq(ui.miniBoards[1].shooter.fbAsset,"mini-cannon"); eq(ui.miniPenguins[1].fbAsset,"anime-shooter-rp1")
+        -- The desktop uses a different cannon pedestal on the bottom row.
+        for i,board in ipairs(ui.miniBoards) do
+            local barrelX,barrelY,rimY
+            board.shooter.SetPoint=function(_,_,_,_,x,y) barrelX,barrelY=x,y end
+            board.nextRim.SetPoint=function(_,_,_,y) rimY=y end
+            local opponent=m.opponents[i].remote
+            opponent.angle=0
+            ui:RenderBoard(board,opponent,true)
+            local top=i<3 and 19 or 247
+            eq(top-barrelY/2,i<3 and 177 or 406)
+            eq(top-rimY/2,i<3 and 214 or 443)
+            fb.Options.Set("graphicsLevel",1)
+            for _,angle in ipairs({0,math.pi/4,-math.pi/4}) do
+                opponent.angle=angle; ui:RenderBoard(board,opponent,true)
+                eq(barrelX/2,math.floor(63+30*math.sin(angle)))
+                eq(top-barrelY/2,math.floor((i<3 and 197 or 427)-30*math.cos(angle)))
+            end
+            fb.Options.Set("graphicsLevel",3)
+            board.shooter.SetPoint=nil; board.nextRim.SetPoint=nil
+        end
         eq(ui.miniBoards[1].bubbles[1].fbAsset,"mini-bubble"..fb.game.grid[1])
         ui.board.scripts.OnKeyDown(ui.board,"F2"); ui:Update(0.02)
         eq(m.target,ui.roomOpponents[2].name); assert(ui.attackIcons[2].shown)

@@ -6,7 +6,7 @@ local positions={
     {x=20,y=247,penguinX=114,penguinY=439,scoreX=83,scoreY=465,attackX=24,attackY=442,dotX=149,dotY=258,malusX=12,malusY=411},
     {x=492,y=247,penguinX=586,penguinY=439,scoreX=553,scoreY=465,attackX=496,attackY=442,dotX=483,dotY=258,malusX=628,malusY=411},
 }
-function U:BuildArenaHUD(text,makeBoard)
+function U:BuildArenaHUD(makeBoard)
     self.makeArenaBoard=makeBoard
     self.arenaHUD=CreateFrame("Frame",nil,self.gameLayer)
     self.arenaHUD:SetSize(640,480); self.arenaHUD:SetScale(1.6); self.arenaHUD:SetPoint("TOPLEFT")
@@ -18,12 +18,8 @@ function U:BuildArenaHUD(text,makeBoard)
         self.miniPenguins[i]=FB.Animation.Image(self.arenaHUD,"anime-shooter-"..slot,pos.penguinX,pos.penguinY)
         self.attackIcons[i]=FB.Animation.Image(self.arenaHUD,"target-"..slot,pos.attackX,pos.attackY)
         self.threats[i]=FB.Animation.Image(self.arenaHUD,"target-me-"..slot,185,448)
-        local chat=CreateFrame("Frame",nil,self.arenaHUD)
         local left=i%2==1
-        chat:SetSize(174,17); chat:SetPoint("TOPLEFT",left and 5 or 460,i<3 and -230 or -460)
-        FB.Animation.Image(chat,left and "arena-chat-left" or "arena-chat-right",0,0,nil,nil,"BACKGROUND")
-        chat.line=text(chat,"",4,2,10,166); chat.line:SetJustifyH("CENTER"); chat.line:SetWordWrap(false)
-        self.roomChats[i]=chat; chat:Hide()
+        self.roomChats[i]=FB.MatchChat.Panel(self.arenaHUD,left and "arena-chat-left" or "arena-chat-right",left and 5 or 460,i<3 and 230 or 460,1)
         self.leftSigns[i]=FB.Animation.Image(self.arenaHUD,"arena-left-"..slot,pos.x-1,pos.y-2)
         self.leftSigns[i]:Hide()
     end
@@ -92,8 +88,8 @@ function U:RenderArena(m,dt,replayGame,lastFrame)
         if not v.left then self:RenderBoard(self.miniBoards[i],v.remote,true) end
         self.miniLabels[i]:SetNameScore(v.label,v.wins,8,132)
         local chat=self.roomChats[i]
-        chat:SetShown(not v.left and v.chatUntil~=nil and GetTime()<v.chatUntil)
-        if chat:IsShown() then chat.line:SetText(v.chatText) end
+        chat:SetShown(not v.left and v.remote.chatText~=nil)
+        if chat:IsShown() then chat.line:SetText(v.remote.chatText) end
         self.miniLabels[i]:SetShown(i<3 or not chat:IsShown())
         self.attackIcons[i]:SetShown(m.target==v.name)
         local threat=v.target==m.me and not v.lost and not FB.MatchChat.input:IsShown()

@@ -188,7 +188,7 @@ local function prepare(m,round,seed)
     for _,name in ipairs(m.names) do
         local v=m.players[name]
         v.ready=name==m.me; v.lost=v.left==true; v.sent=0; v.ackMask=-1; v.target=nil; v.wantNext=nil
-        v.chatUntil=nil; v.chatText=nil; v.remote=nil; v.remoteSeq=0; v.remoteAttack=0; v.remoteShots=nil; v.remoteLocked=nil
+        v.remote=nil; v.remoteSeq=0; v.remoteAttack=0; v.remoteShots=nil; v.remoteLocked=nil
         v.remoteFire=nil; v.chainBase=nil; v.chainBudget=nil; v.chainReaction=m.chainReaction
     end
 end

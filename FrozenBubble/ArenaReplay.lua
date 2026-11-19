@@ -44,6 +44,7 @@ function R.Apply(play)
                 FB.PeerView.State(v,fields,play.right,play.frame*0.02)
                 v.target=room.names[e[5]]
             end
+        elseif kind=="chat" and v then FB.MatchChat.Display(v.remote,e[4])
         elseif kind=="localFire" then play.right:Shoot(tonumber(index))
         elseif kind=="target" then room.target=name
         elseif kind=="left" then

@@ -141,7 +141,7 @@ function U:Build()
             if editorCell(x,y) then
                 self.stroke={button=which}; self:Paint(which,x,y)
             end
-        elseif not self.editing and not FB.LocalVersus.match and which=="LeftButton" then FB.Fire() end
+        elseif not self.editing and not FB.LocalVersus.match and which=="LeftButton" and not FB.MatchChat.input:IsShown() then FB.Fire() end
     end)
     self.board:SetScript("OnMouseUp",function(b,which)
         if self.stroke and self.stroke.button==which then
@@ -152,7 +152,7 @@ function U:Build()
     self.board:SetScript("OnMouseWheel",function(_,delta)
         if self.editorDialog or self.inactive or InCombatLockdown() then return end
         if self.editing then self:SelectEditorColor((self.editorColor+delta)%9)
-        elseif FB.game and not FB.LocalVersus.match then
+        elseif FB.game and not FB.LocalVersus.match and not FB.MatchChat.input:IsShown() then
             FB.game.poseAngle=FB.game.poseAngle or FB.game.angle
             FB.game.angle=FB.Clamp(FB.game.angle+delta*0.045,-E.MAX_ANGLE,E.MAX_ANGLE)
         end
@@ -266,7 +266,7 @@ function U:Build()
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(text); self:BuildArenaHUD(text,makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(text); self:BuildArenaHUD(makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
     self:BuildSolo(); self:BuildSettings(); self:BuildRecordings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -351,7 +351,7 @@ function U:Build()
     versionCover:SetSize(38,154); versionCover:SetPoint("BOTTOMRIGHT",-2,0)
     -- A compact in-game menu/toolbar, like the Peggle addon, instead of an app sidebar.
     self.toolbar=CreateFrame("Frame",nil,self.gameLayer); self.toolbar:SetAllPoints(); self.toolbar:SetFrameLevel(self.layers.hud)
-    FB.MatchChat.Build(self,text)
+    FB.MatchChat.Build(self)
     self.menuControl=button(self.toolbar,"Menu",16,728,90,function() self:ShowMenu() end)
     self.pauseControl=button(self.toolbar,"Pause",115,728,90,function() FB.TogglePause() end)
     self.editButton=button(self.toolbar,"Edit level",16,687,110,function()
@@ -1122,19 +1122,30 @@ function U:RenderBoard(board,game,remote)
     local angle=game.angle or 0
     local asset=low and "aim-dot" or mini and "mini-cannon" or "cannon-angles"
     local barrel=FB.MediaInfo[asset]
-    local x=low and 127+60*math.sin(angle) or 128+barrel.left*factor
-    local y=low and launchY-1-60*math.cos(angle) or launchY+barrel.top*factor
+    local x,y
+    if low then
+        -- POS_MP supplies separate aiming-dot origins for the two rows of miniature boards.
+        local dotY=mini and (mini<=2 and 356 or 360) or launchY-1
+        x=math.floor((128-factor+60*math.sin(angle))/factor)*factor
+        y=math.floor((dotY-60*math.cos(angle))/factor)*factor
+    else
+        x=128+barrel.left*factor
+        y=launchY+(mini and mini>2 and 2 or 0)+barrel.top*factor
+    end
     board.shooter:ClearAllPoints(); board.shooter:SetPoint("TOPLEFT",board,"TOPLEFT",x,-y)
     board.shooter:SetSize(barrel.w*factor,barrel.h*factor)
     FB.Animation.Frame(board.shooter,asset,low and 1 or math.floor(100-angle*200/math.pi+0.5)+1)
     local nextY=board.fbNextY or (versus and 416 or 412)
+    local typing=not remote and self.screen=="opponent" and FB.MatchChat.input:IsShown()
     if game.status=="lost" or game.status=="draw" then
         placeFrozen(board.current,board,128,launchY)
-        placeFrozen(board.next,board,128,nextY,true)
+        if not typing then placeFrozen(board.next,board,128,nextY,true) end
     else
         place(board.current,board,128,launchY,game.current)
+    end
+    if not typing and game.status~="lost" and game.status~="draw" then
         place(board.next,board,128,nextY,game.next)
-        board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,-(nextY-19))
+        board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,-(nextY-(mini and 20 or 19)))
         local rim=mini and "mini-rim" or "next-rim"
         FB.Animation.Frame(board.nextRim,rim,1)
         board.nextRim:SetSize(FB.MediaInfo[rim].w*factor,FB.MediaInfo[rim].h*factor)

@@ -36,7 +36,8 @@ local function draw(slot,id,x,y)
         local mini,angle,radius=spec[2],spec[3],spec[4]
         if FB.db.graphicsLevel==1 then
             local radians=(angle+100)*math.pi/200
-            x=x-1+radius*math.cos(radians); y=y-(mini>0 and 3 or 1)-radius*math.sin(radians)
+            local dy=mini>0 and (y==200 and 3 or 2) or 1
+            x=math.floor(x-1+radius*math.cos(radians)); y=math.floor(y-dy-radius*math.sin(radians))
             FB.Animation.Frame(t,"aim-dot",1); t:SetSize(2,2)
         else
             x=x+spec[5]; y=y+spec[6]

@@ -208,12 +208,13 @@ end
 function V.StepDuel(m)
     local view=m.remote
     view:Step(0.02,stepTurn)
+    FB.MatchChat.Step(view)
     if m.phase=="playing" then view.status="playing" end
 end
 
 function V.Update(m,dt)
     local view=m.remote
     if not view then return end
-    view:Update(dt,stepTurn)
+    view:Update(dt,stepTurn,FB.MatchChat.Step)
     if m.phase=="playing" then view.status="playing" end
 end
