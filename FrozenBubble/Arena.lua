@@ -184,11 +184,11 @@ local function prepare(m,round,seed)
     FB.Recordings.CloseOnline(m)
     m.round,m.seed=round,seed
     m.id=m.room..":"..round; m.phase="seating"; m.since=GetTime(); m.pulse=-100
-    m.winner=nil; m.target=nil; m.finishSince=nil; m.mask=m.leftMask; m.wantNext=nil; m.requested=nil
+    m.target=nil; m.finishSince=nil; m.mask=m.leftMask; m.wantNext=nil; m.requested=nil
     for _,name in ipairs(m.names) do
         local v=m.players[name]
         v.ready=name==m.me; v.lost=v.left==true; v.sent=0; v.ackMask=-1; v.target=nil; v.wantNext=nil
-        v.remote=nil; v.remoteSeq=0; v.remoteAttack=0; v.remoteShots=nil; v.remoteLocked=nil
+        v.remoteSeq=0; v.remoteAttack=0; v.remoteShots=nil; v.remoteLocked=nil
         v.remoteFire=nil; v.chainBase=nil; v.chainBudget=nil; v.chainReaction=m.chainReaction
     end
 end
@@ -259,14 +259,14 @@ function A.BuildBoards(m,sound)
         v.remote.launchY=362; v.phase="playing"; v.lastSeen=GetTime()
     end
 end
-function A.StepBoards(m)
+function A.StepBoards(m,lowGraphics)
     for _,v in ipairs(m.opponents) do
-        if not v.left then FB.PeerView.StepDuel(v) end
+        if not v.left then FB.PeerView.StepDuel(v,lowGraphics) end
     end
 end
 local function begin(m)
     if InCombatLockdown() then A.Leave("Combat started."); return false end
-    m.phase="playing"; m.seq=0; m.lastState=-100; m.played=true
+    m.phase="playing"; m.winner=nil; m.seq=0; m.lastState=-100; m.played=true
     A.BuildBoards(m,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire

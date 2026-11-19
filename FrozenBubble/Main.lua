@@ -103,11 +103,14 @@ function FB.PlayCustom(id,index)
     end
 end
 function FB.StartVersus(matchSeed,chainReaction)
+    local resultKey=FB.UI.keys.resultKey
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
     FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction,FB.Sound); FB.run=nil
-    FB.UI.editing=false; FB.Transitions.Open("opponent"); FB.UI.frame:Show(); FB.Music()
+    FB.game.lowGraphics=FB.db.graphicsLevel==1
+    FB.UI.editing=false; FB.Transitions.Open("opponent"); FB.UI.keys.resultKey=resultKey
+    FB.UI.frame:Show(); FB.Music()
 end
 function FB.TogglePause(key)
     if not FB.game or FB.game.status~="playing" then return end
@@ -237,7 +240,7 @@ events:SetScript("OnEvent",function(_,event,...)
 end)
 local function networkTick(game,dt)
     local m=FB.Net.match
-    if m.arena then FB.Arena.StepBoards(m) else FB.PeerView.StepDuel(m) end
+    if m.arena then FB.Arena.StepBoards(m,game.lowGraphics) else FB.PeerView.StepDuel(m,game.lowGraphics) end
     local ui=FB.UI
     if ui.screen=="opponent" and ui.frame:IsShown() and not FB.Transitions.target then
         ui.AnimatePlayerTick(game,dt)

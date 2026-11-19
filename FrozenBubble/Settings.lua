@@ -26,7 +26,7 @@ function Options.Set(key,value)
         resetClock(FB.game)
         if FB.LocalVersus.match then resetClock(FB.LocalVersus.match.left) end
     end
-    if key=="graphicsLevel" and FB.game and FB.game.desktopRandom then
+    if key=="graphicsLevel" and FB.game and (FB.game.desktopRandom or FB.Net.match and FB.game.mode=="versus") then
         FB.Recordings.Graphics(FB.game,value==1)
         if FB.LocalVersus.match then FB.Recordings.Graphics(FB.LocalVersus.match.left,value==1) end
     end

@@ -177,15 +177,6 @@ function U:Build()
             if target and room.targeting and room.phase=="playing" and (target==0 or self.roomOpponents[target]) then
                 b:SetPropagateKeyboardInput(false); FB.Arena.Target(target); return
             end
-            if self:CanAutoRematch() and room.phase=="done" and (key=="ENTER" or key=="SPACE" or key==K.keys[3]) then
-                b:SetPropagateKeyboardInput(false); FB.Arena.Start(); return
-            end
-        end
-        if self:CanAutoRematch() and FB.Series.CanContinue(FB.Net.match)
-            and (key=="ENTER" or key=="SPACE" or key==K.keys[3]) then
-            b:SetPropagateKeyboardInput(false)
-            if not self.keys[key] then self.keys[key]=true; FB.Series.Ready() end
-            return
         end
         local shared=FB.LocalVersus.match
         local action=(shared and K.shared or K.solo)[key]
@@ -226,7 +217,15 @@ function U:Build()
     self.result:SetPoint("TOPLEFT",238.4,-304); self.result:SetFrameLevel(self.layers.panel)
     self.resultArt=A.Image(self.result,"win-panel",0,0,526.4,254.4)
     self.resultBadge=A.Image(self.result,"net-lose-remote",318.4,118.4,64,49.6,"OVERLAY"); self.resultBadge:Hide()
-    self.winnerName=text(self.result,"",177.6,176,20,316.8); self.winnerName:SetJustifyH("CENTER"); self.winnerName:Hide()
+    self.winnerName=FB.Plaques.Caption(self.result,210,110)
+    self.winnerName:SetFrameLevel(self.layers.panel); self.winnerName:ClearAllPoints(); self.winnerName:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",363,-300); self.winnerName:Hide()
+    self.drawPanel=CreateFrame("Frame",nil,self.result)
+    self.drawPanel:SetScale(1.6); self.drawPanel:SetSize(341,280)
+    self.drawPanel:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",149,-100); self.drawPanel:SetFrameLevel(self.layers.panel)
+    A.Image(self.drawPanel,"panel",0,0,nil,nil,"BACKGROUND")
+    local draw=text(self.drawPanel,"Draw game!",0,30,44/3,321,{1,1,1})
+    draw:SetFont(FB.media.."DejaVuSans.ttf",44/3); draw:SetJustifyH("CENTER")
+    draw:SetShadowColor(0,0,0,1); draw:SetShadowOffset(1,-1); self.drawPanel:Hide()
     self.resultDetail=text(self.result,"",0,250,18,526.4,{0.2,0.1,0.2}); self.resultDetail:SetJustifyH("CENTER")
     -- The two-minute results use the original centered 341 x 280 menu panel.
     self.trainingResult=CreateFrame("Frame",nil,self.result)
@@ -243,7 +242,7 @@ function U:Build()
         self:RetryRound()
     end)
     self.leaveSeries=button(self.result,"Back to lobby",140,317,246,function() FB.Net.Leave(); self:ShowLobby() end)
-    self.leaveSeries:Hide()
+    self.leaveSeries:SetFrameLevel(self.layers.panel+2); self.leaveSeries:Hide()
     self.resultScores=button(self.result,"View highscores",140,317,246,function()
         self:OpenRoundScores()
     end)
@@ -395,6 +394,25 @@ local function bursting(game)
     for _,fx in ipairs(game.effects) do if fx.kind=="pop" then return true end end
     return false
 end
+local function remaining(board)
+    if board.endOrder and board.endingStatus==board.status then return #board.endOrder-board.endIndex end
+    return board:Count()
+end
+-- In the desktop network game the winner sign and the next-round key
+-- have separate triggers. Falling clusters can still cross either screen.
+function U:OnlineResultTiming(game,m,winner,lastFrame)
+    if lastFrame or FB.db.reducedMotion or game.status=="aborted" then return true,true end
+    local left=remaining(game)
+    if m.arena then
+        for _,v in ipairs(m.opponents) do if not v.left then left=left+remaining(v.remote) end end
+    elseif m.remote then left=left+remaining(m.remote) end
+    if not winner then return left<=1,left==0 end
+    local cleared=winner.endingStatus=="won" and settled(winner)
+    local quiet=cleared and (winner.lowGraphics or not bursting(winner))
+    local advance=left==0 and quiet and (winner.lowGraphics or winner.lastEndBurst~=winner.endTick)
+    if FB.db.graphicsLevel==1 or not winner.endOrder or #winner.endOrder==0 then return advance,advance end
+    return quiet,advance
+end
 local function sharedRematchReady(m)
     if FB.db.reducedMotion then return true end
     if m.right.status=="draw" then return settled(m.right) and settled(m.left) end
@@ -445,6 +463,18 @@ end
 function U:RoundResultKey(board,key)
     local game=FB.game
     local shared=self.screen=="opponent" and FB.LocalVersus.match
+    local m=self.screen=="opponent" and FB.Net.match
+    if m and (m.phase=="done" or m.parent and (m.phase=="restart" or m.phase=="barrier") or m.phase=="seating" and m.played) then
+        board:SetPropagateKeyboardInput(false)
+        if self.keys[key] then return true end
+        self.keys[key]=true
+        if key=="ESCAPE" then FB.Net.Leave(); self:ShowLobby()
+        elseif m.phase=="done" and self:CanAutoRematch() then
+            if FB.Series.CanContinue(m) or m.arena and not FB.Arena.Complete(m) then self.keys.resultKey=key end
+            self:RetryRound()
+        end
+        return true
+    end
     if not (self.screen=="game" or shared and shared.finished) or not game or game.status=="playing" then return false end
     board:SetPropagateKeyboardInput(false)
     if self.keys[key] then return true end
@@ -558,7 +588,7 @@ function U:UpdateVisibility(dt)
     if math.abs(self.alpha-target)<0.005 then self.alpha=target end
     self.frame:SetAlpha(self.alpha)
     self.frame:SetFrameStrata(inactive and "LOW" or "HIGH")
-    local resultKeys=self.screen=="game" and FB.game and FB.game.status~="playing"
+    local resultKeys=(self.screen=="game" or self.screen=="opponent" and FB.Net.match and FB.Net.match.phase~="playing") and FB.game and FB.game.status~="playing"
     if (resultKeys or FB.LocalVersus.match and self.screen=="opponent") and not self.pauseScreen:IsShown() and not combat and not FB.Transitions.target then
         local capture=self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
         self.board:EnableKeyboard(capture)
@@ -784,6 +814,7 @@ function U:Options()
 end
 function U:Panel(name)
     FB.Plaques.Clear()
+    self.drawPanel:Hide()
     if name~="replay" then FB.Recordings.playback=nil end
     FB.Transitions.Cancel()
     FB.Demos.Close()
@@ -877,7 +908,8 @@ function U:BuildHelp()
     text(p,"In versus, large clears send bubbles to the other board. Keep yours above the danger line to win. P pauses shared-keyboard games. Online matches keep running when you hide the window.",0,363,13,350,muted)
 end
 function U:CanAutoRematch()
-    return self.screen=="opponent" and self.frame:IsShown() and self.result:IsShown() and self.resultGame==FB.game and not self.inactive
+    return self.screen=="opponent" and self.frame:IsShown() and self.result:IsShown() and self.retryButton:IsShown()
+        and FB.game and self.resultGame==FB.game and self.resultStatus==FB.game.status and not self.inactive
         and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
 end
 function U:BuildMarket()
@@ -1021,7 +1053,7 @@ function U:RenderBoard(board,game,remote)
     -- overlap the row below, so allocate pooled overlays in that draw order.
     for key=104,1,-1 do
         local color=game and game.grid[key]
-        if winner and not low and ended and ended[key] then color=nil end
+        if winner and (game.lowGraphics or not low) and ended and ended[key] then color=nil end
         if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
             local effect=not winner and ended and ended[key] and "frozen" or sweep==c-1 and (not low or r==1 and game.ceiling==0) and "prelight"
             if effect then
@@ -1082,8 +1114,9 @@ function U:RenderBoard(board,game,remote)
         height=height+(info.h-1)*factor; pending=pending-(grouped and 7 or 1)
     end
     for i=used+1,#board.penalties do board.penalties[i]:Hide() end
-    -- Both solo signs are blitted to the backdrop before moving bubbles.
-    local overSign=game and (winner or game.status=="lost") and game.mode~="versus" and (self.screen=="game" or self.screen=="replay")
+    -- The desktop paints round signs before it draws moving bubbles.
+    local overSign=game and (winner or game.status=="lost" or game.status=="draw")
+        and (self.screen=="game" or self.screen=="replay" or self.screen=="opponent")
     local fxLevel=overSign and self.layers.panel+1 or self.layers.board+1
     if board.fxLevel~=fxLevel then board.fxLayer:SetFrameLevel(fxLevel); board.fxLevel=fxLevel end
     local chains=game and game.chains
@@ -1290,7 +1323,10 @@ function U:Update(dt)
     local remote=shared and shared.left or match and match.remote
     local versus=game and game.mode=="versus"
     local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and remote)
-    local ready=ended and self:ResultReady(game,remote,winner,shared)
+    local online=ended and versus and match and not match.arena and not shared
+    local ready,advance
+    if online then ready,advance=self:OnlineResultTiming(game,match,winner)
+    else ready=ended and self:ResultReady(game,remote,winner,shared) end
     local sharedReady=shared and shared.finished and sharedRematchReady(shared)
     if game and game.status=="finished" and self.trainingGame~=game then
         self.trainingReadyAt=GetTime()+1; self.trainingGame=game
@@ -1301,15 +1337,17 @@ function U:Update(dt)
         game.offeredScore=true
         self:OpenRoundScores(); return
     end
-    self.resultGame=game
+    self.resultGame,self.resultStatus=game,game and game.status
     self.result:SetShown(self.screen~="scoreEntry" and (ready or sharedReady) or false)
+    local draw=online and game.status=="draw"
+    self.drawPanel:SetShown(draw and ready or false)
     local canFinish=ended and game.mode=="campaign" and FB.run and FB.run.eligible and not FB.run.closed
     self.resultScores:SetShown(ended and game.scoreEntry~=nil or canFinish or false)
     self.resultScores:SetText(canFinish and "Finish run" or "View highscores")
     self.winnerName:SetShown(winner and not shared or false)
     self.resultBadge:SetShown(winner and not shared or false)
     if winner and not shared then
-        self.winnerName:SetText(winner==game and FB.PlayerName() or match.peer)
+        self.winnerName:SetNameScore(winner==game and FB.PlayerName() or match.peer,nil,14,198)
         FB.Animation.Frame(self.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
     end
     local finished=ended and game.status=="finished"
@@ -1321,7 +1359,7 @@ function U:Update(dt)
     self.leaveSeries:SetShown(ended and (canRematch or restarting) or false)
     self.retryButton:SetEnabled(not restarting and not (canRematch and match.ready))
     self.retryButton:SetText(restarting and "Starting round…" or canRematch and (match.ready and "Waiting for opponent…" or "Next round") or game and game.customSet and #game.customSet.boards>1 and not game.customSet.builtin and game.status=="won" and "Replay set" or shared and "Next round" or versus and "Back to lobby" or game and game.mode=="campaign" and FB.run and FB.run.closed and "New campaign" or "Try again")
-    self.retryButton:SetShown(ended and not canAdvance and (not shared or sharedReady) or false)
+    self.retryButton:SetShown(ended and not canAdvance and (not shared or sharedReady) and (not online or advance) or false)
     local training=game and game.mode=="training" and not self.editing
     self.trainingClock:SetShown(training or false)
     if self.editing then
@@ -1351,7 +1389,7 @@ function U:Update(dt)
             local art=shared and winner and (winner==game and "local-win-p1" or "local-win-p2") or winner and (winner==game and "net-win-local" or "net-win-remote")
                 or (finished or versus) and "panel" or game.status=="won" and "win-panel" or "lose-panel"
             self.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
-            if finished or shared and not ready then self.resultArt:Hide() else FB.Animation.Frame(self.resultArt,art,1) end
+            if finished or draw or shared and not ready then self.resultArt:Hide() else FB.Animation.Frame(self.resultArt,art,1) end
             self.resultDetail:SetText(game.customSet and (game.status=="won" and (canAdvance and "Board cleared" or "Set cleared") or "Try this board again") or shared and (game.status=="draw" and "Draw" or "") or training and ("Training score: "..game.score) or game.mode=="random" and game.status=="won" and "Random board cleared" or game.mode=="versus" and FB.Series.Caption(match) or
                 (game.status=="won" and ("Level "..(FB.level or 1).." cleared") or "Try that one again!"))
         end

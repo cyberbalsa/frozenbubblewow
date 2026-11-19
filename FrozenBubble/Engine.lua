@@ -348,6 +348,11 @@ function E:StepEnding(frameParity)
     if self.endTick%2~=0 or self.endIndex>=#self.endOrder then return end
     local freeze=self.status=="lost" or self.status=="draw"
     if not freeze and not (self.status=="won" and self.mode=="versus") then return end
+    if not freeze and self.lowGraphics then
+        -- update_won releases the whole list on one even frame. Its painted backdrop stays in place.
+        self.endIndex=#self.endOrder
+        return
+    end
     self.endIndex=self.endIndex+1
     local key=self.endOrder[self.endIndex]
     self.endCells[key]=true
@@ -420,7 +425,10 @@ function E:Step(dt,input,frameParity)
         else
             fx.x,fx.y=fx.x+fx.vx,fx.y+fx.vy
             fx.vy=fx.vy+0.5
-            if fx.y>bottom then table.remove(self.effects,i) end
+            if fx.y>bottom then
+                if self.status=="won" and fx.kind=="pop" then self.lastEndBurst=self.endTick end
+                table.remove(self.effects,i)
+            end
         end
     end
     if self.recordTrack then FB.Recordings.EndTick(self) end

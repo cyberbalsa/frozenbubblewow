@@ -1,3 +1,9 @@
+# 0.1.0-alpha.40
+
+- The online winner’s name uses the original game lettering. The sign can appear while opponents’ boards are still freezing, and loose bubbles keep falling in front of it. Draws use the full-size menu panel.
+- Once the boards have settled, press a key or click **Next round** for a rematch. Escape leaves immediately, including while you’re waiting for other players.
+- Arena opponents stay visible between rounds. Holding the rematch key through the start of the next round no longer fires a shot.
+
 # 0.1.0-alpha.39
 
 - The lower two arena cannons, next-bubble rims and low-graphics aiming dots line up with the original miniature boards. Aiming dots move on whole desktop pixels.

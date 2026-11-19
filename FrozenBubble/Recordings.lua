@@ -225,10 +225,10 @@ function R.Step(play,animate)
     apply(play.right,tracks[1].before,"before",play.frame)
     if play.arena then
         play.right:Step(0.02,play.right.replayInput)
-        FB.Arena.StepBoards(play.arena)
+        FB.Arena.StepBoards(play.arena,play.right.lowGraphics)
     elseif play.duel then
         play.right:Step(0.02,play.right.replayInput)
-        FB.PeerView.StepDuel(play.duel)
+        FB.PeerView.StepDuel(play.duel,play.right.lowGraphics)
     elseif play.left then
         apply(play.left,tracks[2].before,"before",play.frame)
         FB.LocalVersus.Step(play,play.right.replayInput,play.left.replayInput)
@@ -341,7 +341,11 @@ function R.Render()
     local game=p.right
     if game.status~="playing" then
         local winner=p.left and (game.status=="won" and game or game.status=="lost" and p.left)
-        ui.result:SetShown(ui:ResultReady(game,p.left,winner,p.left and not p.duel) or false)
+        local ready
+        if p.duel then ready=ui:OnlineResultTiming(game,p.duel,winner)
+        else ready=ui:ResultReady(game,p.left,winner,p.left) end
+        ui.result:SetShown(ready or false)
+        ui.drawPanel:SetShown(p.duel and game.status=="draw" and ready or false)
         if game.status=="finished" then
             ui.resultArt:Hide(); ui:ShowTrainingResult(true); ui.trainingScore:SetText(tostring(game.score))
         else
@@ -349,16 +353,16 @@ function R.Render()
                 winner and (winner==game and "local-win-p1" or "local-win-p2") or p.duel and "panel" or
                 (game.status=="won" and "win-panel" or game.status=="draw" and "panel" or "lose-panel")
             ui.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
-            FB.Animation.Frame(ui.resultArt,art,1)
+            if p.duel and game.status=="draw" then ui.resultArt:Hide() else FB.Animation.Frame(ui.resultArt,art,1) end
             if p.duel then
                 ui.resultBadge:SetShown(winner and true or false); ui.winnerName:SetShown(winner and true or false)
                 if winner then
                     FB.Animation.Frame(ui.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
-                    ui.winnerName:SetText(winner==game and p.record.duel.player or p.record.duel.peer)
+                    ui.winnerName:SetNameScore(winner==game and p.record.duel.player or p.record.duel.peer,nil,14,198)
                 end
                 if game.status=="aborted" then ui.resultDetail:SetText("Match canceled"); ui.resultDetail:Show() end
             end
-            if game.status=="draw" then ui.resultDetail:SetText("Draw"); ui.resultDetail:Show() end
+            if game.status=="draw" then ui.resultDetail:SetText("Draw"); ui.resultDetail:SetShown(not p.duel) end
         end
     end
     ui.replayTime:SetText(clock(p.frame).." / "..clock(p.record.frames))

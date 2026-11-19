@@ -2074,7 +2074,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             fb.UI:Update(0.02); assert(fb.UI.result.shown)
             eq(fb.UI.resultArt.fbAsset,result=="won" and "net-win-local" or "net-win-remote")
             eq(fb.UI.resultBadge.fbAsset,result=="won" and "net-lose-remote" or "net-lose-local")
-            eq(fb.UI.winnerName.text,result=="won" and fb.PlayerName() or "Bob-TestRealm")
+            eq(fb.UI.winnerName.fbName,result=="won" and fb.PlayerName() or "Bob-TestRealm")
             if result=="lost" then eq(fb.UI.board.current.fbAsset,"frozen"); assert(not fb.UI.board.nextRim.shown) end
             fb.UI.retryButton.scripts.OnClick(); eq(fb.UI.screen,"lobby"); eq(fb.Net.match,nil)
         end
@@ -2417,7 +2417,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(ui.screen,"replay"); eq(ui.gameBackground.fbAsset,"arena-background")
         eq(#ui.roomOpponents,4); assert(ui.miniBoards[4]:IsShown())
         while r.Step(rendered) do end
-        r.Render(); assert(ui.result:IsShown() and ui.roomBadges:IsShown()); eq(ui.winnerName.text,host)
+        r.Render(); assert(ui.result:IsShown() and ui.roomBadges:IsShown()); eq(ui.winnerName.fbName,host)
         assert(not ui.retryButton:IsShown() and not ui.leaveSeries:IsShown())
         local seat
         for i,o in ipairs(rendered.arena.opponents) do if o.name==guests[4].PlayerName() then seat=i end end
@@ -2573,11 +2573,32 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         guest1.game.status="lost"; guest3.game.status="lost"; tick(10)
         eq(m.phase,"done"); eq(m.names[m.winner],guest2.PlayerName())
         for i=1,200 do fb.game:Update(0.02); fb.Net.Update(0.02) end
-        ui:Update(0.02); assert(ui.result.shown); eq(ui.winnerName.text,guest2.PlayerName()); eq(ui.retryButton.text,"Back to lobby")
+        ui:Update(0.02); assert(ui.result.shown); eq(ui.winnerName.fbName,guest2.PlayerName()); eq(ui.retryButton.text,"Back to lobby")
         ui.retryButton.scripts.OnClick(); tick(3)
         eq(fb.Net.match,nil); eq(guest2.Net.match,nil)
+        fb.db.versusLimit=2
         ui:Panel("rooms"); ui.panels.rooms.byID.host.scripts.OnClick()
         guest1.Arena.Join(host); guest2.Arena.Join(host); tick(6); ui.panels.rooms.byID.start.scripts.OnClick(); tick(9)
+        m=fb.Net.match
+        local previousBoard=m.opponents[1].remote
+        guest1.game.status="lost"; guest2.game.status="lost"; tick(8); eq(m.phase,"done")
+        for _=1,220 do fb.game:Update(0.02); fb.Net.Update(0.02) end
+        ui:Update(0.02); assert(ui:CanAutoRematch()); eq(ui.winnerName.fbName,host)
+        guest1.Arena.Start(); guest2.Arena.Start()
+        ui.board.scripts.OnKeyDown(ui.board,"SPACE")
+        local sawSeating=false
+        for _=1,90 do
+            tick(0.1); ui:Update(0.02)
+            if m.phase=="seating" then
+                sawSeating=true
+                eq(m.opponents[1].remote,previousBoard); eq(ui.winnerName.fbName,host)
+                eq(ui.retryButton.text,"Starting round…"); assert(ui.result.shown)
+            end
+        end
+        assert(sawSeating); eq(m.phase,"playing"); eq(m.round,2); assert(m.opponents[1].remote~=previousBoard)
+        eq(ui.winnerName.shown and ui.result.shown,false)
+        ui.board.scripts.OnKeyDown(ui.board,"SPACE"); eq(fb.game.shots,0)
+        ui.board.scripts.OnKeyUp(ui.board,"SPACE")
         fb.Recordings.Mark()
         env.InCombatLockdown=function() return true end
         eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
@@ -2661,6 +2682,50 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:Update(0.02); eq(ui.retryButton.text,"Waiting for opponent…")
         ui.leaveSeries.scripts.OnClick(); eq(fb.Net.match,nil); eq(ui.screen,"lobby")
         env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
+    end)
+    test("online winner sign precedes rematch input and falling clusters cross the sign",function()
+        local ui=fb.UI
+        local oldMouse=env.GetMouseFoci; env.GetMouseFoci=function() return {ui.board} end
+        fb.StartVersus(53,true)
+        local g=fb.game
+        local m={id="53-1",peer="Maple-TestRealm",host=true,phase="playing",capable=true,limit=5,
+            round=1,seed=53,series={id="53-1",limit=5,wins=0,losses=0},remote=fb.Engine.New(nil,53,"versus",true)}
+        fb.Net.match=m; g.grid={[1]=1}
+        g.effects={{kind="fall",x=128,y=40,vx=0,vy=0,wait=500,color=1}}
+        fb.Net.Finish("won","Round won",false)
+        local sign,input
+        for frame=1,150 do
+            g:Step(0.02); m.remote:Step(0.02); ui:Update(0.02)
+            if not sign and ui.result.shown then
+                sign=frame; assert(not ui.retryButton.shown and not ui:CanAutoRematch())
+                eq(ui.winnerName.fbName,fb.PlayerName()); eq(ui.board.fxLevel,ui.layers.panel+1)
+                assert(m.remote.endIndex<#m.remote.endOrder)
+                ui.board.scripts.OnKeyDown(ui.board,"Z"); assert(not m.ready)
+            end
+            if ui:CanAutoRematch() then input=frame; break end
+        end
+        assert(sign and input and sign<input); eq(input,76); eq(#g.effects,1); eq(g.effects[1].kind,"fall")
+        ui.board.scripts.OnKeyDown(ui.board,"Z"); assert(not m.ready)
+        ui.board.scripts.OnKeyUp(ui.board,"Z"); ui.board.scripts.OnKeyDown(ui.board,"Z"); assert(m.ready)
+        ui.board.scripts.OnKeyDown(ui.board,"ESCAPE"); eq(fb.Net.match,nil); eq(ui.screen,"lobby")
+        env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
+    end)
+    test("draws show the full menu panel and low graphics preserves the winner backdrop",function()
+        local ui=fb.UI
+        local g=fb.Engine.New({"34"},55,"versus")
+        local peer=fb.Engine.New({"1"},55,"versus"); local m={remote=peer}
+        g.status="draw"; peer.status="draw"
+        g:Step(0.02,nil,0); peer:Step(0.02,nil,0)
+        local sign,advance=ui:OnlineResultTiming(g,m,nil)
+        assert(sign and not advance); eq(ui.drawPanel:GetWidth(),341); eq(ui.drawPanel:GetHeight(),280)
+        g:Step(0.02); peer:Step(0.02); g:Step(0.02); peer:Step(0.02)
+        sign,advance=ui:OnlineResultTiming(g,m,nil); assert(sign and advance)
+        g.status="won"; g.lowGraphics=true
+        g:Step(0.02,nil,0); eq(g.endIndex,2); eq(next(g.endCells),nil); eq(#g.effects,0)
+        g.lowGraphics=false; g.effects={{kind="pop",x=0,y=600,vx=0,vy=1,wait=0,color=3}}
+        g:Step(0.02)
+        sign,advance=ui:OnlineResultTiming(g,m,g); assert(sign and not advance)
+        g:Step(0.02); sign,advance=ui:OnlineResultTiming(g,m,g); assert(sign and advance)
     end)
     test("editor strokes interpolate across cells, undo together, and survive testing",function()
         fb.UI:StartEditor(nil,true); fb.UI:SelectEditorColor(7)

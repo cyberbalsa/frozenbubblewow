@@ -205,8 +205,9 @@ local function stepTurn(view)
 end
 -- Advance both duel boards on the same fixed tick. Packet corrections may
 -- replace the remote engine's tick, but do not move the local match clock.
-function V.StepDuel(m)
+function V.StepDuel(m,lowGraphics)
     local view=m.remote
+    view.lowGraphics=lowGraphics
     view:Step(0.02,stepTurn)
     FB.MatchChat.Step(view)
     if m.phase=="playing" then view.status="playing" end
@@ -215,6 +216,7 @@ end
 function V.Update(m,dt)
     local view=m.remote
     if not view then return end
+    view.lowGraphics=FB.game and FB.game.lowGraphics
     view:Update(dt,stepTurn,FB.MatchChat.Step)
     if m.phase=="playing" then view.status="playing" end
 end

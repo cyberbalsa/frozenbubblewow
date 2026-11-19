@@ -34,7 +34,7 @@ function P.NameLayout(center,name,wins,size,limit,draw)
     local font=FB.NameArt[size]
     local letters=tokens(name,font)
     if not letters then return false end
-    local score=tokens(": "..wins,font)
+    local score=wins~=nil and tokens(": "..wins,font) or {}
     local origin,edge
     local function layout(list,x,previous,paint)
         for _,c in ipairs(list) do
@@ -129,7 +129,7 @@ function P.Caption(parent,center,y,scale)
                 fallback:SetShadowOffset(1,-1); fallback:SetWordWrap(false)
             end
             fallback:SetFont(STANDARD_TEXT_FONT or "Fonts\\FRIZQT__.TTF",size*96/72)
-            fallback:SetText(name..": "..wins)
+            fallback:SetText(wins~=nil and name..": "..wins or name)
             local width=fallback:GetStringWidth() or 0
             fallback:SetScale(width>limit and limit/width or 1); fallback:Show()
         end

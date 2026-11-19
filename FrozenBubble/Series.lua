@@ -62,7 +62,7 @@ local function advance(m)
     local nextMatch={id=m.series.id..":"..round,peer=m.peer,seed=m.seed*16807%2147483647,
         host=m.host,phase="restart",since=GetTime(),lastSeen=GetTime(),lastRetry=-100,
         seq=0,remoteSeq=0,remoteAttack=0,chainReaction=m.chainReaction,limit=m.limit,
-        capable=true,series=m.series,round=round,parent=m.id,parentResult=m.result}
+        capable=true,series=m.series,round=round,parent=m.id,parentResult=m.result,remote=m.remote}
     N.match=nextMatch
     return nextMatch
 end
