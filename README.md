@@ -16,7 +16,7 @@ With the keyboard, a fire press during a shot fires once when the cannon is read
 
 Turn off **Use the local shot clock** in **Settings → AddOns → Frozen Bubble Forever** to take your time between shots. This applies to solo and shared-keyboard games. Training still lasts two minutes, and online matches always use their shot clock.
 
-- **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Start at level 1 for a scored run. Retry a lost board to keep going on the same clock, or choose **Finish run** from the pause or result screen. Finished campaigns rank first, followed by the furthest level reached. A shorter time wins a tie. Restarting a partially played board after logout becomes practice.
+- **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Start at level 1 for a scored run. Retry a lost board to keep going on the same clock, or choose **Finish run** from the pause or result screen. Finished campaigns rank first, followed by the furthest level reached. A shorter time wins a tie. Hover a campaign card to see the finish time down to the millisecond. Sharing that precision needs alpha.43 or later on both clients. Restarting a partially played board after logout becomes practice.
 - **Multiplayer training:** survive the two-minute clock on a solo board. Earn one point for each bubble beyond three in a clear, including any that fall. Incoming penalties use the versus rules. Random levels and training both offer chain reactions. Turn them on and a falling bubble can fly back up to complete another match. Training records separate scores for each ruleset.
 - **Endless:** clear the board for a new wave and a 500-point bonus.
 - **2P Game** shares one keyboard. On the right board, Left and Right aim, Up fires and Down centers. On the left, X and V aim, C fires and D centers. P pauses both boards. Each win adds a round to that player’s total. Once the losing board freezes, press any key or choose **Next round**. Escape starts the rematch during the freeze.
@@ -93,7 +93,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.42` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.43` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

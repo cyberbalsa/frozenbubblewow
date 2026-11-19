@@ -1,3 +1,8 @@
+# 0.1.0-alpha.43
+
+- Campaign and training highscores use the desktop menu lettering and shadow. Saving a qualifying score highlights the whole entry in bold. The original heading sits in the upper right, with the WoW window controls on the left.
+- The community table now ranks campaign runs that finish within the same second by their millisecond times. Hover a campaign card to see the exact time when available. Older clients can still share whole-second scores.
+
 # 0.1.0-alpha.42
 
 - The multiplayer lobby now shows how long you played, who won or tied, and the round wins for everyone who took a seat. Players who left still appear in the final scores.

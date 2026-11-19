@@ -1083,13 +1083,13 @@ test("community scores preserve clears across query and manual channel packets; 
     local c=client("Ilse")
     local d=client("Jon")
     c.Community.Join(); d.Community.Join(); tick(2)
-    local row=c.Scores.Record("campaign",20,100,1200,true)
+    local row=c.Scores.Record("campaign",20,100,1200.78,true)
     c.db.scores[#c.db.scores+1]={name="Alt-TestRealm",mode="campaign",score=100,level=100,seconds=40,completed=true}
     d.Net.RequestScores(); tick(3)
     local received=d.db.peers[c.PlayerName()..":campaign"]
-    assert(received.completed); eq(received.seconds,1200)
+    assert(received.completed); eq(received.seconds,1200); eq(received.elapsed,1200.78)
     c.Community.Manual("SCORE",c.Scores.Fields(row))
-    eq(c.lastManual,"FBF1|1|SCORE|campaign|20|100|1200|1")
+    eq(c.lastManual,"FBF1|1|SCORE|campaign|20|100|1200|1|780")
     d.Community.Chat(c.lastManual,c.PlayerName(),d.Community.name)
     d.Scores.Receive(c.PlayerName(),{"1","SCORE","campaign","999","100","60"})
     eq(d.db.peers[c.PlayerName()..":campaign"],received)
@@ -1097,6 +1097,33 @@ test("community scores preserve clears across query and manual channel packets; 
     eq(d.db.peers["Alt-TestRealm:campaign"],nil)
     c.Scores.Receive("Alt-TestRealm",{"1","SCORE","campaign","6","100","55","1"})
     local all=c.Scores.Rows(true,"campaign"); eq(#all,2); eq(all[1].seconds,40)
+end)
+test("campaign rankings retain millisecond finishes through channel chat, queries and old peers",function()
+    local host,viewer=client("Zinnia"),client("Amos")
+    host.Community.Join(); viewer.Community.Join(); tick(2)
+    local name=host.PlayerName()
+    local function announce(rest) viewer.Community.Chat("FBF1|1|SCORE|campaign|100|35|60|0"..rest,name,viewer.Community.name) end
+    local function remote() return viewer.db.peers[name..":campaign"] end
+    local function firstRival()
+        for _,row in ipairs(viewer.Scores.Rows(true,"campaign")) do
+            if row.name==name or row.name==viewer.PlayerName() then return row.name end
+        end
+    end
+    viewer.Scores.Record("campaign",100,35,60.65)
+    announce(""); assert(remote() and not remote().elapsed)
+    local r=host.Scores.Record("campaign",100,35,60.9)
+    viewer.Net.RequestScores(); tick(3)
+    eq(remote().elapsed,60.9); eq(firstRival(),viewer.PlayerName())
+    announce(""); eq(remote().elapsed,60.9)
+    host.Scores.Record("campaign",100,35,60.14)
+    host.Community.Manual("SCORE",host.Scores.Fields(host.Scores.Best("campaign")))
+    viewer.Community.Chat(host.lastManual,name,viewer.Community.name)
+    eq(remote().elapsed,60.14); eq(firstRival(),name)
+    for _,packet in ipairs({"|1190","|-1","|0.1","|NaN","|2e99","|700",""}) do announce(packet); eq(remote().elapsed,60.14) end
+    local boundary=host.Scores.Record("campaign",100,36,61-1e-12)
+    eq(boundary.seconds,61); eq(boundary.elapsed,61)
+    local wire={host.Scores.Fields(boundary)}; eq(wire[4],61); eq(wire[6],0)
+    eq(select("#",host.Scores.Fields({mode=r.mode,score=1,level=35,seconds=60})),5)
 end)
 test("debug history is bounded and contains useful session data",function()
     for i=1,600 do a.Debug.Log("TEST",i) end
@@ -1122,6 +1149,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.SetSize=function(f,w,h) f.width=w; f.height=h end
     methods.SetTexCoord=function(f,...) f.fbCoords=table.concat({...},",") end
     methods.SetDrawLayer=function(f,layer,sub) f.fbLayer,f.fbSub=layer,sub end
+    methods.SetFont=function(f,path,size) f.fbFont,f.fbFontSize=path,size end
     methods.SetText=function(f,s) f.text=tostring(s) end
     methods.GetText=function(f) return f.text end
     methods.GetWidth=function(f) return f.width end; methods.GetHeight=function(f) return f.height end
@@ -2138,13 +2166,24 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.UI.panels.scoreEntry.scripts.OnUpdate(nil,1)
         eq(fb.UI.screen,"scores"); eq(fb.UI.scoreMode,"campaign"); eq(fb.UI.highlightScore,fb.game.scoreEntry)
         local card=fb.UI.scoreCards[1]
+        local heading,closeX
+        fb.UI.scoreHeading.SetPoint=function(_,anchor,x,y) eq(anchor,"TOPLEFT"); eq(y,-8); heading=x end
+        fb.UI.windowClose.SetPoint=function(_,anchor,x) eq(anchor,"TOPLEFT"); closeX=x end
+        fb.UI:Panel("scores"); eq(heading,630-149); eq(closeX,88)
+        fb.UI.scoreHeading.SetPoint=nil; fb.UI.windowClose.SetPoint=nil
+        local lines={}
+        local oldTip=env.GameTooltip
+        env.GameTooltip={SetOwner=function() end,SetText=function() end,Show=function() end,
+            AddLine=function(_,value) lines[#lines+1]=value end}
+        card.scripts.OnEnter(card); eq(lines[3],"5:25.000"); env.GameTooltip=oldTip
         eq(card.entry,fb.game.scoreEntry); eq(card.name.text,"Ice Queen"); eq(card.level.text,"won!"); eq(card.time.text,"5'25\"")
         eq(card.board.fbAsset,"score-boards"); eq(card.board.fbFrame,100)
+        for _,label in ipairs({card.name,card.time,card.level}) do eq(label.fbFont,fb.media.."DejaVuSans-Bold.ttf"); eq(label.fbFontSize,11*96/72) end
         fb.Options.Set("colorblind",true); eq(card.board.fbAsset,"score-boards-symbol")
         fb.Options.Set("colorblind",false)
         for i=1,14 do fb.Scores.Record("campaign",1,i,90) end
         fb.UI:RefreshScores(); fb.UI.scoreNext.scripts.OnClick()
-        eq(fb.UI.scorePage,2); eq(card.board.fbFrame,5)
+        eq(fb.UI.scorePage,2); eq(card.board.fbFrame,5); eq(card.level.fbFont,fb.media.."DejaVuSans.ttf")
         fb.UI.scorePrev.scripts.OnClick(); eq(card.board.fbFrame,100)
         fb.UI.scoreSource.scripts.OnClick(); eq(fb.UI.scoreNumber.text,"1 / 1"); eq(card.name.text,"UITester")
         fb.UI.scoreSource.scripts.OnClick()
@@ -2154,6 +2193,10 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.UI.scoreColumns[2].lines[1].entry.score,29)
         fb.Scores.Record("training",14,1,121); fb.UI:RefreshScores()
         eq(fb.UI.scoreColumns[1].lines[2].rank.text,"")
+        local line=fb.UI.scoreColumns[2].lines[1]
+        fb.UI:ShowScores(line.entry)
+        eq(line.rank.fbFont,fb.media.."DejaVuSans-Bold.ttf"); eq(line.name.fbFont,line.rank.fbFont)
+        eq(line.rank.text,"1. ")
         assert(not card.shown and not fb.UI.shareBest.shown)
         fb.db.unlocked=unlocked
     end)

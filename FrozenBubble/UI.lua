@@ -635,10 +635,13 @@ function U:PlaceBoard(board,x,y,scale)
     end
 end
 function U:WindowControls(layout)
-    local arena,duel=layout=="arena",layout=="duel"
-    self.windowMinus:ClearAllPoints(); self.windowMinus:SetPoint("TOPLEFT",arena and 245 or duel and 461 or 900,-4)
-    self.windowPlus:ClearAllPoints(); self.windowPlus:SetPoint("TOPLEFT",arena and 275 or duel and 493 or 932,-4)
-    self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",arena and 735 or duel and 525 or 976,-4)
+    local minus,plus,close=900,932,976
+    if layout=="arena" then minus,plus,close=245,275,735
+    elseif layout=="duel" then minus,plus,close=461,493,525
+    elseif layout=="scores" then minus,plus,close=12,44,88 end
+    self.windowMinus:ClearAllPoints(); self.windowMinus:SetPoint("TOPLEFT",minus,-4)
+    self.windowPlus:ClearAllPoints(); self.windowPlus:SetPoint("TOPLEFT",plus,-4)
+    self.windowClose:ClearAllPoints(); self.windowClose:SetPoint("TOPLEFT",close,-4)
 end
 function U:ShowMenu()
     FB.Recordings.playback=nil
@@ -838,7 +841,7 @@ function U:Panel(name)
     if name=="scores" then self:RefreshScores() end
     if name=="pick" then self:PickSet() end
     if name=="rooms" or name=="lobby" then self:RefreshLobby() end
-    self:WindowControls(false)
+    self:WindowControls(name)
     FB.MatchChat.Position(false)
     if self.roomBadges then self.roomBadges:Hide() end
     self.arenaHUD:Hide(); self.board.fbPenaltyX,self.board.fbPenaltyY,self.board.fbNextY=nil,nil,nil

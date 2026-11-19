@@ -33,7 +33,12 @@ end
 local function makeEntry(mode,score,level,seconds,completed)
     local entry={name=FB.PlayerName(),mode=mode,score=math.floor(score),level=level or 1,
         seconds=math.floor(seconds),date=time(),completed=completed==true and mode=="campaign" and level==100 or nil}
-    if mode=="campaign" then entry.elapsed=seconds end
+    if mode=="campaign" then
+        -- SDL_GetTicks measures campaign times in milliseconds. Round away
+        -- the small drift from adding the 20 ms simulation step repeatedly.
+        entry.elapsed=math.floor(seconds*1000+0.5)/1000
+        entry.seconds=math.floor(entry.elapsed)
+    end
     return entry
 end
 local function store(entry)
@@ -103,6 +108,10 @@ function S.Best(mode,name)
     return best
 end
 function S.Fields(row)
+    if row.mode=="campaign" and row.elapsed then
+        local ms=math.floor(row.elapsed*1000+0.5)
+        return row.mode,row.score,row.level,math.floor(ms/1000),row.completed and 1 or 0,ms%1000
+    end
     return row.mode,row.score,row.level,row.seconds,row.completed and 1 or 0
 end
 function S.Receive(sender,fields)
@@ -117,8 +126,20 @@ function S.Receive(sender,fields)
     if completed and (mode~="campaign" or level~=100) then return end
     local key=sender..":"..mode
     local entry={name=sender,mode=mode,score=score,level=level,seconds=seconds,date=time(),completed=completed or nil}
+    if fields[8] then
+        local fraction=FB.Integer(fields[8],0,999)
+        if mode~="campaign" or not fraction then return end
+        entry.elapsed=(seconds*1000+fraction)/1000
+    end
     local old=FB.db.peers[key]
-    if old and not better(entry,old) then return end
+    if old then
+        if mode=="campaign" and entry.level==old.level and completed==(old.completed==true)
+            and seconds==old.seconds and (old.elapsed==nil)~=(entry.elapsed==nil) then
+            -- An older peer only sent the whole second. Accept a more
+            -- precise report in that second, and keep it on a later retry.
+            if not entry.elapsed then return end
+        elseif not better(entry,old) then return end
+    end
     FB.db.peers[key]=entry; S.revision=(S.revision or 0)+1
     local keys={}
     for k in pairs(FB.db.peers) do keys[#keys+1]=k end

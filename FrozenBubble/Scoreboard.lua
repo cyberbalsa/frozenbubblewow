@@ -2,6 +2,9 @@
 local _,FB=...
 local U,S,A=FB.UI,FB.Scores,FB.Animation
 local pages={"campaign","training","endless"}
+local locale=GetLocale and GetLocale()
+local localeFont=(locale=="koKR" or locale=="zhCN" or locale=="zhTW") and STANDARD_TEXT_FONT
+local book,bold=FB.media.."DejaVuSans.ttf",FB.media.."DejaVuSans-Bold.ttf"
 local function duration(seconds)
     return string.format("%d'%02d\"",math.floor(seconds/60),seconds%60)
 end
@@ -9,8 +12,18 @@ local function player(row,shared)
     if not shared and row.displayName then return row.displayName end
     return row.name:match("^[^-]+") or row.name
 end
-local function styleName(label,row,highlight)
-    label:SetTextColor(1,row==highlight and 0.82 or 1,row==highlight and 0.25 or 1)
+-- display_highscores uses SDLPango's white "sans 11" and "sans 11 bold"
+-- with a one-pixel black shadow on its 640 x 480 surface.
+local function lettering(label,highlighted)
+    label:SetFont(localeFont or (highlighted and bold or book),11*96/72,"")
+    label:SetShadowColor(0,0,0,1); label:SetShadowOffset(1,-1)
+    if localeFont and highlighted then label:SetTextColor(1,0.82,0.25)
+    else label:SetTextColor(1,1,1) end
+end
+local function caption(text,parent,value,x,y,width)
+    local label=text(parent,value,x,y,14,width)
+    lettering(label); label:SetJustifyH("CENTER")
+    return label
 end
 local function share(mode)
     local row=S.Best(mode,FB.PlayerName())
@@ -30,7 +43,10 @@ local function scoreRow(parent,x,y,w,h)
         else GameTooltip:SetText(row.name) end
         if row.mode=="campaign" then
             GameTooltip:AddLine(row.completed and "Campaign cleared" or ("Level "..row.level))
-            GameTooltip:AddLine(duration(row.seconds))
+            if row.elapsed then
+                local ms=math.floor(row.elapsed*1000+0.5)
+                GameTooltip:AddLine(string.format("%d:%02d.%03d",math.floor(ms/60000),math.floor(ms/1000)%60,ms%1000))
+            else GameTooltip:AddLine(duration(row.seconds)) end
         end
         GameTooltip:AddLine(row.score.." points"); GameTooltip:Show()
     end)
@@ -44,12 +60,13 @@ function U:BuildScoreEntry(text,button,input)
     local panel=CreateFrame("Frame",nil,shield)
     panel:SetSize(341,280); panel:SetScale(1.6); panel:SetPoint("CENTER")
     A.Image(panel,"panel",0,0,nil,nil,"BACKGROUND")
-    text(panel,"Congratulations!",0,12,14,341):SetJustifyH("CENTER")
-    text(panel,"You have a highscore!",0,30,14,341):SetJustifyH("CENTER")
-    text(panel,"Your name?",0,76,14,217):SetJustifyH("CENTER")
+    caption(text,panel,"Congratulations!",0,12,341)
+    caption(text,panel,"You have a highscore!",0,30,341)
+    caption(text,panel,"Your name?",0,76,217)
     local box=input(panel,222,70,108,"")
+    box:SetFont(localeFont or book,11*96/72,""); box:SetTextColor(1,1,1)
     self.scoreName=box; box:SetMaxLetters(24); box:SetMaxBytes(96)
-    local outro=text(panel,"Great game!",0,245,14,341); outro:SetJustifyH("CENTER")
+    local outro=caption(text,panel,"Great game!",0,245,341)
     self.scoreOutro=outro
     local function finish(save)
         if self.screen~="scoreEntry" or InCombatLockdown() or self.scoreOutro:IsShown() then return end
@@ -108,7 +125,6 @@ function U:BuildScores(text,button,input)
     local p=self.panels.scores
     p:ClearAllPoints(); p:SetSize(640,480); p:SetScale(1.6); p:SetPoint("TOPLEFT",self.frame,"TOPLEFT")
     A.Image(p,"scores-background",0,0,640,480,"BACKGROUND")
-    -- Leave room for the WoW window controls in the upper right.
     self.scoreHeading=A.Image(p,"scores-campaign",0,8)
     self.scoreMode,self.scorePage,self.shared="campaign",1,false
     self.scoreCards={}
@@ -127,16 +143,16 @@ function U:BuildScores(text,button,input)
     for i=1,2 do
         local col=CreateFrame("Frame",nil,p)
         col:SetSize(320,398); col:SetPoint("TOPLEFT",(i-1)*320,-44)
-        col.title=text(col,"",0,6,15,320); col.title:SetJustifyH("CENTER")
+        col.title=caption(text,col,"",0,6,320)
         local mode=i==1 and "training" or "training-chain"
-        col.share=button(col,"Share best",239,0,78,function() share(mode) end)
+        col.share=button(col,"Share best",251,0,67,function() share(mode) end)
         col.empty=text(col,"No scores yet",0,50,13,320); col.empty:SetJustifyH("CENTER")
         col.lines={}
         for j=1,20 do
             -- The upstream training table indents the second column by an extra 20 pixels.
-            local line=scoreRow(col,i==1 and 60 or 80,36+(j-1)*18,228,18)
-            line.rank=text(line,"",0,0,13,56); line.rank:SetJustifyH("RIGHT")
-            line.name=text(line,"",60,0,13,162); line.name:SetWordWrap(false)
+            local line=scoreRow(col,i==1 and 80 or 100,36+(j-1)*18,204,18)
+            line.rank=text(line,"",0,0,14,40); line.rank:SetJustifyH("RIGHT")
+            line.name=text(line,"",40,0,14,164); line.name:SetWordWrap(false)
             col.lines[j]=line
         end
         self.scoreColumns[i]=col
@@ -212,7 +228,7 @@ function U:RefreshScores()
     local art=campaign and "scores-campaign" or training and "scores-training"
     if art then
         local t,info=self.scoreHeading,FB.MediaInfo[art]
-        t:ClearAllPoints(); t:SetPoint("TOPLEFT",552-info.w,-8); t:SetSize(info.w,info.h); A.Frame(t,art,1)
+        t:ClearAllPoints(); t:SetPoint("TOPLEFT",630-info.w,-8); t:SetSize(info.w,info.h); A.Frame(t,art,1)
     else self.scoreHeading:Hide() end
     self.scoreEmpty:SetShown(campaign and #rows==0)
     for i,card in ipairs(self.scoreCards) do
@@ -220,9 +236,11 @@ function U:RefreshScores()
         card.entry=row; card:SetShown(row and true or false)
         if row then
             A.Frame(card.board,FB.db.colorblind and "score-boards-symbol" or "score-boards",row.level)
-            card.name:SetText(player(row,self.shared)); styleName(card.name,row,self.highlightScore)
+            card.name:SetText(player(row,self.shared))
             card.level:SetText(row.completed and "won!" or ("level "..row.level))
             card.time:SetText(duration(row.seconds))
+            local highlighted=row==self.highlightScore and not self.shared
+            lettering(card.name,highlighted); lettering(card.level,highlighted); lettering(card.time,highlighted)
         end
     end
     for i,col in ipairs(self.scoreColumns) do
@@ -239,8 +257,10 @@ function U:RefreshScores()
                 line.entry=row; line:SetShown(row~=nil)
                 if row then
                     local prev=entries[idx-1]
-                    line.rank:SetText((not prev or prev.score~=row.score) and (idx..".") or "")
-                    line.name:SetText(player(row,self.shared)..": "..row.score); styleName(line.name,row,self.highlightScore)
+                    line.rank:SetText((not prev or prev.score~=row.score) and (idx..". ") or "")
+                    line.name:SetText(player(row,self.shared)..": "..row.score)
+                    local highlighted=row==self.highlightScore and not self.shared
+                    lettering(line.rank,highlighted); lettering(line.name,highlighted)
                 end
             end
         end
