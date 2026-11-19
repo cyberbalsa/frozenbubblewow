@@ -12,6 +12,8 @@ Use Multiplayer → Join community channel for discovery. The channel is called 
 
 Type **/fb scores** to see campaign board previews and the two training rankings. Campaign clears rank first, followed by the furthest level reached and then the quickest time. Use the Personal button to switch to community scores. Hover over a score to see the character’s realm.
 
+Click **Graphics** on the title screen to cycle between Full, Low and Medium. Full shows the animated penguins, Medium keeps the cannon and bubble effects, and Low uses the original aiming dot. Use **Options** for sound and display controls.
+
 ## Addon settings
 
 Open **Settings → AddOns → Frozen Bubble Forever**, right-click the minimap button, or type `/fb settings`. Left-click the button to toggle the game and drag to move it.

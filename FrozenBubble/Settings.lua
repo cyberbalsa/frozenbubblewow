@@ -4,14 +4,16 @@ FB.Options = Options
 
 local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
-    sound=true, music=true, musicVolume=0.8, windowSize=1, reducedMotion=false,
+    sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false,
     fadeOnBlur=true, colorblind=false, debug=true, community=false,
 }
 
 function Options.Set(key,value)
+    if key=="graphicsLevel" then value=FB.Integer(value,1,3) or 3 end
     if FB.db[key]==value then return end
     FB.db[key]=value
     if key=="minimap" and Options.icon then Options.icon:SetShown(value) end
+    if key=="graphicsLevel" or key=="reducedMotion" then FB.UI:ApplyGraphics() end
     if key=="colorblind" then
         FB.UI:SelectEditorColor(FB.UI.editorColor)
         if FB.UI.screen=="scores" then FB.UI:RefreshScores() end
@@ -65,6 +67,7 @@ local function registerPage()
     check("craftingPrompt","Allow idle invitations during crafting","Let an unattended crafting queue count as idle time.")
     slider("promptSeconds","Invitation display time",10,60,5,function(value) return value.." seconds" end)
     header("Game window and audio")
+    slider("graphicsLevel","Original graphics level",1,3,1,function(v) return ({"1 - Low","2 - Medium","3 - Full"})[v] end)
     slider("windowSize","Game window size",0.55,1,0.05,percent)
     check("fadeOnBlur","Fade when the pointer leaves the game","Fade the window and pause solo play when it loses focus.")
     check("colorblind","Colorblind bubble symbols","Give each bubble color its own shape in all game modes and the editor.")

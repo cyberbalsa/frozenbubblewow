@@ -237,6 +237,7 @@ function E:Attach(x,y,hit)
     if not best then self.status="lost"; self.projectile=nil; return end
     self.attachedOrder[#self.attachedOrder+1]=best
     self.lockedShots=self.lockedShots+1
+    self.warningShot,self.warningTick=self.lockedShots,self.tick
     self.grid[best]=self.projectile.color
     self.projectile=nil
     self:Resolve(best)

@@ -1,3 +1,9 @@
+# 0.1.0-alpha.11
+
+- Click Graphics on the title screen to cycle the original three graphics levels. Full shows the shooter penguins. Medium keeps the cannon and bubble effects. Low replaces the cannon with the two-pixel aim marker and still shows returning chain bubbles.
+- The launcher now uses all 201 angles rendered from the original shooter artwork by Frozen Bubble’s own rotation code. The ceiling warning starts its sweep when the shot attaches.
+- Use Options on the title screen for sound and display controls, or choose the graphics level in WoW’s addon settings.
+
 # 0.1.0-alpha.10
 
 - The original Keys menu now walks through both players’ aim, fire and center controls. Finish the ten prompts to save your bindings. Escape keeps the previous set.

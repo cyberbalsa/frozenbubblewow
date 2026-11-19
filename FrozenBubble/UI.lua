@@ -66,7 +66,7 @@ local function makeBoard(parent,x,y)
     b.compressor=FB.Animation.Image(b,"compressor",2,0,252,51,"OVERLAY"); b.compressor:Hide()
     b.pistons={}
     b.projectile=bubble(b); b.current=bubble(b); b.next=bubble(b)
-    b.shooter=b:CreateTexture(nil,"ARTWORK",nil,1); b.shooter:SetTexture(FB.media.."shooter.tga"); b.shooter:SetSize(128,128)
+    b.shooter=b:CreateTexture(nil,"ARTWORK",nil,1); b.shooter:Hide()
     b.shooter:SetPoint("CENTER",b,"TOPLEFT",128,-E.LAUNCH_Y)
     b.stick=FB.Animation.Image(b,"stick",0,0,32,32,"OVERLAY"); b.stick:Hide()
     b.nextRim=FB.Animation.Image(b,"next-rim",109,393,nil,nil,"OVERLAY")
@@ -213,11 +213,13 @@ function U:Build()
     self.menuHover={}; self.menuButtons={}
     local entries={
         {"1pgame","1pgame",function() self:Panel("solo") end},
-        {"2pgame","p1p2",function() self:ChooseChainRules("local") end},
+        {"2pgame","p1p2",function()
+            if FB.db.graphicsLevel==1 then FB.LocalVersus.Start(FB.game and FB.game.chainReaction) else self:ChooseChainRules("local") end
+        end},
         {"langame","langame",function() self:ShowLobby() end},
         {"netgame","netgame",function() FB.Community.Join(); self:ShowLobby() end},
         {"editor","editor",function() self:StartEditor() end},
-        {"graphics","gfx-l1",function() self:Panel("settings") end},
+        {"graphics","gfx-l"..(4-FB.db.graphicsLevel),function() FB.Options.Set("graphicsLevel",FB.db.graphicsLevel%3+1) end},
         {"keys","keys",function() self:Panel("keys") end},
         {"highscores","highscore",function() self:ShowScores() end},
     }
@@ -270,6 +272,7 @@ function U:Build()
     end
     self.bannerPeriod=self.banners[4].start-(640-292)+80
     button(menu,"Levels",6,18,70,function() self:ShowMarket() end)
+    button(menu,"Options",6,82,70,function() self:Panel("settings") end)
     button(menu,"Resume",6,50,70,function() self:ShowGame() end)
     local versionCover=menu:CreateTexture(nil,"OVERLAY"); versionCover:SetColorTexture(0.47,0.035,0.27,1)
     versionCover:SetSize(38,154); versionCover:SetPoint("BOTTOMRIGHT",-2,0)
@@ -491,7 +494,7 @@ function U:SelectSolo(index,silent)
     self.soloIndex=index; self.soloTime=0
     for i,row in ipairs(self.soloEntries) do
         FB.Animation.Frame(row.base,i==index and "solo-over" or "solo-off",1)
-        row.glow:SetShown(i==index and not FB.db.reducedMotion)
+        row.glow:SetShown(i==index and not FB.db.reducedMotion and FB.db.graphicsLevel>1)
     end
     if not silent then FB.Sound("menu_change") end
 end
@@ -508,6 +511,15 @@ function U:BuildSettings()
     button(p,"Fit game to screen",0,282,338,function() FB.Options.Set("windowSize",1) end)
     button(p,"Animation: full / reduced",0,330,338,function() FB.Options.Set("reducedMotion",not FB.db.reducedMotion) end)
     button(p,"WoW AddOns settings",0,382,338,function() FB.Options.Open() end)
+end
+function U:ApplyGraphics()
+    local item=self.menuHover[6]
+    item.name="hover-gfx-l"..(4-FB.db.graphicsLevel)
+    if item.index>FB.MediaInfo[item.name].frames then item.index=1 end
+    FB.Animation.Frame(item.texture,item.name,item.index)
+    if self.screen=="solo" then self:SelectSolo(self.soloIndex,true) end
+    self.menuReduced=nil
+    self:AnimateMenu(0)
 end
 function U:Options()
     self.sound:SetText(FB.db.sound and "Sound: on" or "Sound: off")
@@ -798,19 +810,24 @@ function U:UpdateEditor()
     else self.editorPreview:Hide() end
 end
 function U:RenderBoard(board,game,remote)
+    local low=FB.db.graphicsLevel==1
     local phase=game and game.rootPeriod and game.lockedShots%game.rootPeriod or 0
     local sweep
     if game and (not game.status or game.status=="playing") and game.rootPeriod and phase>=game.rootPeriod-2 then
-        sweep=math.floor((game.elapsed or 0)*50)%(phase==game.rootPeriod-1 and 31 or 61)
+        if board.warnGame~=game or board.warnShot~=game.lockedShots then
+            board.warnGame,board.warnShot=game,game.lockedShots
+            board.warnTick=game.warningShot==game.lockedShots and game.warningTick or game.tick or 0
+        end
+        sweep=((game.tick or 0)-board.warnTick+1)%(phase==game.rootPeriod-1 and 32 or 62)
     end
     local ended=game and game.endCells
     local winner=game and game.status=="won"
     local overlays=0
     for key=1,104 do
         local color=game and game.grid[key]
-        if winner and ended and ended[key] then color=nil end
+        if winner and not low and ended and ended[key] then color=nil end
         if color then local r,c=E.Cell(key); local x,y=E.Position(r,c,game.ceiling,game.offset); place(board.bubbles[key],board,x,y,color)
-            local effect=ended and ended[key] and "frozen" or sweep==c-1 and "prelight"
+            local effect=not winner and ended and ended[key] and "frozen" or sweep==c-1 and (not low or r==1 and game.ceiling==0) and "prelight"
             if effect then
                 overlays=overlays+1
                 local overlay=board.boardOverlays[overlays] or board:CreateTexture(nil,"ARTWORK",nil,1)
@@ -868,7 +885,7 @@ function U:RenderBoard(board,game,remote)
     local chainCount=chains and #chains or 0
     for i,t in ipairs(board.fx) do
         local fx=(chains and chains[i]) or (game and game.effects and game.effects[i-chainCount])
-        if fx then
+        if fx and (not low or i<=chainCount or game.chainReaction and fx.kind=="fall") then
             place(t,board,fx.drawX or fx.x,fx.drawY or fx.y,fx.color,32,1)
         else t:Hide() end
     end
@@ -881,7 +898,7 @@ function U:RenderBoard(board,game,remote)
         else dot:Hide() end
     end
     if not game or self.editing or not game.current then return end
-    if game.stick then
+    if game.stick and not low then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
         FB.Animation.Frame(board.stick,"stick",math.floor(game.stick.age/0.04)+1)
@@ -890,7 +907,14 @@ function U:RenderBoard(board,game,remote)
     end
     local versus=game.mode=="versus"
     local launchY=versus and 366 or E.LAUNCH_Y
-    board.shooter:ClearAllPoints(); board.shooter:SetPoint("CENTER",board,"TOPLEFT",128,-launchY)
+    local angle=game.angle or 0
+    local asset=low and "aim-dot" or "cannon-angles"
+    local barrel=FB.MediaInfo[asset]
+    local x=low and 127+60*math.sin(angle) or 128+barrel.left
+    local y=low and launchY-1-60*math.cos(angle) or launchY+barrel.top
+    board.shooter:ClearAllPoints(); board.shooter:SetPoint("TOPLEFT",board,"TOPLEFT",x,-y)
+    board.shooter:SetSize(barrel.w,barrel.h)
+    FB.Animation.Frame(board.shooter,asset,low and 1 or math.floor(100-angle*200/math.pi+0.5)+1)
     local nextY=versus and 416 or 412
     if game.status=="lost" or game.status=="draw" then
         local info=FB.MediaInfo.frozen
@@ -909,8 +933,6 @@ function U:RenderBoard(board,game,remote)
     board.wasWarning=warning
     if warning then FB.Animation.Frame(board.hurry,remote and "hurry-remote" or "hurry",1) end
     board.hurry:SetShown(warning or false)
-    board.shooter:Show(); board.shooter:SetRotation(-game.angle)
-    -- The original game aims with the rotating cannon, without a dotted guide.
 end
 function U:SelectMain(index,silent)
     if index==self.menuSelection and not silent then return end
@@ -933,19 +955,19 @@ local function blink(value)
 end
 function U:AnimateMenu(dt)
     if not self.menu:IsShown() then return end
-    if self.screen=="solo" and not FB.db.reducedMotion then
+    if self.screen=="solo" and FB.db.graphicsLevel>1 and not FB.db.reducedMotion then
         self.soloTime=self.soloTime+dt
         local row=self.soloEntries[self.soloIndex]
         FB.Animation.Frame(row.glow,row.effect,math.floor(self.soloTime*50)%70+1)
     end
     if self.screen~="menu" then return end
-    local reduced=FB.db.reducedMotion
+    local reduced=FB.db.reducedMotion or FB.db.graphicsLevel==1
     self.menuAccum=(self.menuAccum or 0)+math.min(dt,0.25)
     local steps=math.floor((self.menuAccum+1e-9)/0.02)
     if steps==0 and reduced==self.menuReduced then return end
     self.menuAccum=self.menuAccum-steps*0.02; self.menuReduced=reduced
     self.menuTick=(self.menuTick or 0)+(reduced and 0 or steps)
-    self.menuLogo:SetRotation(reduced and 0 or math.sin(self.menuTick/40)/20)
+    self.menuLogo:SetRotation((reduced or FB.db.graphicsLevel<3) and 0 or math.sin(self.menuTick/40)/20)
     for i,item in ipairs(self.menuHover) do
         local selected=i==self.menuSelection
         if selected and not reduced then
@@ -1004,6 +1026,7 @@ function U:Update(dt)
         end
         game.turning=game.angle<oldAngle and -1 or game.angle>oldAngle and 1 or 0
     end
+    self.penguin:SetShown(FB.db.graphicsLevel==3 and not self.editing and self.gameLayer:IsShown() and not FB.MatchChat.input:IsShown())
     if self.penguin:IsShown() then FB.Animation.Penguin(self.penguin,game,"p1",FB.db.reducedMotion and 0 or dt) end
     if self.editing then self:UpdateEditor() else self:RenderBoard(self.board,game) end
     self.overlayText:SetText(""); self.overlaySub:SetText("")
@@ -1017,7 +1040,10 @@ function U:Update(dt)
     local winner=ended and versus and (game.status=="won" and game or game.status=="lost" and remote)
     local ready=ended
     if ended and not FB.db.reducedMotion then
-        if winner then ready=winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
+        if winner and FB.db.graphicsLevel==1 then
+            local loser=winner==game and remote or game
+            ready=loser and loser.endOrder and loser.endIndex>=#loser.endOrder
+        elseif winner then ready=winner.endOrder and winner.endIndex>=#winner.endOrder and #winner.effects==0
         elseif game.status=="lost" or game.status=="draw" then ready=game.endOrder and game.endIndex>=#game.endOrder end
     end
     self.result:SetShown(ready or false)
@@ -1062,10 +1088,10 @@ function U:Update(dt)
         end
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     if self.screen=="opponent" then
-        if remote then
+        if remote and FB.db.graphicsLevel==3 then
             FB.Animation.Penguin(self.remotePenguin,remote,"p2",FB.db.reducedMotion and 0 or dt)
         end
-        self.remotePenguin:SetShown(remote~=nil)
+        self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)
         self.remoteLabel:SetText(shared and tostring(shared.wins[2]) or match and (match.peer.."  ·  "..(match.remote and match.remote.score or 0)) or "No active match")
     end

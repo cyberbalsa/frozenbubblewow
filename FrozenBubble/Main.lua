@@ -118,6 +118,7 @@ events:SetScript("OnEvent",function(_,event,...)
         if (...)~=addon then return end
         FrozenBubbleDB=type(FrozenBubbleDB)=="table" and FrozenBubbleDB or {}
         FB.db=FrozenBubbleDB; FB.Scores.Init(FB.db); FB.Controls.Load(FB.db.bindings)
+        FB.db.graphicsLevel=FB.Integer(FB.db.graphicsLevel,1,3) or 3
         FB.Debug.Init()
         FB.UI:Build()
         FB.Options.Init(); FB.Invitations.Init()

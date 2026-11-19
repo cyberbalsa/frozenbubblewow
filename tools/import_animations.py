@@ -6,6 +6,8 @@ import math
 import random
 from pathlib import Path
 import shutil
+import subprocess
+import tempfile
 from PIL import Image
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -26,10 +28,10 @@ def atlas(name, files):
     pack_images(name, images)
 
 
-def pack_images(name, images):
+def pack_images(name, images, columns=None):
     w, h = images[0].size
     assert all(im.size == (w, h) for im in images)
-    columns = min(len(images), max(1, int(math.sqrt(len(images) * h / w))))
+    columns = columns or min(len(images), max(1, int(math.sqrt(len(images) * h / w))))
     rows = math.ceil(len(images) / columns)
     tw, th = power(columns * w), power(rows * h)
     assert tw <= 2048 and th <= 2048
@@ -38,6 +40,35 @@ def pack_images(name, images):
         sheet.paste(im, ((i % columns) * w, (i // columns) * h))
     sheet.save(dst / f"{name}.tga")
     metadata[name] = dict(w=w, h=h, tw=tw, th=th, columns=columns, frames=len(images))
+
+
+def cannon_angles():
+    # init_game pre-renders the barrel with this exact Catmull-Rom sampler.
+    source = (args.upstream / "lib/Games/FrozenBubble/CStuff.xs").read_text()
+    start = source.index("static inline double\ntransform_cubic")
+    stop = source.index("void flipflop_", start)
+    barrel = Image.open(src / "shooter.png").convert("RGBA")
+    assert barrel.size == (100, 100)
+    with tempfile.TemporaryDirectory() as build:
+        build = Path(build)
+        (build / "rotation.inc").write_text(source[start:stop])
+        exe = build / "cannon"
+        subprocess.run(["cc", "-std=c99", "-O2", "-I", str(build), str(root / "tools/cannon_surface.c"),
+                        "-lm", "-o", str(exe)], check=True)
+        raw = subprocess.run([str(exe)], input=barrel.tobytes(), capture_output=True, check=True).stdout
+
+    stride = 100 * 100 * 4
+    assert len(raw) == 201 * stride
+    frames = [Image.frombytes("RGBA", barrel.size, raw[i:i+stride]) for i in range(0, len(raw), stride)]
+    boxes = [frame.getchannel("A").getbbox() for frame in frames]
+    # Carry one transparent pixel around the common crop for texture filtering.
+    x0, y0 = max(0, min(b[0] for b in boxes)-1), max(0, min(b[1] for b in boxes)-1)
+    x1, y1 = min(100, max(b[2] for b in boxes)+1), min(100, max(b[3] for b in boxes)+1)
+    cropped = [frame.crop((x0, y0, x1, y1)) for frame in frames]
+    w, h = cropped[0].size
+    columns = min(range(math.ceil(201 / (2048//h)), 2048//w + 1), key=lambda n: power(n*w) * power(math.ceil(201/n)*h))
+    pack_images("cannon-angles", cropped, columns)
+    metadata["cannon-angles"].update(left=x0-50, top=y0-50)
 
 
 def campaign_previews():
@@ -104,6 +135,7 @@ static = {
     "menu-stamp": "menu/stamp.png", "solo-background": "back_one_player.png",
     "versus-background": "backgrnd.png", "panel": "menu/void_panel.png",
     "compressor": "compressor_main.png", "compressor-ext": "compressor_ext.png",
+    "aim-dot": "shooter-lowgfx.png",
     "prelight": "balls/bubble_prelight.png", "frozen": "balls/bubble_lose.png",
     "chat-input": "void_chat.png", "chat-peer": "void_chat_small_p2.png",
     "local-win-p1": "win_panel_p1.png", "local-win-p2": "win_panel_p2.png",
@@ -138,6 +170,7 @@ for _ in range(30):
                                                        for _ in range(40 * 30))))
     masks.append(mask)
 pack_images("menu-static", masks)
+cannon_angles()
 for name, path in static.items():
     atlas(name, [src / path])
 for name in ("1pgame", "p1p2", "langame", "netgame", "editor", "gfx-l1", "gfx-l2", "gfx-l3", "keys", "highscore"):

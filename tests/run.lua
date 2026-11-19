@@ -670,6 +670,49 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         open(); fb.Net.match=nil; chat.Refresh(); assert(not chat.input.shown)
         env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
     end)
+    test("original graphics controls select both cannon styles and preserve a shared round",function()
+        local ui=fb.UI
+        ui.frame:Show(); ui:ShowMenu(); eq(fb.db.graphicsLevel,3)
+        local gfx=ui.menuHover[6]
+        gfx.activate(); eq(fb.db.graphicsLevel,1); eq(ui.screen,"menu"); eq(gfx.texture.fbAsset,"hover-gfx-l3")
+        assert(not ui.creditStrip.shown and not fb.db.reducedMotion)
+        ui.menuHover[2].activate(); eq(ui.screen,"opponent")
+        local m=fb.LocalVersus.match
+        m.right.angle=math.pi/4
+        local dotAnchor
+        ui.board.shooter.SetPoint=function(_,...) dotAnchor={...} end
+        ui:Update(0); eq(ui.board.shooter.fbAsset,"aim-dot"); eq(ui.board.shooter.width,2)
+        eq(dotAnchor[4],127+60*math.sin(math.pi/4)); eq(dotAnchor[5],-(365-60*math.cos(math.pi/4)))
+        eq(ui.remoteBoard.shooter.fbAsset,"aim-dot"); assert(not ui.penguin.shown and not ui.remotePenguin.shown)
+        fb.Options.controls.graphicsLevel.set(2)
+        ui:Update(0); eq(ui.board.shooter.fbAsset,"cannon-angles"); eq(ui.board.shooter.fbFrame,51)
+        eq(ui.remoteBoard.shooter.fbFrame,101); assert(not ui.penguin.shown and not ui.remotePenguin.shown)
+        ui:ShowMenu(); eq(gfx.texture.fbAsset,"hover-gfx-l2"); ui:SelectMain(6,true); ui:AnimateMenu(0.08)
+        assert(ui.creditStrip.shown and gfx.texture.fbFrame>1)
+        gfx.activate(); eq(fb.db.graphicsLevel,3); eq(gfx.texture.fbAsset,"hover-gfx-l1")
+        ui:ShowGame(); m.left.angle=-math.pi/4; ui:Update(0)
+        eq(ui.remoteBoard.shooter.fbFrame,151); assert(ui.penguin.shown and ui.remotePenguin.shown)
+        eq(fb.LocalVersus.match,m); eq(m.right.angle,math.pi/4)
+        ui.board.shooter.SetPoint=nil
+        fb.StartCampaign(1)
+    end)
+    test("low graphics hides pop and stick effects but keeps falling chains and the ceiling warning",function()
+        local ui=fb.UI
+        local game=fb.Engine.New({"11......","22....."},3,"training",true)
+        fb.game=game; game.shots=10; game.lockedShots=10; game.tick=20
+        game.stick={age=0,key=1}
+        game.effects={game:Effect(1,"pop"),game:Effect(2,"fall")}
+        game.chains={{drawX=20,drawY=60,color=4}}
+        fb.Options.Set("graphicsLevel",1)
+        ui:RenderBoard(ui.board,game)
+        assert(ui.board.fx[1].shown and not ui.board.fx[2].shown and ui.board.fx[3].shown)
+        assert(not ui.board.stick.shown and ui.board.boardOverlays[1].shown)
+        assert(not ui.board.boardOverlays[2] or not ui.board.boardOverlays[2].shown)
+        game.chainReaction=false; ui:RenderBoard(ui.board,game); assert(not ui.board.fx[3].shown)
+        fb.Options.Set("graphicsLevel",2); ui:RenderBoard(ui.board,game)
+        assert(ui.board.stick.shown and ui.board.fx[2].shown and ui.board.boardOverlays[2].shown)
+        fb.Options.Set("graphicsLevel",3); fb.StartCampaign(1)
+    end)
     test("two-player menu, simultaneous controls, chat focus and shared pause",function()
         local ui=fb.UI
         local oldMouse,oldKeyboard=env.GetMouseFoci,env.GetCurrentKeyBoardFocus

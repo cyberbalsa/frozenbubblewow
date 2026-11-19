@@ -14,7 +14,7 @@ Copyright © 2000–2012 The Frozen-Bubble Team. The full upstream license and a
 - Original level editor: Kim and David Joham.
 - Additional network programming: Mark Glines.
 
-Imported files: `share/data/levels`; `share/gfx/balls/bubble-{1..8}.gif`; `share/gfx/back_one_player.png`; `share/gfx/shooter.png`; and the selected Ogg tracks listed in `tools/import_upstream.py`. Textures are converted to uncompressed 32-bit TGA; the background is resized and the shooter padded to power-of-two dimensions. The campaign color indices are shifted from 0–7 to 1–8. The conversion script reproduces these changes.
+Imported files: `share/data/levels`; `share/gfx/balls/bubble-{1..8}.gif`; `share/gfx/back_one_player.png`; `share/gfx/shooter.png`; and the selected Ogg tracks listed in `tools/import_upstream.py`. Textures are converted to uncompressed 32-bit TGA; the background is resized. The animation importer compiles the original Catmull–Rom rotation function from `lib/Games/FrozenBubble/CStuff.xs` to generate 201 cannon frames from `share/gfx/shooter.png`. Low graphics uses `share/gfx/shooter-lowgfx.png`. The campaign color indices are shifted from 0–7 to 1–8. The conversion script reproduces these changes.
 
 The project logo is an AI-assisted derivative created using the built-in image generation tool with the upstream artwork as a reference. Its generation prompt is in `art/PROMPT.md`; it is distributed under the same GPL-2.0-only license as this port.
 

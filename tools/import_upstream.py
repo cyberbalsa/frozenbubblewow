@@ -25,17 +25,13 @@ assert len(levels) == 100
     + "".join("  {" + ", ".join(json.dumps(row) for row in rows) + "},\n" for rows in levels) + "}\n")
 textures = {f"bubble{i}": f"balls/bubble-{i}.gif" for i in range(1, 9)}
 textures.update({f"bubble-symbol{i}": f"balls/bubble-colourblind-{i}.gif" for i in range(1, 9)})
-textures.update(background="back_one_player.png", shooter="shooter.png")
+textures["background"] = "back_one_player.png"
 for name, path in textures.items():
     im = Image.open(src / "share/gfx" / path).convert("RGBA")
     if name.startswith("bubble"):
         im = bubble_texture(im)
     if name == "background":
         im = im.resize((1024, 512))
-    if name == "shooter":
-        padded = Image.new("RGBA", (128, 128))
-        padded.paste(im, (14, 14))
-        im = padded
     im.save(dst / "Media" / f"{name}.tga")
 for name in ["launch", "stick", "rebound", "destroy_group", "lose", "applause", "malus", "hurry",
              "newroot_solo", "frozen-mainzik-1p", "frozen-mainzik-2p"]:
