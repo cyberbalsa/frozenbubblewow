@@ -22,6 +22,8 @@ The menu, blink overlays, selection textures, pause frames, compressor, and both
 
 The in-game score plaques use lettering rasterized by Frozen Bubble’s SDLPango renderer with DejaVu Sans Book. Multiplayer names use the original 14-point and 8-point contexts, with glyph advances and pair kerning measured by SDLPango. The font notice is in `FrozenBubble/COPYING.hud-font`. To regenerate the lettering on Debian Bookworm with `frozen-bubble` and `fonts-dejavu-core` installed, run `perl tools/import_hud.pl` and then `python3 tools/import_transitions.py /path/to/frozen-bubble` for the opening clock and reveal masks.
 
+The multiplayer lobby uses the original `back_netgame.png` and `menu/highlight-server.png` artwork. Its DejaVu Sans Book and Oblique fonts come from Debian Bookworm’s `fonts-dejavu-core` and `fonts-dejavu-extra` packages (2.37-6). Both are distributed with the notice in `FrozenBubble/COPYING.hud-font`.
+
 Run `python3 tools/import_editor.py /path/to/frozen-bubble` to regenerate the editor artwork. It uses the wooden signs in `level_editor.png`, lettering from `font.png`, the browser controls and the help card. Sign positions and brush hit areas follow `lib/Games/FrozenBubble/LevelEditor.pm`.
 
 The gameplay reference is `bin/frozen-bubble` in the pinned checkout. Run `perl tools/reference_shots.pl /path/to/frozen-bubble` to regenerate the shot fixtures. The generator uses the original Perl collision and grid routines. The Lua tests compare the tick and final board cell for each shot.

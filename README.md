@@ -52,9 +52,9 @@ Choose **Keys** on the main menu to bind aim, fire and center for each player. T
 
 In **Multiplayer**, left-click **Victory limit** to raise the target or right-click to lower it. New profiles start at first to five. Upgrades keep Unlimited. Matchmaking pairs players who chose the same limit and chain rules. After both boards finish animating, either player can choose **Next round**. If the other player has the result screen in focus, both start a fresh board with the series score carried over. **Back to lobby** leaves a finished round without a forfeit. Both players need alpha 13 or later for series. Choose Unlimited to play a single round against an older client.
 
-Choose **Multiplayer → Arena rooms** to host a room for three to five players. Choose the chain rules and victory limit in Multiplayer before hosting. Guests can click a listed room or enter the host’s Player-Realm name. **Announce room** sends a listing from a click when automatic channel discovery is unavailable. Everyone needs alpha 15 or later.
+Choose **Multiplayer → Arena rooms** to host a room for three to five players. The host can change all four room rules until the first round starts. Guests can click a listed room or enter the host’s Player-Realm name. **Announce room** sends a listing from a click when automatic channel discovery is unavailable. Everyone needs alpha 15 or later.
 
-The host clicks **Start round** once at least three players have joined. Your board is in the center. With the pointer over it, F1–F4 target the top-left, top-right, bottom-left, and bottom-right opponents. F10 splits each penalty evenly among living opponents, rounding up. Press Enter to chat. A player whose board fills can watch the rest of the round. By default the remaining players may continue if a guest leaves. The host can turn this off before opening the room. The room closes when its host leaves or enters combat.
+The host clicks **Start game** once at least three players have joined. Your board is in the center. With the pointer over it, F1–F4 target the top-left, top-right, bottom-left, and bottom-right opponents. F10 splits each penalty evenly among living opponents, rounding up. Press Enter to chat. A player whose board fills can watch the rest of the round. By default the remaining players may continue if a guest leaves. The host can turn this off before starting the round. The room closes when its host leaves or enters combat.
 
 After 20 seconds on the focused title screen, one of the four original recordings plays. The three- and five-player recordings use the desktop arena with a small board for each opponent. Click or press a key to return. To turn demos off, open WoW Settings → AddOns → Frozen Bubble Forever and clear **Play demos on the title screen**. Demos also stay off during matchmaking and with Reduce motion enabled.
 
@@ -68,7 +68,9 @@ Flight invitations appear once per taxi ride. Idle invitations default to 90 sec
 
 ## Community channel and P2P sharing
 
-Open Multiplayer and join `FrozenBubbleForever`. This dedicated in-game channel carries queue advertisements, highscores, and level listings. Direct addon whispers carry match state and requested level data. No guild membership is required when using the community channel. Without it, discovery falls back to your guild/group.
+Open Multiplayer and join `FrozenBubbleForever`. This dedicated in-game channel carries lobby chat, queue advertisements, highscores, and level listings. Direct addon whispers carry match state and requested level data. No guild membership is required when using the community channel. Without it, discovery falls back to your guild/group.
+
+On the multiplayer map, select an action with the mouse or with Up, Down and Enter. Choose **Chat**, type a message, and press Enter to send it to the channel. Up recalls a sent line and Down restores the text you were typing. Escape leaves the input. Page Up and Page Down scroll the log. In manual mode, sending posts a visible lobby packet to the dedicated channel.
 
 The addon probes channel delivery instead of treating a successful API return as proof of delivery. If the probe fails, it shows manual mode. **Announce queue**, **Share my best**, **Browse community**, and **Publish** send normal channel discovery packets from your click. These are visible text messages in the dedicated channel; the addon does not post to General or Trade, or automate protected normal chat sends. Recipients with the addon parse them into the lobby/library. Normal chat announcements are rate-limited to one per two seconds. Automatic addon traffic is bounded and throttled.
 
@@ -88,7 +90,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.36` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.37` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

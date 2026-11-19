@@ -126,6 +126,7 @@ def solo_glow(source, pivot):
 
 
 static = {
+    "lobby-map": "back_netgame.png", "lobby-highlight": "menu/highlight-server.png",
     "scores-background": "back_hiscores.png", "scores-frame": "hiscore_frame.png",
     "scores-campaign": "hiscore-levelset.png", "scores-training": "hiscore-mptraining.png",
     "editor-background": "level_editor.png",

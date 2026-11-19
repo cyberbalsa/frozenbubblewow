@@ -717,6 +717,40 @@ test("community verifies self-echo before advertising automatically",function()
     a.Community.Join(); tick(2); eq(a.Community.state,"ready")
     a.Community.Manual("CATALOG"); eq(a.lastManual,"FBF1|1|CATALOG")
 end)
+test("lobby chat uses the community channel and displays one escaped copy per echo",function()
+    local host=client("Chatter"); local peer=client("Listener"); local c=host.Community
+    assert(not c.Say("before joining")); c.Join(); peer.Community.Join(); tick(2)
+    local message="Anyone for a round? |cffffffff"
+    assert(c.Say(message)); tick(1)
+    local expected=host.PlayerName().."> Anyone for a round? ||cffffffff"
+    eq(c.log[1],expected); eq(peer.Community.log[1],expected); eq(#c.log,1)
+    peer.Net.Receive(peer.PREFIX,"1|LOBBY|wrong channel","GUILD",host.PlayerName())
+    peer.Net.Receive(peer.PREFIX,"1|LOBBY|bad\nline","CHANNEL",host.PlayerName())
+    eq(#peer.Community.log,1)
+    c.Blocked(); assert(c.Say("meet | at 5")); eq(host.lastManual,"FBF1|1|LOBBY|meet | at 5")
+    peer.Community.Chat(host.lastManual,host.PlayerName(),"General"); eq(#peer.Community.log,1)
+    peer.Community.Chat(host.lastManual,host.PlayerName(),c.name)
+    eq(peer.Community.log[2],host.PlayerName().."> meet || at 5")
+    assert(not c.Say(string.rep("x",161))); assert(not c.Say("   "))
+    for i=1,101 do c.Log(tostring(i)) end
+    eq(#c.log,100); eq(c.log[1],"*** 2")
+end)
+test("the host can revise all four room rules immediately before starting",function()
+    local host,first,second=client("RoomHost"),client("IceGuest"),client("SnowGuest")
+    host.Arena.Host()
+    first.Arena.Join(host.PlayerName()); second.Arena.Join(host.PlayerName()); tick(5)
+    first.Arena.SetRule("versusLimit",100); eq(first.Net.match.limit,host.Net.match.limit)
+    host.Arena.SetRule("versusChains",true); host.Arena.SetRule("versusLimit",12)
+    host.Arena.SetRule("arenaContinue",false); host.Arena.SetRule("arenaTargeting",false)
+    drops.ASEATS=true; host.Arena.Start(); tick(16)
+    for _,peer in ipairs({host,first,second}) do
+        local m=peer.Net.match
+        eq(m.phase,"playing"); eq(m.limit,12); assert(m.chainReaction and peer.game.chainReaction)
+        assert(not m.keepRoom and not m.targeting)
+    end
+    host.Arena.SetRule("versusLimit",1); eq(host.Net.match.limit,12)
+    host.Arena.Leave(); tick(2)
+end)
 test("level validation accepts original floating groups and rejects out-of-editor rows",function()
     local g=E.New({},1); g.grid={[17]=1}; assert(a.Community.Validate(g:Pack()))
     g.grid={[1]=1,[9]=2}; assert(a.Community.Validate(g:Pack()))
@@ -940,7 +974,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
     loadModule("LogoData",fb,env); loadModule("TitleLogo",fb,env)
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("Lobby",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -1952,8 +1986,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
             if result=="lost" then eq(fb.UI.board.current.fbAsset,"frozen"); assert(not fb.UI.board.nextRim.shown) end
             fb.UI.retryButton.scripts.OnClick(); eq(fb.UI.screen,"lobby"); eq(fb.Net.match,nil)
         end
-        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),12)
-        fb.UI.versusRules.scripts.OnClick(); eq(fb.Net.QueueCode(),11)
+        fb.UI.panels.lobby.byID.chains.scripts.OnClick(); eq(fb.Net.QueueCode(),12)
+        fb.UI.panels.lobby.byID.chains.scripts.OnClick(); eq(fb.Net.QueueCode(),11)
     end)
     test("editor paint follows the original ten staggered rectangular row bands",function()
         local painter={editGame={grid={}},editorColor=8}
@@ -2314,6 +2348,44 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.StartCustom(ui:DefaultEditorBoards()[17]); verify()
         fb.GameSeed=oldSeed; ui:ShowMenu()
     end)
+    test("map lobby navigates with keys, retains chat drafts and joins the selected listing",function()
+        local ui=fb.UI
+        local focus=env.GetMouseFoci; local rooms=fb.Arena.rooms; fb.Arena.rooms={}
+        local p=ui.panels.rooms
+        env.GetMouseFoci=function() return {p} end
+        ui:ShowLobby(); eq(ui.panels.lobby.map.fbAsset,"lobby-map"); assert(not ui.menu.shown)
+        ui.panels.lobby.byID.rooms.scripts.OnClick()
+        eq(ui.screen,"rooms"); eq(p.map.fbAsset,"lobby-map"); eq(p.highlight.fbAsset,"lobby-highlight")
+        local function press(key) p.scripts.OnKeyDown(p,key); p.scripts.OnKeyUp(p,key) end
+        eq(p.selected,"chat"); press("ENTER"); assert(p.input.shown)
+        p.input:SetText("Keep this"); p.input.scripts.OnTextChanged(p.input)
+        p.input.scripts.OnEscapePressed(); press("ENTER"); eq(p.input:GetText(),"Keep this")
+        fb.Community.Join(); tick(2)
+        p.input.scripts.OnEnterPressed(p.input); eq(p.input:GetText(),""); assert(p.input.shown)
+        p.input:SetText("New draft"); p.input.scripts.OnArrowPressed(p.input,"UP"); eq(p.input:GetText(),"Keep this")
+        p.input.scripts.OnArrowPressed(p.input,"DOWN"); eq(p.input:GetText(),"New draft")
+        p.input.scripts.OnEscapePressed(); press("DOWN"); assert(p.selected~="chat")
+        local scroll=0; p.log.ScrollUp=function() scroll=scroll+1 end
+        press("PAGEUP"); eq(scroll,4); p.log.ScrollUp=nil
+        for i=1,6 do fb.Arena.rooms["Host"..i.."-TestRealm"]={count=2,limit=5,id="111-"..i,seen=clock} end
+        ui:RefreshLobby(); p.byID.more.scripts.OnClick()
+        local id="Host6-TestRealm:111-6"
+        assert(p.byID[id]); p.byID[id].scripts.OnEnter(); eq(p.selected,id)
+        fb.Arena.rooms["Host6-TestRealm"]=nil; ui:RefreshLobby(); eq(p.selected,"chat")
+        fb.Arena.rooms={}
+        local host=client("Lodge"); host.Arena.Host(); tick(2); ui:RefreshLobby()
+        local listing=p.byID[host.PlayerName()..":"..host.Net.match.room]
+        listing.scripts.OnEnter(); press("ENTER"); tick(5)
+        eq(fb.Net.match.peer,host.PlayerName()); eq(fb.Net.match.phase,"room")
+        eq(p.byID.chains.available,false); fb.Arena.Leave(); tick(1); host.Arena.Leave(); tick(1)
+        fb.Arena.rooms=rooms; p.page=1
+        local rival=client("Duelist"); rival.db.versusLimit=12; rival.db.versusChains=true
+        rival.Net.SetQueue(true); tick(2); ui:ShowLobby()
+        local limit=fb.db.versusLimit
+        ui.panels.lobby.byID[rival.PlayerName()..":"..rival.Net.QueueCode()].scripts.OnClick(); tick(3)
+        eq(rival.Net.match.phase,"invite"); eq(rival.Net.match.limit,12); assert(rival.Net.match.chainReaction)
+        eq(fb.db.versusLimit,limit); fb.Net.Leave(); tick(2); ui:ShowMenu(); env.GetMouseFoci=focus
+    end)
     test("room controls render live miniature boards, targeting, chat, spectating and combat cancellation",function()
         local ui=fb.UI
         local oldMouse=env.GetMouseFoci
@@ -2321,7 +2393,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local guest1,guest2=client("Larch"),client("Maple")
         local guest3,guest4=client("Spruce"),client("Willow")
         fb.db.versusLimit=1
-        ui:Panel("rooms"); ui.createRoom.scripts.OnClick()
+        ui:Panel("rooms"); ui.panels.rooms.byID.host.scripts.OnClick()
         local host=fb.PlayerName()
         for _,peer in ipairs({guest1,guest2,guest3,guest4}) do peer.Arena.Join(host) end
         tick(9)
@@ -2329,7 +2401,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.Options.Set("boardTransitions",true)
         local random=env.math.random
         env.math.random=function(n) return n==8 and 4 or n==3 and 3 or 2 end
-        ui.roomStart.scripts.OnClick(); tick(9)
+        ui.panels.rooms.byID.start.scripts.OnClick(); tick(9)
         local reveal=fb.Transitions
         eq(reveal.effect,"arena-dark"); eq(reveal.sprites[1].fbAsset,"arena-background")
         local mini=0
@@ -2377,8 +2449,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:Update(0.02); assert(ui.result.shown); eq(ui.winnerName.text,guest2.PlayerName()); eq(ui.retryButton.text,"Back to lobby")
         ui.retryButton.scripts.OnClick(); tick(3)
         eq(fb.Net.match,nil); eq(guest2.Net.match,nil)
-        ui:Panel("rooms"); ui.createRoom.scripts.OnClick()
-        guest1.Arena.Join(host); guest2.Arena.Join(host); tick(6); ui.roomStart.scripts.OnClick(); tick(9)
+        ui:Panel("rooms"); ui.panels.rooms.byID.host.scripts.OnClick()
+        guest1.Arena.Join(host); guest2.Arena.Join(host); tick(6); ui.panels.rooms.byID.start.scripts.OnClick(); tick(9)
         fb.Recordings.Mark()
         env.InCombatLockdown=function() return true end
         eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")

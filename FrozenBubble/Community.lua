@@ -1,6 +1,6 @@
 -- Dedicated discovery channel, with user-click chat fallback on restricted Forever builds.
 local _, FB = ...
-local C={name="FrozenBubbleForever",catalog={},pending={},replyAt={},state="offline",lastManual=-100}
+local C={name="FrozenBubbleForever",catalog={},pending={},replyAt={},log={},state="offline",lastManual=-100}
 FB.Community=C
 C.maxBoards=100
 C.blankBoard=string.rep("0",98)
@@ -45,7 +45,26 @@ function C.Update()
     for name,t in pairs(C.replyAt) do if now()-t>60 then C.replyAt[name]=nil end end
 end
 function C.Broadcast(kind,...)
-    if C.state=="ready" and C.id then FB.Net.Send(kind,"CHANNEL",tostring(C.id),...) end
+    if C.state=="ready" and C.id then return FB.Net.Send(kind,"CHANNEL",tostring(C.id),...) end
+end
+function C.Log(message,sender)
+    local line=((sender and (sender.."> ") or "*** ")..message):gsub("|","||")
+    C.log[#C.log+1]=line
+    if #C.log>100 then table.remove(C.log,1) end
+    if FB.UI and FB.UI.AppendLobbyLine then FB.UI:AppendLobbyLine(line) end
+end
+local function validChat(message)
+    return type(message)=="string" and #message<=160 and message:find("%S") and not message:find("%c")
+end
+function C.Say(message)
+    if not validChat(message) then return nil,"Enter a message of up to 160 bytes." end
+    if InCombatLockdown() then return nil,"Send lobby chat after combat." end
+    if C.state=="manual" and C.id then
+        if C.Manual("LOBBY",message) then return true end
+    elseif C.state=="ready" and C.id then
+        if C.Broadcast("LOBBY",message) then return true end
+    else return nil,"Join FrozenBubbleForever and wait for the channel check." end
+    return nil,"Chat is busy. Press Enter to retry."
 end
 function C.Manual(kind,...)
     -- Must be called directly by an OnClick handler. Never automate normal chat sends.
@@ -66,9 +85,9 @@ end
 function C.Chat(message,sender,channelName)
     if issecretvalue and (issecretvalue(message) or issecretvalue(sender) or issecretvalue(channelName)) then return end
     if channelName~=C.name or type(message)~="string" or message:sub(1,5)~="FBF1|" or #message>255 then return end
-    -- Normal chat is only a discovery/catalog transport, never gameplay or an executable payload.
+    -- Manual channel posts carry lobby text and discovery notices.
     local body=message:sub(6); local fields=FB.Split(body)
-    if fields[2]=="AROOM" or fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
+    if fields[2]=="LOBBY" or fields[2]=="AROOM" or fields[2]=="QUEUE" or fields[2]=="SCORE" or fields[2]=="SCOREQ" or fields[2]=="LEVEL" or fields[2]=="LEVELSET" or fields[2]=="CATALOG" then
         FB.Net.Receive(FB.PREFIX,body,"CHANNEL",sender)
     end
 end
@@ -245,6 +264,14 @@ function C.Receive(message,channel,sender)
     if p[1]~="1" then return false end
     local kind=p[2]
     sender=FB.PlayerName(sender)
+    if kind=="LOBBY" then
+        local line=message:sub(9)
+        if channel=="CHANNEL" and C.joined and validChat(line) then
+            C.Log(line,sender)
+            if sender~=FB.PlayerName() and FB.UI and (FB.UI.screen=="rooms" or FB.UI.screen=="lobby") then FB.Sound("chatted") end
+        end
+        return true
+    end
     if kind=="PROBE" then
         if channel=="CHANNEL" and sender==FB.PlayerName() and p[3]==C.nonce then C.state="ready" end
         return true

@@ -50,6 +50,19 @@ local function announce(m,manual)
     m.advert=GetTime()
 end
 function A.Announce() local m=N.match; if m and m.arena and m.host then announce(m,true) end end
+local ruleFields={versusLimit="limit",versusChains="chainReaction",arenaContinue="keepRoom",arenaTargeting="targeting"}
+function A.SetRule(key,value)
+    local m=N.match
+    if not ruleFields[key] or N.queue or InCombatLockdown() then return end
+    if m and (not m.arena or not m.host or m.phase~="room") then return end
+    FB.db[key]=value
+    if m then
+        m[ruleFields[key]]=value
+        -- Guests acknowledge this roster revision before accepting a round start.
+        m.revision=m.revision+1; m.advert=-100; m.pulse=-100
+        N.Notify("Room rules updated.")
+    elseif FB.UI then FB.UI:RefreshLobby() end
+end
 function A.Host()
     if not free() then return end
     local m=room(FB.PlayerName(),serial())
@@ -103,12 +116,13 @@ local function acceptSeats(m,p)
         members[name]=true
     end
     if m.seats[1]~=m.peer or not members[m.me] then return end
+    local samePlayers=table.concat(m.names,",")==table.concat(m.seats,",",1,count)
     m.names={}; m.players={}
     for i=1,count do seat(m,m.seats[i]) end
     m.revision,m.room,m.phase,m.limit,m.chainReaction=rev,p[3],"room",limit,chains
     m.keepRoom=flags%2==1; m.targeting=flags>=2
     m.lastHost=GetTime(); m.pulse=-100
-    N.Notify("In "..m.peer.."'s room. "..count.." of 5 seats filled.")
+    N.Notify(samePlayers and "The host updated the room rules." or ("In "..m.peer.."'s room. "..count.." of 5 seats filled."))
 end
 local function close(m,reason)
     if N.match~=m then return end
@@ -244,6 +258,7 @@ local function depart(m,v)
         table.remove(m.names,v.index); m.players[v.name]=nil
         for i,n in ipairs(m.names) do m.players[n].index=i end
         m.revision=m.revision+1; m.pulse=-100; m.advert=-100
+        N.Notify(v.name.." left the room.")
     elseif m.keepRoom then
         if not v.left then
             FB.Recordings.OnlineEvent(m,"left",v.index)
@@ -314,7 +329,10 @@ function A.Receive(kind,p,channel,sender)
         if not validName(sender) or not p[4] or not p[4]:match("^%d+%-%d+$") or #p[4]>32 then return true end
         local v=m.players[sender]
         if not v and #m.names>=5 then send(sender,"AFULL",p[4]); return true end
-        if not v then seat(m,sender); v=m.players[sender]; m.revision=m.revision+1; m.advert=-100 end
+        if not v then
+            seat(m,sender); v=m.players[sender]; m.revision=m.revision+1; m.advert=-100
+            N.Notify(sender.." joined the room.")
+        end
         v.nonce=p[4]; v.seen=GetTime(); seats(m,sender); m.pulse=-100
     elseif kind=="ASEATS" and sender==m.peer then acceptSeats(m,p)
     elseif kind=="AFULL" and sender==m.peer and m.phase=="joining" and p[3]==m.nonce then close(m,"That room is full.")

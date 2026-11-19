@@ -1,3 +1,9 @@
+# 0.1.0-alpha.37
+
+- Multiplayer and Arena rooms use the original world map and row highlight. Use Up, Down and Enter or click a listing. Selecting a queued duelist challenges them under their advertised rules.
+- Choose Chat to talk on the FrozenBubbleForever channel. Page Up and Page Down scroll the lobby log. While typing, Up recalls a sent message and Down returns to your draft.
+- Arena hosts can change chain reactions, the victory limit, targeting and departure rules while players gather. Guests receive the updated rules before the first shot.
+
 # 0.1.0-alpha.36
 
 - Save and reopen named level sets while they still have empty boards. The editor preserves empty boards in their original positions when importing and exporting desktop files and WoW codes. You can test individual boards as you build the set.

@@ -6,36 +6,8 @@ local positions={
     {x=20,y=247,penguinX=114,penguinY=439,scoreX=83,scoreY=465,attackX=24,attackY=442,dotX=149,dotY=258,malusX=12,malusY=411},
     {x=492,y=247,penguinX=586,penguinY=439,scoreX=553,scoreY=465,attackX=496,attackY=442,dotX=483,dotY=258,malusX=628,malusY=411},
 }
-function U:BuildRooms(text,button,input,makeBoard)
-    local p=self.panels.rooms
+function U:BuildArenaHUD(text,makeBoard)
     self.makeArenaBoard=makeBoard
-    self.roomLabel=text(p,"Arena rooms",0,0,18,238)
-    self.roomRules=text(p,"",0,37,13,348)
-    self.createRoom=button(p,"Host room",0,70,105,A.Host)
-    self.roomStart=button(p,"Start round",118,70,108,A.Start)
-    self.roomLeave=button(p,"Leave room",238,70,110,function() A.Leave() end)
-    self.roomTarget=input(p,0,112,195,"")
-    self.roomJoin=button(p,"Join by host",206,109,142,function()
-        self.roomTarget:ClearFocus(); A.Join(self.roomTarget:GetText())
-    end)
-    self.roomAnnounce=button(p,"Announce room",0,150,165,A.Announce)
-    self.roomView=button(p,"View round",181,150,167,function() self:ShowGame() end)
-    self.roomNotice=text(p,"",0,191,13,348)
-    self.roomRows={}
-    for i=1,5 do
-        local row
-        row=button(p,"",0,232+(i-1)*32,348,function() if row.host then A.Join(row.host) end end)
-        self.roomRows[i]=row
-    end
-    self.roomPrev=button(p,"Previous",0,397,105,function() self.roomPage=self.roomPage-1; self:RefreshRooms() end)
-    self.roomNext=button(p,"More rooms",240,397,108,function() self.roomPage=self.roomPage+1; self:RefreshRooms() end)
-    self.keepRoom=button(p,"",0,436,170,function()
-        if not FB.Net.match then FB.db.arenaContinue=FB.db.arenaContinue==false; self:RefreshRooms() end
-    end)
-    self.targetRule=button(p,"",181,436,167,function()
-        if not FB.Net.match then FB.db.arenaTargeting=FB.db.arenaTargeting==false; self:RefreshRooms() end
-    end)
-    self.roomPage=1
     self.arenaHUD=CreateFrame("Frame",nil,self.gameLayer)
     self.arenaHUD:SetSize(640,480); self.arenaHUD:SetScale(1.6); self.arenaHUD:SetPoint("TOPLEFT")
     self.arenaHUD:SetFrameLevel(self.layers.hud); self.arenaHUD:Hide()
@@ -55,43 +27,6 @@ function U:BuildRooms(text,button,input,makeBoard)
         self.leftSigns[i]=FB.Animation.Image(self.arenaHUD,"arena-left-"..slot,pos.x-1,pos.y-2)
         self.leftSigns[i]:Hide()
     end
-end
-function U:RefreshRooms()
-    if not self.roomRules then return end
-    local m=FB.Net.match
-    local room=m and m.arena and m
-    local free=not m and not FB.Net.queue
-    local limit=room and room.limit or FB.db.versusLimit
-    local chains=room and room.chainReaction or not room and FB.db.versusChains
-    self.roomLabel:SetText(room and ("Host · "..room.peer) or "Arena rooms")
-    self.roomRules:SetText(FB.Series.Label(limit).."  ·  "..(chains and "Chain reactions on" or "Standard rules"))
-    self.createRoom:SetEnabled(free); self.roomJoin:SetEnabled(free)
-    self.roomStart:SetEnabled(room and (room.host and room.phase=="room" and #room.names>=3 or room.phase=="done" and not A.Complete(room)) or false)
-    self.roomStart:SetText(room and room.phase=="done" and "Next round" or "Start round")
-    self.roomLeave:SetEnabled(room and true or false)
-    local keep,targets=FB.db.arenaContinue~=false,FB.db.arenaTargeting~=false
-    if room and room.phase~="joining" then keep,targets=room.keepRoom,room.targeting end
-    self.keepRoom:SetEnabled(free); self.targetRule:SetEnabled(free)
-    self.keepRoom:SetText(keep and "On leave: continue" or "On leave: end room")
-    self.targetRule:SetText(targets and "Targeting: on" or "Targeting: off")
-    self.roomAnnounce:SetEnabled(room and room.host and room.phase=="room" or false)
-    self.roomView:SetEnabled(room and room.played or false)
-    self.roomNotice:SetText(room and (room.phase=="room" and (#room.names.."/5 players · "..table.concat(room.names,", ")) or FB.Net.notice)
-        or "Join an open room below, or enter its host’s Player-Realm name.")
-    local names={}
-    if free then for name,listing in pairs(A.rooms) do if listing.count<5 then names[#names+1]=name end end end
-    table.sort(names)
-    local pages=math.max(1,math.ceil(#names/5)); self.roomPage=FB.Clamp(self.roomPage,1,pages)
-    for i,row in ipairs(self.roomRows) do
-        local name=names[(self.roomPage-1)*5+i]
-        row.host=name; row:SetShown(name~=nil)
-        if name then
-            local listing=A.rooms[name]
-            row:SetText(name.." · "..listing.count.."/5 · "..FB.Series.Label(listing.limit)..(listing.chains and " · Chain" or ""))
-        end
-    end
-    self.roomPrev:SetShown(pages>1); self.roomNext:SetShown(pages>1)
-    self.roomPrev:SetEnabled(self.roomPage>1); self.roomNext:SetEnabled(self.roomPage<pages)
 end
 function U:LayoutArena(m)
     FB.Animation.Frame(self.gameBackground,"arena-background",1)

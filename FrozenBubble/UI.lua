@@ -260,13 +260,13 @@ function U:Build()
     for _,name in ipairs({"editorText","keys","help","lobby","rooms","scores","scoreEntry","market","editor","opponent","solo","chain","pick","settings","recordings","replay"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
         p:SetFrameLevel(self.layers.panel); p:EnableMouse(true); p:Hide(); self.panels[name]=p
-        if name~="replay" and name~="editorText" and name~="pick" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
+        if name~="rooms" and name~="lobby" and name~="replay" and name~="editorText" and name~="pick" and name~="keys" and name~="scores" and name~="scoreEntry" and name~="opponent" and name~="solo" and name~="chain" and name~="editor" then
             local bg=A.Image(p,"panel",-20,-24,410,514,"BACKGROUND")
             bg:SetVertexColor(0.6,0.65,0.75)
             button(p,"Back",266,-20,84,function() self:ShowMenu() end)
         end
     end
-    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(); self:BuildRooms(text,button,input,makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
+    K.Build(self,text,button); self:BuildHelp(); self:BuildLobby(text); self:BuildArenaHUD(text,makeBoard); self:BuildScores(text,button,input); self:BuildMarket(); self:BuildEditor(text,button,input,fill)
     self:BuildSolo(); self:BuildSettings(); self:BuildRecordings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
@@ -363,7 +363,7 @@ function U:Build()
     self.windowClose=button(chrome,"X",976,4,30,function() f:Hide() end)
     self.windowMinus=button(chrome,"−",900,4,28,function() FB.Options.Set("windowSize",math.max(0.55,(FB.db.windowSize or 1)-0.1)) end)
     self.windowPlus=button(chrome,"+",932,4,28,function() FB.Options.Set("windowSize",math.min(1,(FB.db.windowSize or 1)+0.1)) end)
-    for _,keyboardFrame in ipairs({self.menu,self.board,self.pauseScreen,self.panels.solo,self.panels.chain,self.panels.pick,self.panels.replay,self.panels.scores,self.panels.settings}) do
+    for _,keyboardFrame in ipairs({self.menu,self.board,self.pauseScreen,self.panels.solo,self.panels.chain,self.panels.pick,self.panels.replay,self.panels.scores,self.panels.settings,self.panels.lobby,self.panels.rooms}) do
         K.InstallAudioKeys(keyboardFrame)
     end
     self:Options(); self:ShowMenu(); f:Hide()
@@ -514,6 +514,8 @@ function U:SetCombatInput(blocked)
     if blocked then FB.Transitions.Interrupt(); self.pauseScreen:EnableKeyboard(false); self.pauseCapture=false end
     self.menu:EnableKeyboard(not blocked and self.screen=="menu")
     self.panels.editor:EnableKeyboard(not blocked and self.screen=="editor")
+    self.panels.rooms:EnableKeyboard(not blocked and self.screen=="rooms")
+    self.panels.lobby:EnableKeyboard(not blocked and self.screen=="lobby")
     self.panels.pick:EnableKeyboard(not blocked and self.screen=="pick")
     self.panels.settings:EnableKeyboard(not blocked and self.screen=="settings")
     self.panels.solo:EnableKeyboard(not blocked and self.screen=="solo")
@@ -791,6 +793,8 @@ function U:Panel(name)
     self.screen=name; self.stroke=nil; self.editing=name=="editor"
     self.editorPreview:Hide(); self:CloseEditorDialog(); self.editorDirty=true
     self.panels.editor:EnableKeyboard(self.editing and not self.combatInput)
+    self.panels.rooms:EnableKeyboard(name=="rooms" and not self.combatInput)
+    self.panels.lobby:EnableKeyboard(name=="lobby" and not self.combatInput)
     self.panels.pick:EnableKeyboard(name=="pick" and not self.combatInput)
     self.panels.settings:EnableKeyboard(name=="settings" and not self.combatInput)
     self.panels.solo:EnableKeyboard(name=="solo" and not self.combatInput)
@@ -802,7 +806,7 @@ function U:Panel(name)
     if name=="solo" then self:SelectSolo(1,true) end
     if name=="scores" then self:RefreshScores() end
     if name=="pick" then self:PickSet() end
-    if name=="rooms" then self:RefreshRooms() end
+    if name=="rooms" or name=="lobby" then self:RefreshLobby() end
     self:WindowControls(false)
     FB.MatchChat.Position(false)
     if self.roomBadges then self.roomBadges:Hide() end
@@ -812,7 +816,7 @@ function U:Panel(name)
     local replay=name=="replay" and FB.Recordings.playback
     local versusLayout=name=="opponent" or replay and (replay.left~=nil or replay.arena~=nil)
     local gameplay=name=="replay" or name=="game" or name=="opponent" or name=="editor" or name=="scoreEntry" and FB.game and FB.game.scoreEntry==self.namingScore
-    self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and not replay and name~="scoreEntry")
+    self.menu:SetShown(not gameplay and name~="lobby" and name~="rooms"); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and not replay and name~="scoreEntry")
     self.remoteBoard:SetShown(versusLayout or false)
     self.remoteLabel:SetShown(versusLayout or false)
     self.remotePenguin:SetShown(versusLayout or false)
@@ -875,58 +879,6 @@ end
 function U:CanAutoRematch()
     return self.screen=="opponent" and self.frame:IsShown() and self.result:IsShown() and self.resultGame==FB.game and not self.inactive
         and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
-end
-function U:BuildLobby()
-    local p=self.panels.lobby
-    text(p,"MULTIPLAYER",0,0,16,350)
-    button(p,"Join community channel",0,32,180,function() FB.Community.Join() end)
-    self.versusRules=button(p,"Chain reactions off",188,32,154,function()
-        if FB.Net.queue or FB.Net.match then return end
-        FB.db.versusChains=not FB.db.versusChains; self:RefreshLobby()
-    end)
-    self.channelStatus=text(p,"",0,66,12,350,muted)
-    button(p,"Find match / stop",0,115,165,function() FB.Net.SetQueue(not FB.Net.queue) end)
-    button(p,"Announce queue",177,115,165,function()
-        if not FB.Net.queue then FB.Net.SetQueue(true) end
-        if FB.Net.queue then FB.Community.Manual("QUEUE",FB.Net.QueueCode()) end
-    end)
-    self.target=input(p,6,158,206,"")
-    button(p,"Challenge",223,156,120,function() FB.Net.Challenge(self.target:GetText()) end)
-    self.lobbyNotice=text(p,"",0,199,13,350)
-    self.accept=button(p,"Accept",0,260,105,function() FB.Net.Accept() end)
-    button(p,"Leave / forfeit",118,260,130,function() FB.Net.Leave() end)
-    button(p,"View match",255,260,90,function()
-        local m=FB.Net.match
-        if m and m.arena and not m.played then self:Panel("rooms") else self:Panel("opponent") end
-    end)
-    self.victoryLimit=button(p,"",0,300,345,function(_,which)
-        if FB.Net.queue or FB.Net.match then return end
-        FB.db.versusLimit=FB.Series.Cycle(FB.db.versusLimit,which=="RightButton" and -1 or 1)
-        self:RefreshLobby()
-    end)
-    self.victoryLimit:RegisterForClicks("LeftButtonUp","RightButtonUp")
-    button(p,"Arena rooms · 3–5 players",0,338,345,function() self:Panel("rooms") end)
-    self.peerText=text(p,"",0,375,12,350,muted)
-end
-function U:ShowLobby() self.frame:Show(); self:Panel("lobby"); self:RefreshLobby() end
-function U:RefreshLobby()
-    if self.screen=="rooms" then self:RefreshRooms() end
-    if not self.lobbyNotice then return end
-    self.lobbyNotice:SetText(FB.Net.notice or "Queue to match another player, or enter Player-Realm to challenge a friend.")
-    local chains=FB.db.versusChains
-    if FB.Net.match then chains=FB.Net.match.chainReaction end
-    local limit=FB.Net.match and FB.Net.match.limit or FB.db.versusLimit
-    self.victoryLimit:SetText("Victory limit: "..FB.Series.Label(limit))
-    self.victoryLimit:SetEnabled(not FB.Net.queue and not FB.Net.match)
-    self.versusRules:SetText(chains and "Chain reactions on" or "Chain reactions off")
-    self.versusRules:SetEnabled(not FB.Net.queue and not FB.Net.match)
-    self.accept:SetEnabled(FB.Net.match and FB.Net.match.phase=="invite" or false)
-    local labels={offline="Not joined",joining="Joining…",checking="Checking delivery…",ready="Addon channel delivery verified",manual="Addon channel blocked: use click-to-announce",unavailable="Channel unavailable: retry Join"}
-    self.channelStatus:SetText("FrozenBubbleForever\n"..(labels[FB.Community.state] or FB.Community.state))
-    local peers={}
-    for name,peer in pairs(FB.Net.peers) do if peer.queued then peers[#peers+1]=name..(peer.chainReaction and " (chain)" or "")..(peer.limit and peer.limit>0 and (" · first to "..peer.limit) or "") end end
-    table.sort(peers)
-    self.peerText:SetText("Queued players seen: "..#peers.."\n"..table.concat(peers,"\n",1,math.min(5,#peers)).."\n\nChannel reach depends on your server / ruleset. Both players need this addon.")
 end
 function U:BuildMarket()
     local p=self.panels.market
@@ -1404,8 +1356,7 @@ function U:Update(dt)
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then
         self.refresh=0
-        if self.screen=="rooms" then self:RefreshRooms()
-        elseif self.screen=="lobby" then self:RefreshLobby()
+        if self.screen=="rooms" or self.screen=="lobby" then self:RefreshLobby()
         elseif self.screen=="scores" and self.scoreRevision~=FB.Scores.revision then self:RefreshScores()
         elseif self.screen=="market" then self:RefreshMarket() end
     end

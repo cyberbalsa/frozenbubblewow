@@ -332,7 +332,7 @@ function T.Open(target,demo)
     T.target,T.demo,T.used,T.age,T.patchCount=target,demo,0,0,0
     T.boxes={}; T.localeCount=0
     ui.editing=false; ui.keys={}; ui.menu:EnableKeyboard(false); ui.board:EnableKeyboard(false)
-    for _,name in ipairs({"solo","chain","keys","scores"}) do ui.panels[name]:EnableKeyboard(false) end
+    for _,name in ipairs({"solo","chain","keys","scores","lobby","rooms"}) do ui.panels[name]:EnableKeyboard(false) end
     local focus=GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus()
     if focus and ui:OwnsFocus(focus) then focus:ClearFocus() end
     if demo then FB.Demos.Opening(demo,sprite) else fill(layout) end

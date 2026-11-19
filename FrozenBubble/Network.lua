@@ -5,6 +5,7 @@ FB.Net=N
 local function now() return GetTime() end
 local function notify(text)
     N.notice=text
+    if FB.Community then FB.Community.Log(text) end
     if FB.Debug then FB.Debug.Log("NET",text) end
     if FB.UI then FB.UI:RefreshLobby() end
 end
@@ -74,7 +75,7 @@ function N.SetQueue(enabled)
     N.Broadcast("QUEUE",enabled and N.QueueCode() or 0)
     notify(enabled and "Queued. If channel delivery is blocked, click Announce queue." or "Left the queue.")
 end
-function N.Challenge(peer, automatic)
+function N.Challenge(peer, automatic, listing)
     local available,reason=N.Available()
     if not available then notify(reason); return false end
     if N.match then notify("Finish or leave your current match first."); return false end
@@ -84,7 +85,9 @@ function N.Challenge(peer, automatic)
     N.serial=N.serial+1
     local seed=(time()+math.floor(now()*1000)+N.serial*7919)%2147483646+1
     local id=tostring(seed).."-"..N.serial
-    N.match={id=id,peer=peer,seed=seed,host=true,phase="offer",since=now(),lastRetry=-100,lastSeen=now(),seq=0,remoteSeq=0,remoteAttack=0,automatic=automatic,limit=FB.db.versusLimit,chainReaction=FB.db.versusChains==true}
+    local limit,chains=FB.db.versusLimit,FB.db.versusChains==true
+    if listing then limit,chains=listing.limit,listing.chainReaction end
+    N.match={id=id,peer=peer,seed=seed,host=true,phase="offer",since=now(),lastRetry=-100,lastSeen=now(),seq=0,remoteSeq=0,remoteAttack=0,automatic=automatic,limit=limit,chainReaction=chains}
     N.queue=false
     if FB.game then FB.game.paused=true end
     N.Broadcast("QUEUE",0)
