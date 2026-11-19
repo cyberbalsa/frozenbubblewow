@@ -117,7 +117,7 @@ function U:BuildLobby(text)
             if InCombatLockdown() then return end
             local active=not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
             local current=p.byID[p.selected]
-            local rule=current and current.available and (current.id=="limit" or current.id=="chains" or current.id=="continue" or current.id=="targeting")
+            local rule=current and current.available and (current.id=="limit" or current.id=="chains" or current.id=="safe" or current.id=="continue" or current.id=="targeting")
             local adjust=rule and (key=="LEFT" or key=="RIGHT")
             local digit=rule and current.id=="limit" and (key:match("^%d$") or key:match("^NUMPAD(%d)$"))
             local used=active and (adjust or digit or key=="UP" or key=="DOWN" or key=="ENTER" or key=="NUMPADENTER" or key=="ESCAPE"
@@ -185,18 +185,18 @@ local function listPlayers(page,rooms)
         local name=names[i]
         if rooms then
             local room=A.rooms[name]
-            add(page,name..":"..room.id,"Join game: "..name.."  ·  "..room.count.."/5  ·  "..FB.Series.Label(room.limit)..(room.chains and "  ·  Chain" or ""),
+            add(page,name..":"..room.id,"Join game: "..name.."  ·  "..room.count.."/5  ·  "..FB.Series.Label(room.limit)..(room.chains and "  ·  Chain" or "")..(room.safePenalties and "  ·  Safe penalties" or ""),
                 function()
                     local current=A.rooms[name]
                     if current and current.id==room.id and current.count<5 then A.Join(name) else U:RefreshLobby() end
                 end)
         else
             local peer=N.peers[name]
-            add(page,name..":"..FB.Series.Code(peer.chainReaction,peer.limit),
-                "Challenge: "..name.."  ·  "..FB.Series.Label(peer.limit)..(peer.chainReaction and "  ·  Chain" or ""),
+            add(page,name..":"..FB.Series.Code(peer.chainReaction,peer.limit,peer.safePenalties),
+                "Challenge: "..name.."  ·  "..FB.Series.Label(peer.limit)..(peer.chainReaction and "  ·  Chain" or "")..(peer.safePenalties and "  ·  Safe penalties" or ""),
                 function()
                     local current=N.peers[name]
-                    if current and current.queued and current.limit==peer.limit and current.chainReaction==peer.chainReaction then
+                    if current and current.queued and current.limit==peer.limit and current.chainReaction==peer.chainReaction and current.safePenalties==peer.safePenalties then
                         N.Challenge(name,false,peer)
                     else U:RefreshLobby() end
                 end)
@@ -265,6 +265,10 @@ function U:RefreshLobby()
     local chains=m and m.chainReaction or not m and FB.db.versusChains
     add(p,"chains","Chain-reaction: "..(chains and "enabled" or "disabled"),function()
         A.SetRule("versusChains",not chains)
+    end,editable)
+    local safe=m and m.safePenalties or not m and FB.db.versusSafePenalties
+    add(p,"safe","Avoid instant-death penalties: "..(safe and "enabled" or "disabled"),function()
+        A.SetRule("versusSafePenalties",not safe)
     end,editable)
     add(p,"limit","Victories limit: "..FB.Series.Label(m and m.limit or FB.db.versusLimit),function(button)
         A.SetRule("versusLimit",FB.Series.Cycle(m and m.limit or FB.db.versusLimit,button=="RightButton" and -1 or 1))

@@ -199,6 +199,17 @@ function E:AddGarbage(count)
     if batch and batch.tick==self.tick then batch.count=batch.count+count
     else self.deliveries[#self.deliveries+1]={tick=self.tick,count=count} end
 end
+local function penaltyColumn(game,bottom)
+    if game.safePenalties then
+        local safe={}
+        for col=1,8 do
+            local row=bottom[col]+1
+            if row<13 and col<=E.Columns(row,game.offset) then safe[#safe+1]=col end
+        end
+        if #safe>0 then return safe[game:Random(#safe)] end
+    end
+    return game:Random(7)
+end
 function E:ApplyGarbage()
     local batch=self.deliveries[1]
     if not batch or self.tick<=batch.tick+20 then return end
@@ -208,8 +219,8 @@ function E:ApplyGarbage()
         bottom[col]=math.max(bottom[col],row)
     end
     while batch and self.tick>batch.tick+20 and #self.rising<7 do
-        -- The default upstream rules draw among columns 0..6 (1..7 in Lua).
-        local color,col=self:Random(8),self:Random(7)
+        local color=self:Random(8)
+        local col=penaltyColumn(self,bottom)
         bottom[col]=bottom[col]+1
         local x,y=E.Position(13,col,0,self.offset)
         self.rising[#self.rising+1]={col=col,row=bottom[col],x=x,y=y,color=color}
@@ -237,7 +248,10 @@ function E:MoveGarbage()
                 self.grid[slot]=bubble.color
                 self.attachedOrder[#self.attachedOrder+1]=slot
             end
-            if bubble.row>=13 then self.status="lost" end
+            if bubble.row>=E.ROWS then
+                if self.legacyPenaltyLoss then self.status="lost"
+                else self.penaltyLossRow=math.max(self.penaltyLossRow or 0,bubble.row) end
+            end
             table.remove(self.rising,i)
             self.boardChanged=true
         end
@@ -391,7 +405,7 @@ local function advanceGame(self,dt,input,frameParity)
     -- Network replays start at the last completed tick before the shot moves.
     if input then input(self,self.tick-1) end
     if #self.chains>0 then self:MoveChains(); return end
-    if #self.rising>0 then self:MoveGarbage(); return end
+    if #self.rising>0 then return end
     if not self.projectile and self.timed~=false and self.idle+1e-9>=self.hurryMax then self:Shoot(nil,self.tick-1) end
     if not self.projectile then return end
     local p=self.projectile
@@ -414,7 +428,6 @@ local function advanceGame(self,dt,input,frameParity)
     end
     if hit then
         self:Attach((previousX+p.x)/2,(previousY+p.y)/2,hit)
-        self:MoveGarbage()
         self:MoveChains()
     end
 end
@@ -422,6 +435,14 @@ function E:Step(dt,input,frameParity)
     if self.paused then return end
     local wasPlaying=self.status=="playing"
     advanceGame(self,dt,input,frameParity)
+    if self.status=="playing" then
+        -- verify_if_end runs after input and shots but before rising bubbles land.
+        if self.penaltyLossRow then
+            if self.penaltyLossRow>E.ROWS then self.status="lost" else self:CheckEnd() end
+            self.penaltyLossRow=nil
+        end
+        if self.status=="playing" and #self.rising>0 then self:MoveGarbage() end
+    end
     -- Desktop checks the training timer while drawing, after the board update.
     if self.mode=="training" and self.status=="playing" and self:TrainingTimeLeft()==0 then
         self.status="finished"

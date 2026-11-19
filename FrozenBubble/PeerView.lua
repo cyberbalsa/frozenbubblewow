@@ -5,8 +5,9 @@ local E=FB.Engine
 local V={}
 FB.PeerView=V
 
-function V.NewDuelBoard(seed,chains,sound)
+function V.NewDuelBoard(seed,chains,sound,safePenalties)
     local view=E.New(nil,seed,"versus",chains,sound)
+    view.safePenalties=safePenalties==true
     -- Only the peer who owns this board can trigger its automatic shot.
     view.hurryMax=math.huge; view.timed=false
     return view
@@ -27,7 +28,7 @@ function V.PackRising(game)
     end
     return table.concat(out)
 end
-function V.UnpackRising(data,offset)
+function V.UnpackRising(data,offset,safePenalties)
     if #data>28 or #data%4~=0 then return end
     local rising={}
     for start=1,#data,4 do
@@ -40,7 +41,8 @@ function V.UnpackRising(data,offset)
         local y=n%512; n=math.floor(n/512)
         local color=n%8+1; n=math.floor(n/8)
         local row=n%32; local col=math.floor(n/32)+1
-        if col>7 or row<2 or row>E.ROWS+7 then return end
+        if col>8 or row<2 or row>E.ROWS+7 then return end
+        if col==8 and (not safePenalties or row>=E.ROWS or not E.Valid(row,col,offset)) then return end
         rising[#rising+1]={row=row,col=col,color=color,x=E.Position(13,col,0,offset),y=y}
     end
     return rising
@@ -124,7 +126,7 @@ function V.Rise(m,p)
     local pending=FB.Integer(p[8],0,10000000)
     if #p~=9 or not seq or seq<=m.remoteSeq or not tick or not shots or shots~=view.shots
         or view.riseShot==shots or not offset or not pending then return end
-    local bubbles=V.UnpackRising(p[9],offset)
+    local bubbles=V.UnpackRising(p[9],offset,view.safePenalties)
     if not bubbles or #bubbles==0 then return end
     local _,start=E.Position(13,1,0)
     local seen={}
@@ -215,7 +217,7 @@ function V.State(m,p,recipient,receivedAt)
         or not FB.Integer(p[11],0,10000000)) then return end
     local tick=FB.Integer(p[15],0,100000000)
     local rng=FB.Integer(p[16],1,2147483646)
-    local rising=p[17] and V.UnpackRising(p[17],offset)
+    local rising=p[17] and V.UnpackRising(p[17],offset,m.remote.safePenalties)
     local idle=FB.Integer(p[18],0,10000)
     if p[15] and (not tick or not rng or not rising or not idle or #p~=18) then return end
     if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end

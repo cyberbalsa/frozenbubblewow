@@ -70,17 +70,24 @@ function A.Say(m,message)
 end
 local function announce(m,manual)
     local count=m.phase=="room" and #m.names or 0
-    local code=FB.Series.Code(m.chainReaction,m.limit)
+    local code=FB.Series.Code(m.chainReaction,m.limit,m.safePenalties)
     if manual then FB.Community.Manual("AROOM",m.room,count,code)
     else N.Broadcast("AROOM",m.room,count,code) end
     m.advert=GetTime()
 end
 function A.Announce() local m=N.match; if m and m.arena and m.host then announce(m,true) end end
-local ruleFields={versusLimit="limit",versusChains="chainReaction",arenaContinue="keepRoom",arenaTargeting="targeting"}
+local ruleFields={versusLimit="limit",versusChains="chainReaction",versusSafePenalties="safePenalties",arenaContinue="keepRoom",arenaTargeting="targeting"}
 function A.SetRule(key,value)
     local m=N.match
     if not ruleFields[key] or N.queue or InCombatLockdown() then return end
     if m and (not m.arena or not m.host or m.phase~="room") then return end
+    if m and key=="versusSafePenalties" and value then
+        for name,player in pairs(m.players) do
+            if name~=m.me and not player.canSafe then
+                N.Notify(name.." needs alpha 48 or later for safe penalties."); return
+            end
+        end
+    end
     FB.db[key]=value
     if m then
         m[ruleFields[key]]=value
@@ -93,6 +100,7 @@ function A.Host()
     if not free() then return end
     local m=room(FB.PlayerName(),serial())
     m.phase="room"; m.revision=1; m.limit=FB.db.versusLimit; m.chainReaction=FB.db.versusChains==true
+    m.safePenalties=FB.db.versusSafePenalties==true
     m.keepRoom=FB.db.arenaContinue~=false; m.targeting=FB.db.arenaTargeting~=false
     seat(m,m.me); announce(m)
     N.Notify("Room open. Start when at least three players have joined.")
@@ -104,7 +112,7 @@ function A.Join(host)
     local listing=A.rooms[host]
     local m=room(host,listing and listing.id or "*")
     m.nonce=serial()
-    send(host,"AJOIN",m.room,m.nonce,1,1); m.pulse=GetTime()
+    send(host,"AJOIN",m.room,m.nonce,1,1,1); m.pulse=GetTime()
     N.Notify("Joining "..host.."'s room…")
 end
 function A.Expire(t)
@@ -113,7 +121,7 @@ function A.Expire(t)
 end
 local function seats(m,name)
     local words={}
-    local code=FB.Series.Code(m.chainReaction,m.limit)
+    local code=FB.Series.Code(m.chainReaction,m.limit,m.safePenalties)
     local function part(first)
         send(name,"ASEATS",m.room,m.players[name].nonce,m.revision,#m.names,first,code,table.concat(words,","),(m.keepRoom and 1 or 0)+(m.targeting and 2 or 0),A.CanChat(m) and 1 or 0)
     end
@@ -128,7 +136,7 @@ local function acceptSeats(m,p)
     if m.host or not (m.phase=="joining" or m.phase=="room") or p[4]~=m.nonce
         or not p[3]:match("^%d+%-%d+$") or #p[3]>32 or (m.room~="*" and m.room~=p[3]) then return end
     local rev,count,first=FB.Integer(p[5],1,1000000),FB.Integer(p[6],2,5),FB.Integer(p[7],1,5)
-    local limit,chains=FB.Series.Decode(p[8])
+    local limit,chains,safe=FB.Series.Decode(p[8])
     local flags=FB.Integer(p[10],0,3)
     if not flags or not rev or rev<=m.revision or rev<(m.pendingRev or 0) or not count or not first or not limit or not p[9] then return end
     if m.pendingRev~=rev then m.pendingRev=rev; m.seats={} end
@@ -147,6 +155,7 @@ local function acceptSeats(m,p)
     m.names={}; m.players={}
     for i=1,count do seat(m,m.seats[i]) end
     m.revision,m.room,m.phase,m.limit,m.chainReaction=rev,p[3],"room",limit,chains
+    m.safePenalties=safe
     m.keepRoom=flags%2==1; m.targeting=flags>=2
     m.roomChatReady=p[11]=="1"
     m.lastHost=GetTime(); m.pulse=-100
@@ -194,7 +203,7 @@ function A.Leave(reason)
             end
         end
         if next(closed.guests) then A.closedRooms[m.room]=closed end
-        N.Broadcast("AROOM",m.room,0,FB.Series.Code(m.chainReaction,m.limit))
+        N.Broadcast("AROOM",m.room,0,FB.Series.Code(m.chainReaction,m.limit,m.safePenalties))
     else
         send(m.peer,"ALEAVE",m.room,m.nonce)
         if m.phase=="playing" and m.keepRoom and not reason then FB.db.losses=FB.db.losses+1 end
@@ -272,7 +281,7 @@ end
 function A.BuildBoards(m,sound)
     m.opponents=A.Opponents(m)
     for seat,v in ipairs(m.opponents) do
-        v.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,sound)
+        v.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,sound,m.safePenalties)
         -- Desktop removes falling sprites below screen y=470 on every board.
         local boardTop=seat<=2 and 19 or 247
         v.remote.effectFloor=(470-boardTop)*2+16
@@ -290,7 +299,7 @@ local function begin(m)
     m.startedAt=m.startedAt or GetTime()
     m.phase="playing"; m.winner=nil; m.seq=0; m.lastState=-100; m.played=true
     A.BuildBoards(m,FB.Sound)
-    FB.StartVersus(m.seed,m.chainReaction)
+    FB.StartVersus(m.seed,m.chainReaction,m.safePenalties)
     FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire; FB.game.onRise=N.Rise
     FB.Recordings.Begin(m.seed,FB.game,m)
     N.Notify("Round "..m.round.." · "..#m.names.." players")
@@ -379,7 +388,7 @@ local function pulse(m)
                 else send(v.name,"AHOST",m.room,m.revision,m.round,m.mask or 0,m.winner or -1,(m.requested or m.wantNext) and 1 or 0,m.leftMask) end
             end
         end
-    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce,1,1)
+    elseif m.phase=="joining" then send(m.peer,"AJOIN",m.room,m.nonce,1,1,1)
     else
         send(m.peer,"APULSE",m.room,m.nonce,m.revision,m.round,m.phase,
             m.players[m.me].lost and 1 or 0,m.mask or 0,m.wantNext and 1 or 0)
@@ -388,11 +397,11 @@ local function pulse(m)
 end
 function A.Receive(kind,p,channel,sender)
     if kind=="AROOM" and channel~="WHISPER" then
-        local count=FB.Integer(p[4],0,5); local limit,chains=FB.Series.Decode(p[5])
+        local count=FB.Integer(p[4],0,5); local limit,chains,safe=FB.Series.Decode(p[5])
         if not p[3] or #p[3]>32 or not p[3]:match("^%d+%-%d+$") or not count or not limit then return true end
         local total=0; for _ in pairs(A.rooms) do total=total+1 end
         if count==0 then A.rooms[sender]=nil
-        elseif total<100 or A.rooms[sender] then A.rooms[sender]={id=p[3],seen=GetTime(),count=count,limit=limit,chains=chains} end
+        elseif total<100 or A.rooms[sender] then A.rooms[sender]={id=p[3],seen=GetTime(),count=count,limit=limit,chains=chains,safePenalties=safe} end
         return true
     end
     if channel~="WHISPER" or not kind or kind:sub(1,1)~="A" or kind=="ACCEPT" or kind=="AGAIN" then return false end
@@ -416,16 +425,18 @@ function A.Receive(kind,p,channel,sender)
             return true
         end
         local v=m.players[sender]
+        if m.safePenalties and p[7]~="1" then send(sender,"AFULL",p[4],"RULE"); return true end
         if not v and #m.names>=5 then send(sender,"AFULL",p[4]); return true end
         if not v then
             seat(m,sender); v=m.players[sender]; m.revision=m.revision+1; m.advert=-100
-            v.canChat=p[5]=="1"; v.canFinal=p[6]=="1"
+            v.canChat=p[5]=="1"; v.canFinal=p[6]=="1"; v.canSafe=p[7]=="1"
             N.Notify(sender.." joined the room.")
         end
         v.nonce=p[4]; v.seen=GetTime(); seats(m,sender); m.pulse=-100
     elseif kind=="ASEATS" and sender==m.peer then acceptSeats(m,p)
     elseif kind=="AFULL" and sender==m.peer and m.phase=="joining" and p[3]==m.nonce then
         if p[4]=="KICK" and p[5] and (m.room=="*" or m.room==p[5]) then m.room=p[5]; kicked(m,table.concat(p,"|",6))
+        elseif p[4]=="RULE" then close(m,"This room requires the safe penalties rule.")
         else close(m,"That room is full.") end
     elseif kind=="ACLOSE" and not m.host and sender==m.peer and p[3]==m.room then
         if p[4]=="final" then

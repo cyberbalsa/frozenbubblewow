@@ -11,12 +11,16 @@ function S.Cycle(limit,direction)
     return S.limits[((indices[limit] or 1)-1+direction)%#S.limits+1]
 end
 function S.Label(limit) return limit==0 and "Unlimited" or "First to "..limit end
-function S.Code(chains,limit) return limit*2+(chains and 2 or 1) end
+function S.Code(chains,limit,safePenalties)
+    return limit*2+(chains and 2 or 1)+(safePenalties and 256 or 0)
+end
 function S.Decode(value)
-    local code=FB.Integer(value,1,202)
+    local code=FB.Integer(value,1,458)
     if not code then return end
+    local safePenalties=code>256
+    if safePenalties then code=code-256 end
     local limit=math.floor((code-1)/2)
-    if S.Valid(limit) then return limit,code%2==0 end
+    if S.Valid(limit) then return limit,code%2==0,safePenalties end
 end
 function S.Complete(m)
     local s=m and m.series
@@ -115,7 +119,7 @@ local function advance(m)
     local round=m.round+1
     local nextMatch={id=m.series.id..":"..round,peer=m.peer,seed=m.seed*16807%2147483647,
         host=m.host,phase="restart",since=GetTime(),lastSeen=GetTime(),lastRetry=-100,
-        seq=0,remoteSeq=0,remoteAttack=0,chainReaction=m.chainReaction,limit=m.limit,
+        seq=0,remoteSeq=0,remoteAttack=0,chainReaction=m.chainReaction,limit=m.limit,safePenalties=m.safePenalties,
         capable=true,series=m.series,round=round,parent=m.id,parentResult=m.result,remote=m.remote}
     N.match=nextMatch
     return nextMatch

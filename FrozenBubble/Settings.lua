@@ -7,6 +7,7 @@ local defaults = {
     audioEnabled=true, sound=true, effectsVolume=1, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
     autoRecord=false, shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
     trainingPenaltySeconds=FB.Engine.TRAINING_PENALTY_SECONDS,
+    localSafePenalties=false,
 }
 
 function Options.Set(key,value)
@@ -99,6 +100,7 @@ local function registerPage()
     slider("trainingPenaltySeconds","Average wait for penalties in new training rounds",0,120,1,function(value)
         return value==0 and "Immediately" or value.." s"
     end)
+    check("localSafePenalties","Avoid instant-death penalties in local games","New training and shared-keyboard rounds place incoming bubbles in a safe column whenever one is available. Online games use the lobby rule.")
     check("audioEnabled","Enable game audio","F12 mutes or restores Frozen Bubble music and effects together.")
     check("sound","Play sound effects")
     slider("effectsVolume","Game sound effect volume",0,1,0.1,percent)

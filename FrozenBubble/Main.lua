@@ -84,7 +84,10 @@ function FB.StartSolo(mode,chainReaction)
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     local seed=FB.GameSeed()
     FB.game=FB.Engine.New(nil,seed,mode,chainReaction,FB.Sound,true); FB.run=nil; FB.level=1
-    if mode=="training" then FB.game.trainingPenaltySeconds=FB.db.trainingPenaltySeconds end
+    if mode=="training" then
+        FB.game.trainingPenaltySeconds=FB.db.trainingPenaltySeconds
+        FB.game.safePenalties=FB.db.localSafePenalties
+    end
     FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     FB.Recordings.Begin(seed,FB.game)
@@ -110,12 +113,13 @@ function FB.PlayCustom(id,index)
         FB.StartCustomBoard({id=id,title=item.title,boards=FB.Community.Boards(item)},index or 1)
     end
 end
-function FB.StartVersus(matchSeed,chainReaction)
+function FB.StartVersus(matchSeed,chainReaction,safePenalties)
     local resultKey=FB.UI.keys.resultKey
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     FB.UI.keys={}
     FB.Debug.Log("GAME","versus",matchSeed)
     FB.game=FB.Engine.New(nil,matchSeed,"versus",chainReaction,FB.Sound); FB.run=nil
+    FB.game.safePenalties=safePenalties==true
     FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.UI.editing=false; FB.Transitions.Open("opponent"); FB.UI.keys.resultKey=resultKey
     FB.UI.frame:Show(); FB.Music()

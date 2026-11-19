@@ -22,7 +22,7 @@ end
 
 function D.New(record,sound)
     local right=FB.Engine.New(nil,record.seed,"versus",record.chains,sound)
-    local left=FB.PeerView.NewDuelBoard(record.seed,record.chains,sound)
+    local left=FB.PeerView.NewDuelBoard(record.seed,record.chains,sound,record.safePenalties)
     local duel={remote=left,chainReaction=record.chains,phase="playing",remoteSeq=0,remoteAttack=0}
     return {right=right,left=left,duel=duel,eventIndex=1,wins=record.wins and {record.wins[1],record.wins[2]}}
 end

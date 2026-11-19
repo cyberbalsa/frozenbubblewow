@@ -89,6 +89,7 @@ function R.Begin(seed,right,match)
     local record={version=right.desktopRandom and 2 or 1,lowGraphics=right.lowGraphics,mode=right.mode,seed=seed,chains=right.chainReaction,timed=right.timed~=false,
         frames=0,date=time(),tracks={}}
     if right.mode=="training" then record.trainingPenaltySeconds=right.trainingPenaltySeconds end
+    if right.penaltyRules then record.safePenalties=right.safePenalties==true end
     if match and match.arena then
         record.version,record.mode=4,"arena"
         record.arena=FB.ArenaReplay.Header(match)
@@ -207,6 +208,9 @@ function R.NewPlayback(record,sound)
     local localBoards=play.duel and {play.right} or {play.right,play.left}
     for i,game in ipairs(localBoards) do
         local track=record.tracks[i]
+        game.safePenalties=record.safePenalties==true
+        -- Pre-48 personal recordings judged a fatal penalty on the landing tick.
+        game.legacyPenaltyLoss=record.safePenalties==nil and not track.keys
         game.lowGraphics=record.lowGraphics
         game.timed=record.timed
         game.replayCursor={before=1,input=1,pose=1}
@@ -220,8 +224,13 @@ function R.NewPlayback(record,sound)
             end
         else game.replayInput=function() apply(game,track.input,"input",play.frame) end end
     end
-    if play.arena then FB.ArenaReplay.Apply(play)
-    elseif play.duel then FB.DuelReplay.Apply(play) end
+    if play.arena then
+        for _,v in ipairs(play.arena.opponents) do v.remote.legacyPenaltyLoss=play.right.legacyPenaltyLoss end
+        FB.ArenaReplay.Apply(play)
+    elseif play.duel then
+        play.left.legacyPenaltyLoss=play.right.legacyPenaltyLoss
+        FB.DuelReplay.Apply(play)
+    end
     return play
 end
 

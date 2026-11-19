@@ -18,6 +18,7 @@ function L.Start(chains, previous)
     FB.LeaveBoard()
     local seed=FB.GameSeed()
     local m=L.New(seed,chains,previous and previous.wins,FB.Sound,true,previous and previous.frameParity)
+    m.right.safePenalties=FB.db.localSafePenalties; m.left.safePenalties=m.right.safePenalties
     m.right.lowGraphics=FB.db.graphicsLevel==1; m.left.lowGraphics=m.right.lowGraphics
     m.right.timed=FB.db.shotClock~=false; m.left.timed=m.right.timed
     local function playerInput(game,first,launchTick)

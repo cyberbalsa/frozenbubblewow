@@ -70,6 +70,25 @@ test("penalty bubbles start only after a bubble collision and after row insertio
     local b=g.rising[1]
     eq(b.x,E.Position(13,b.col,0,1)); assert(not g.grid[E.Key(b.row,b.col)])
 end)
+test("penalty volleys match desktop column selection, including the last safe space",function()
+    -- Seed 47, using the malus generation block from the original update_game.
+    for _,case in ipairs({
+        {0,true,false,"1/2/5,5/2/8,5/3/8,6/2/7,7/2/1,7/3/1,7/4/1"},
+        {1,true,false,"1/2/5,5/2/8,5/3/8,6/2/7,7/2/1,7/3/1,8/2/1"},
+        {1,true,true,"1/13/5,5/13/8,5/14/8,6/13/7,7/13/1,7/14/1,8/2/1"},
+        {0,true,true,"1/13/5,5/13/8,5/14/8,6/13/7,7/13/1,7/14/1,7/15/1"},
+        {0,false,false,"1/2/5,5/2/8,5/3/8,6/2/7,7/2/1,7/3/1,7/4/1"},
+    }) do
+        local g=E.New({},47,"training",false,nil,true)
+        g.offset,g.safePenalties=case[1],case[2]
+        if case[3] then for col=1,7 do g.grid[E.Key(12,col)]=1 end end
+        g.rng=47*65536+13070
+        g:AddGarbage(7); g.tick=21; g:ApplyGarbage()
+        local rows={}
+        for i,b in ipairs(g.rising) do rows[i]=table.concat({b.col,b.row,b.color},"/") end
+        eq(table.concat(rows,","),case[4])
+    end
+end)
 test("wire board roundtrip and malformed data rejection",function()
     local g=E.New(FB.Levels[1],42); local packed=g:Pack(); eq(#packed,98)
     local other=E.New({},1); other.grid=E.Unpack(packed); eq(other:Pack(),packed)
@@ -195,7 +214,7 @@ test("training uses solo ammunition, versus timing, and points for outgoing pena
     g.tick=6049; g.paused=true; g:Step(0.02); eq(g.tick,6049)
     g.paused=false; g:Step(0.02); eq(g.status,"finished"); assert(not g:Shoot())
 end)
-test("training resolves a scoring shot or fatal penalty on the last frame",function()
+test("training resolves a scoring shot before the timer and checks a landed penalty on the next frame",function()
     local shot=E.New({"111....."},17,"training")
     shot.tick=6049; shot.shots=1
     shot.projectile={x=112,y=25,vx=0,vy=-500,color=1}
@@ -204,8 +223,11 @@ test("training resolves a scoring shot or fatal penalty on the last frame",funct
     local penalty=E.New({"1......."},17,"training")
     penalty.tick=6049; penalty.rising={{row=13,col=1,x=16,y=370,color=2}}
     penalty:Step(0.02)
-    eq(penalty.status,"lost"); eq(penalty.grid[E.Key(13,1)],2)
-    penalty:Step(0.02); eq(penalty.status,"lost")
+    eq(penalty.status,"finished"); eq(penalty.grid[E.Key(13,1)],2)
+    local early=E.New({"1......."},17,"training")
+    early.tick=6048; early.rising={{row=13,col=1,x=16,y=370,color=2}}
+    early:Step(0.02); eq(early.status,"playing"); eq(early.grid[E.Key(13,1)],2)
+    early:Step(0.02); eq(early.status,"lost")
 end)
 test("return flights match the upstream arc and can start another chain",function()
     local layout={"111.2233","2..3..."}
@@ -324,7 +346,9 @@ local function client(name,fullUI)
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
     for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","LobbyCommands","MediaInfo","HUDArt","NameArt","Plaques","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
-    fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
+    fb.StartVersus=function(seed,chains,safe)
+        fb.game=fb.Engine.New(nil,seed,"versus",chains); fb.game.safePenalties=safe==true
+    end
     clients[name.."-TestRealm"]=fb
     if fullUI then return fb,env,loadModule end
     return fb,env
@@ -564,6 +588,18 @@ test("chain matchmaking separates rules, retries offers and replays a two-stage 
     host.Net.State(); tick(1); eq(guest.game.pending,2)
     host.Net.Leave(); guest.Net.Leave(); tick(1)
 end)
+test("safe-penalty matchmaking separates rules, supports unlimited duels and records the rule",function()
+    local h,j=client("Polar"),client("Tundra")
+    h.db.versusLimit=0; j.db.versusLimit=0; h.db.versusSafePenalties=true
+    h.Net.SetQueue(true); j.Net.SetQueue(true); tick(12)
+    assert(not h.Net.match and not j.Net.match); eq(h.Net.QueueCode(),257); eq(j.Net.QueueCode(),1)
+    j.Net.SetQueue(false); j.db.versusSafePenalties=true; j.Net.SetQueue(true); tick(12)
+    for _,side in ipairs({h,j}) do
+        eq(side.Net.match.phase,"playing"); eq(side.Net.match.limit,0); assert(side.game.safePenalties)
+        assert(side.Recordings.NewPlayback(side.Recordings.capture.record).right.safePenalties)
+    end
+    h.Net.Leave(); j.Net.Leave(); tick(3)
+end)
 test("manual chain challenge identifies rules and standard offers still use the old wire format",function()
     local host,guest=client("Faye"),client("Gray")
     host.db.versusChains=true
@@ -723,7 +759,7 @@ test("the host's final standings survive a lost result and close, with older gue
     local legacySend=k.Net.Send
     k.Net.Send=function(kind,channel,to,...)
         local args={...}
-        if kind=="AJOIN" then args[4]=nil end
+        if kind=="AJOIN" then args[4],args[5]=nil,nil end
         return legacySend(kind,channel,to,(unpack or table.unpack)(args))
     end
     h.db.versusLimit=1; h.Arena.Host(); j.Arena.Join(host); k.Arena.Join(host)
@@ -761,7 +797,7 @@ test("the host's final standings survive a lost result and close, with older gue
     j.Net.Receive(j.PREFIX,"1|ACLOSE|"..final,"WHISPER",host); eq(#j.Community.log,logSize); eq(j.db.wins,1)
     tick(41); eq(h.Arena.closedRooms[room.room],nil)
 end)
-test("remote rising penalties round-trip all seven lanes; malformed frames are ignored",function()
+test("remote rising penalties round-trip all eight lanes and validate staggered landings",function()
     for offset=0,1 do
         local g=E.New({},1,"versus"); g.offset=offset
         for col=1,7 do g.rising[col]={row=col+1,col=col,color=8-col,y=380+col} end
@@ -770,10 +806,38 @@ test("remote rising penalties round-trip all seven lanes; malformed frames are i
         for i,b in ipairs(restored) do
             eq(b.col,i); eq(b.row,i+1); eq(b.color,8-i); eq(b.y,380+i); eq(b.x,E.Position(13,i,0,offset))
         end
+        local wide=offset==1 and 2 or 3
+        g.rising={{row=wide,col=8,color=6,y=382}}
+        local eighth=a.PeerView.PackRising(g)
+        eq(a.PeerView.UnpackRising(eighth,offset,true)[1].col,8)
+        eq(a.PeerView.UnpackRising(eighth,offset,false),nil)
+        eq(a.PeerView.UnpackRising(eighth,1-offset,true),nil)
+        g.rising[1].row=13; eq(a.PeerView.UnpackRising(a.PeerView.PackRising(g),offset,true),nil)
     end
     for _,wire in ipairs({"abc", "----","0000", "0?00",string.rep("0",32)}) do
         assert(not a.PeerView.UnpackRising(wire,0))
     end
+end)
+test("the eighth lane keeps a nearly full board alive and reaches the peer intact",function()
+    local peer=a.PeerView
+    local function board(safe)
+        local g=E.New({},47,"versus")
+        g.safePenalties=safe; g.offset=1; g.shots=1
+        for col=1,7 do g.grid[E.Key(12,col)]=1 end
+        g:AddGarbage(1); g.tick=21; g:ApplyGarbage()
+        return g
+    end
+    local owner,normal=board(true),board(false)
+    local view=peer.NewDuelBoard(47,false,nil,true)
+    view.offset,view.shots,view.lockedShots,view.tick=1,1,1,21
+    local m={remote=view,remoteSeq=0}
+    local packet={"1","RISE","round","1","21","1","1","0",peer.PackRising(owner)}
+    assert(peer.Rise(m,packet)); eq(view.rising[1].col,8); eq(view.rising[1].row,2)
+    local color=view.rising[1].color
+    for _=1,20 do owner:Step(0.02); normal:Step(0.02) end
+    eq(owner.status,"playing"); eq(owner.grid[E.Key(2,8)],color); eq(normal.status,"lost")
+    peer.Sync(view,owner.grid,1,owner.tick,1,1,owner.rng,{})
+    eq(view:Pack(),owner:Pack()); eq(#view.rising,0)
 end)
 test("spectators see the desktop penalty flight, freeze and snap on the board clock",function()
     local peer=a.PeerView
@@ -853,17 +917,19 @@ test("lobby chat uses the community channel and displays one escaped copy per ec
     for i=1,101 do c.Log(tostring(i)) end
     eq(#c.log,100); eq(c.log[1],"*** 2")
 end)
-test("the host can revise all four room rules immediately before starting",function()
+test("the host can revise all room rules immediately before starting",function()
     local host,first,second=client("RoomHost"),client("IceGuest"),client("SnowGuest")
     host.Arena.Host()
     first.Arena.Join(host.PlayerName()); second.Arena.Join(host.PlayerName()); tick(5)
     first.Arena.SetRule("versusLimit",100); eq(first.Net.match.limit,host.Net.match.limit)
     host.Arena.SetRule("versusChains",true); host.Arena.SetRule("versusLimit",12)
+    host.Arena.SetRule("versusSafePenalties",true)
     host.Arena.SetRule("arenaContinue",false); host.Arena.SetRule("arenaTargeting",false)
     drops.ASEATS=true; host.Arena.Start(); tick(16)
     for _,peer in ipairs({host,first,second}) do
         local m=peer.Net.match
         eq(m.phase,"playing"); eq(m.limit,12); assert(m.chainReaction and peer.game.chainReaction)
+        assert(m.safePenalties and peer.game.safePenalties)
         assert(not m.keepRoom and not m.targeting)
     end
     host.Arena.SetRule("versusLimit",1); eq(host.Net.match.limit,12)
@@ -896,6 +962,8 @@ test("mixed-version rooms keep their seats and disable private chat",function()
     local m=host.Net.match
     assert(guest.Arena.CanChat(guest.Net.match))
     host.Net.Receive(host.PREFIX,"1|AJOIN|"..m.room.."|123-1","WHISPER","Older-TestRealm")
+    local revision=m.revision
+    host.Arena.SetRule("versusSafePenalties",true); eq(m.revision,revision); assert(not m.safePenalties)
     tick(3)
     eq(#m.names,3); assert(not host.Arena.CanChat(m))
     assert(not guest.Arena.CanChat(guest.Net.match)); assert(not guest.LobbyCommands.Submit("team only",guest.Net.match))
@@ -1299,6 +1367,35 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         game.tick=6049; assert(game:Shoot())
         game:Step(0.02,function() error("legacy timeout consumed input") end)
         eq(game.status,"finished"); eq(game.projectile,nil)
+        record.trainingPenaltySeconds=30
+        game=r.NewPlayback(record).right
+        game.tick=6049; game.rising={{row=13,col=1,x=16,y=370,color=2}}
+        game:Step(0.02); eq(game.status,"lost")
+    end)
+    test("local safe penalties apply to new training and shared rounds and survive replay",function()
+        local setting=fb.Options.controls.localSafePenalties; assert(not setting.get())
+        fb.Options.Set("trainingPenaltySeconds",0)
+        setting.set(true); fb.StartSolo("training"); assert(fb.game.safePenalties)
+        setting.set(false); assert(fb.game.safePenalties)
+        local rec=fb.Recordings.capture.record
+        local play=fb.Recordings.NewPlayback(rec)
+        assert(play.right.safePenalties)
+        local rose=false
+        for tick=1,200 do
+            if tick%50==25 then fb.game:Shoot(0.2) end
+            fb.game:Step(0.02); assert(fb.Recordings.Step(play))
+            eq(play.right:Pack(),fb.game:Pack()); eq(play.right.rng,fb.game.rng)
+            eq(fb.PeerView.PackRising(play.right),fb.PeerView.PackRising(fb.game))
+            if #fb.game.rising>0 then rose=true end
+        end
+        assert(rose); fb.Options.Set("trainingPenaltySeconds",30)
+        fb.StartSolo("training"); assert(not fb.game.safePenalties)
+        setting.set(true); fb.LocalVersus.Start(true)
+        assert(fb.game.safePenalties and fb.LocalVersus.match.left.safePenalties)
+        setting.set(false)
+        local replay=fb.Recordings.NewPlayback(fb.Recordings.capture.record)
+        assert(replay.right.safePenalties and replay.left.safePenalties)
+        fb.StartSolo("random"); assert(not fb.game.safePenalties)
     end)
     test("the Print Screen recording survives logout and replays the whole two-minute training result",function()
         local ui,r=fb.UI,fb.Recordings

@@ -63,7 +63,7 @@ function N.Available()
     return true
 end
 function N.QueueCode()
-    return FB.Series.Code(FB.db.versusChains,FB.db.versusLimit)
+    return FB.Series.Code(FB.db.versusChains,FB.db.versusLimit,FB.db.versusSafePenalties)
 end
 function N.SetQueue(enabled)
     local available,reason=N.Available()
@@ -90,6 +90,8 @@ function N.Challenge(peer, automatic, listing)
     local limit,chains=FB.db.versusLimit,FB.db.versusChains==true
     if listing then limit,chains=listing.limit,listing.chainReaction end
     N.match={id=id,peer=peer,seed=seed,host=true,phase="offer",since=now(),lastRetry=-100,lastSeen=now(),seq=0,remoteSeq=0,remoteAttack=0,automatic=automatic,limit=limit,chainReaction=chains}
+    if listing then N.match.safePenalties=listing.safePenalties==true
+    else N.match.safePenalties=FB.db.versusSafePenalties==true end
     N.queue=false
     FB.SetBoardPaused(true)
     N.Broadcast("QUEUE",0)
@@ -134,8 +136,8 @@ function N.Begin()
     end
     local session=m.series or m
     session.startedAt=session.startedAt or now()
-    m.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,FB.Sound)
-    FB.StartVersus(m.seed,m.chainReaction)
+    m.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,FB.Sound,m.safePenalties)
+    FB.StartVersus(m.seed,m.chainReaction,m.safePenalties)
     FB.game.onShoot=N.Fire; FB.game.onRise=N.Rise
     FB.Recordings.Begin(m.seed,FB.game,m)
     notify("Playing against "..m.peer)
@@ -242,11 +244,11 @@ function N.Receive(prefix,message,channel,sender)
     if FB.Arena.Receive(kind,p,channel,sender) then return end
     if FB.Debug and kind~="STATE" and kind~="TURN" and kind~="QUEUE" then FB.Debug.Log("RECV",kind,channel,sender) end
     if kind=="QUEUE" and (channel=="CHANNEL" or channel=="GUILD" or channel=="PARTY" or channel=="RAID" or channel=="INSTANCE_CHAT") then
-        local limit,chains=FB.Series.Decode(p[3])
+        local limit,chains,safe=FB.Series.Decode(p[3])
         if p[3]~="0" and not limit then return end
         local count=0; for _ in pairs(N.peers) do count=count+1 end
         if count>=100 and not N.peers[sender] then return end
-        N.peers[sender]={seen=now(),queued=p[3]~="0",chainReaction=chains,limit=limit}
+        N.peers[sender]={seen=now(),queued=p[3]~="0",chainReaction=chains,limit=limit,safePenalties=safe}
         if N.queue and tonumber(p[3])==N.QueueCode() and not N.match and FB.PlayerName()<sender then N.Challenge(sender,true) end
         if FB.UI then FB.UI:RefreshLobby() end
         return
@@ -277,12 +279,12 @@ function N.Receive(prefix,message,channel,sender)
         if not seed or not p[3] or #p[3]>32 or not p[3]:match("^%d+%-%d+$") or (p[5]~="0" and p[5]~="1") then return end
         if InCombatLockdown() then N.Send("CANCEL","WHISPER",sender,p[3]); return end
         local chains=kind=="CHAINOFFER"
-        local limit=0
+        local limit,safe=0,false
         if kind=="LIMITOFFER" then
-            limit,chains=FB.Series.Decode(p[6])
-            if not limit or limit==0 then return end
+            limit,chains,safe=FB.Series.Decode(p[6])
+            if not limit or limit==0 and not safe then return end
         end
-        if p[5]=="1" and N.queue and FB.Series.Code(chains,limit)~=N.QueueCode() then
+        if p[5]=="1" and N.queue and FB.Series.Code(chains,limit,safe)~=N.QueueCode() then
             N.Send("CANCEL","WHISPER",sender,p[3]); return
         end
         if m then
@@ -297,7 +299,9 @@ function N.Receive(prefix,message,channel,sender)
         end
         local auto=N.queue and p[5]=="1"
         N.match={id=p[3],peer=sender,seed=seed,chainReaction=chains,limit=limit,host=false,phase="invite",since=now(),lastSeen=now(),lastRetry=-100,seq=0,remoteSeq=0,remoteAttack=0}
-        notify(sender.." challenges you "..(chains and "with chain reactions." or "under standard rules.")..(limit>0 and (" First to "..limit..".") or "").." Accept in Multiplayer.")
+        N.match.safePenalties=safe
+        local rules=chains and " with chain reactions." or safe and "." or " under standard rules."
+        notify(sender.." challenges you"..rules..(safe and " Instant-death penalties avoided." or "")..(limit>0 and (" First to "..limit..".") or "").." Accept in Multiplayer.")
         if FB.UI then FB.UI:ShowLobby() end
         if auto then N.Accept() end
         return
@@ -329,6 +333,7 @@ function N.Receive(prefix,message,channel,sender)
         FB.MatchChat.Receive(m,table.concat(p,"|",4))
     elseif kind=="ACCEPT" and m.host and m.phase=="offer" then
         m.capable=p[4]=="R1"
+        if m.safePenalties and not m.capable then N.Whisper("CANCEL",m.id); N.match=nil; notify("Safe penalties require alpha 48 or later."); return end
         if m.limit>0 and not m.capable then N.Whisper("CANCEL",m.id); N.match=nil; notify("This limit requires alpha 13 or later."); return end
         m.phase="start"; m.since=now(); m.lastRetry=-100
     elseif kind=="START" and not m.host and (m.phase=="accept" or m.phase=="barrier" or m.phase=="playing") then
@@ -410,8 +415,8 @@ function N.Update(dt,peersStepped)
     elseif t-m.lastRetry>=2 then
         if m.phase=="barrier" then N.Whisper("READY",m.id)
         elseif m.phase=="restart" then N.Whisper("ROUNDSTART",m.parent,m.parentResult)
-        elseif m.phase=="offer" and m.limit>0 then
-            N.Whisper("LIMITOFFER",m.id,m.seed,m.automatic and 1 or 0,FB.Series.Code(m.chainReaction,m.limit))
+        elseif m.phase=="offer" and (m.limit>0 or m.safePenalties) then
+            N.Whisper("LIMITOFFER",m.id,m.seed,m.automatic and 1 or 0,FB.Series.Code(m.chainReaction,m.limit,m.safePenalties))
         elseif m.phase=="offer" then N.Whisper(m.chainReaction and "CHAINOFFER" or "OFFER",m.id,m.seed,m.automatic and 1 or 0)
         elseif m.phase=="accept" then N.Whisper("ACCEPT",m.id,"R1")
         elseif m.phase=="start" then

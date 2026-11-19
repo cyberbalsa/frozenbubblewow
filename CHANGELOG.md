@@ -1,3 +1,9 @@
+# 0.1.0-alpha.48
+
+- Added the original **Avoid instant-death penalties** option to training, shared-keyboard versus, duels and arenas. Incoming bubbles use a safe landing column when space allows. A volley can still end the round after the last safe space fills.
+- Matchmaking and arena rooms agree on the rule before play. Other players can see a penalty rise in the eighth column when the staggered row has space for it. Recordings keep the rule used in the round.
+- Corrected the last-frame training result from alpha 45. The desktop game checks the loss line before rising penalties land. A penalty that lands on the final frame still lets you finish. One that landed a frame earlier can end the run. Older recordings keep their original outcome.
+
 # 0.1.0-alpha.47
 
 - Settled bubbles and frozen overlays keep their positions between frames. The cannon changes sprites when its aim crosses one of the original rotation steps. This cuts repeated UI updates on solo boards and in five-player arenas.

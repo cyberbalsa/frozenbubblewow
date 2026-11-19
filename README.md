@@ -67,6 +67,8 @@ Open **Settings → AddOns → Frozen Bubble Forever**, right-click the minimap 
 
 Flight invitations appear once per taxi ride. Idle invitations default to 90 seconds in one spot and can be adjusted from 60 to 120 seconds. Queued crafting counts as idle by default. Each invitation has Play and Later buttons. The page also controls the minimap icon, invitation duration, colorblind symbols, sound, music volume, window size, focus fade, reduced motion, community channel login, and debug logging.
 
+Turn on **Avoid instant-death penalties in local games** in addon settings to use the original game’s optional penalty placement rule in training and shared-keyboard versus. Each incoming bubble chooses among columns where it can land above the loss line. If every legal landing would lose the round, the game draws a column normally. For online play, choose **Avoid instant-death penalties** in Multiplayer before queuing or in the arena lobby as host. Everyone in a match uses the same rule. It defaults to off and requires alpha 48 or later when enabled. Personal recordings remember the rule.
+
 ## Community channel and P2P sharing
 
 Open Multiplayer and join `FrozenBubbleForever`. This dedicated in-game channel carries lobby chat, queue advertisements, highscores, and level listings. Direct addon whispers carry match state and requested level data. No guild membership is required when using the community channel. Without it, discovery falls back to your guild/group.
@@ -93,7 +95,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.47` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.48` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. The score and clock lettering also uses Frozen Bubble’s Perl SDLPango renderer. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

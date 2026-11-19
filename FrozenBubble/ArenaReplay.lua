@@ -17,7 +17,7 @@ function R.New(record,sound)
     local right=FB.Engine.New(nil,record.seed,"versus",record.chains,sound)
     right.launchY=362
     local room={arena=true,names={},players={},phase="playing",seed=record.seed,chainReaction=record.chains,
-        me=h.me,round=h.round,limit=h.limit,mask=0,leftMask=0}
+        me=h.me,round=h.round,limit=h.limit,mask=0,leftMask=0,safePenalties=record.safePenalties==true}
     for i,seat in ipairs(h.seats) do
         room.names[i]=seat.name
         room.players[seat.name]={name=seat.name,label=seat.label,index=i,wins=seat.wins,left=seat.left,lost=seat.left,
