@@ -356,7 +356,9 @@ function A.Receive(kind,p,channel,sender)
         local v=m.players[sender]
         if v and not v.left and kind=="ACHAT" then FB.MatchChat.Receive(m,table.concat(p,"|",4),v)
         elseif v and not v.lost then
-            if kind=="AFIRE" then
+            if kind=="ATURN" then
+                if FB.PeerView.Turn(v,p) then FB.Recordings.OnlineEvent(m,"ATURN",v.index,table.concat(p,"|",4)) end
+            elseif kind=="AFIRE" then
                 if FB.PeerView.Fire(v,p) then FB.Recordings.OnlineEvent(m,"AFIRE",v.index,table.concat(p,"|",4)) end
             elseif kind=="ASTATE" and (#p==19 or #p==15) then
                 local target=FB.Integer(p[#p],0,#m.names)

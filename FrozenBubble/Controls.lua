@@ -104,7 +104,9 @@ function K.Aim(game,left,right,center,step)
         else angle=angle+(angle>0 and -step or step) end
     end
     game.angle=FB.Clamp(angle,-FB.Engine.MAX_ANGLE,FB.Engine.MAX_ANGLE)
-    game.turning=right and 1 or left and -1 or 0
+    -- Both keys cancel the rotation, but SDL processes both penguin poses.
+    game.turning=left and right and 2 or right and 1 or left and -1 or 0
+    game.aimKeys=(left and 1 or 0)+(right and 2 or 0)+(center and 4 or 0)
     game.poseAngle=game.angle
 end
 

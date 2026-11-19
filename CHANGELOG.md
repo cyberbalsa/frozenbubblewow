@@ -1,3 +1,8 @@
+# 0.1.0-alpha.33
+
+- In online duels and arenas you can watch the other player aim before they shoot. When they hold a turn key, their cannon rotates and their penguin leans. When they release it, the penguin straightens. Mouse aim and the center key also appear in recordings of those matches.
+- Holding both turn keys keeps the cannon still and uses the original game's penguin animation.
+
 # 0.1.0-alpha.32
 
 - F11 toggles game music. F12 mutes or restores Frozen Bubble while remembering your music and sound-effect preferences. These keys work in a focused game, at the title screen and during recordings.

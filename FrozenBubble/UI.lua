@@ -1272,6 +1272,7 @@ function U.PlayerInput(game,launchTick)
     local left,right,center=K.Held(keys,1),K.Held(keys,2),K.Held(keys,4)
     if left or right or center then K.Aim(game,left,right,center,0.03)
     else
+        game.aimKeys=0
         local pose=game.poseAngle or game.angle
         local delta=game.angle-pose
         game.turning=delta<0 and -1 or delta>0 and 1 or 0

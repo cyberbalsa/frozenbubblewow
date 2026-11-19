@@ -13,7 +13,18 @@ local unpackFields=unpack or table.unpack
 local function packet(kind,...) local a={"1",kind,...}; for i,v in ipairs(a) do a[i]=tostring(v) end; return table.concat(a,"|") end
 function N.Send(kind, channel, target, ...)
     local message=packet(kind,...)
-    if #message>240 or #N.outbox>=64 then return false end
+    if #message>240 then return false end
+    local pose=kind=="TURN" or kind=="ATURN"
+    if pose then
+        for i=#N.outbox,1,-1 do
+            local entry=N.outbox[i]
+            if entry.kind==kind and entry.target==target then
+                entry.message,entry.expires=message,now()+2
+                return true
+            end
+        end
+        if #N.outbox>=48 then return false end
+    elseif #N.outbox>=64 then return false end
     -- Coalesce snapshots and advertisements: a slow network must not build a stale backlog.
     if kind=="STATE" or kind=="ASTATE" or kind=="QUEUE" then
         for i=#N.outbox,1,-1 do
@@ -22,7 +33,12 @@ function N.Send(kind, channel, target, ...)
             if entry.kind==kind and entry.channel==channel and entry.target==target then entry.message=message; return true end
         end
     end
-    N.outbox[#N.outbox+1]={kind=kind,message=message,channel=channel,target=target,expires=now()+10}
+    -- Send launches, corrections and match results ahead of queued aim samples.
+    local index=#N.outbox+1
+    if not pose then
+        while index>1 and N.outbox[index-1].pose do index=index-1 end
+    end
+    table.insert(N.outbox,index,{kind=kind,message=message,channel=channel,target=target,pose=pose,expires=now()+(pose and 2 or 10)})
     return true
 end
 function N.Whisper(kind,...) if N.match then return N.Send(kind,"WHISPER",N.match.peer,...) end end
@@ -147,6 +163,30 @@ function N.Fire(g,launchTick)
     send(m.arena and "AFIRE" or "FIRE",m.id,m.seq,launchTick or g.tick,g.shots,string.format("%.17g",g.angle),g.projectile.color,
         g.current,g.next,g.rng,g:Pack())
 end
+-- Keyboard turns advance on the peer's 20 ms clock. Mouse aim carries an
+-- absolute angle plus the shooter's lean. Refresh held inputs for packet loss.
+function N.SendTurn(m,g,t)
+    if not g or g.status~="playing" or t<(g.nextTurnAttempt or 0) then return end
+    local keys,lean=g.aimKeys or 0,g.turning or 0
+    local angle=math.floor(g.angle*1000+0.5)
+    local previous=g.sentTurn
+    if not previous and keys==0 and lean==0 and angle==0 then return end
+    if previous then
+        local dt=t-previous.time
+        if keys==previous.keys and lean==previous.lean then
+            if keys==0 and angle~=previous.angle then
+                if dt<0.65 then return end
+            elseif (keys==0 and lean==0 and not previous.repeatStop) or dt<1.5 then return end
+        end
+    end
+    g.nextTurnAttempt=t+0.18
+    m.seq=m.seq+1
+    local send=m.arena and FB.Arena.Fan or N.Whisper
+    if send(m.arena and "ATURN" or "TURN",m.id,m.seq,angle,keys,lean) then
+        local repeatStop=keys==0 and lean==0 and (not previous or previous.keys~=0 or previous.lean~=0 or previous.angle~=angle)
+        g.sentTurn={time=t,angle=angle,keys=keys,lean=lean,repeatStop=repeatStop}
+    end
+end
 function N.State()
     local m,g=N.match,FB.game
     if not m or m.phase~="playing" or not g then return end
@@ -180,7 +220,7 @@ function N.Receive(prefix,message,channel,sender)
     if p[1]~="1" then return end
     local kind=p[2]
     if FB.Arena.Receive(kind,p,channel,sender) then return end
-    if FB.Debug and kind~="STATE" and kind~="QUEUE" then FB.Debug.Log("RECV",kind,channel,sender) end
+    if FB.Debug and kind~="STATE" and kind~="TURN" and kind~="QUEUE" then FB.Debug.Log("RECV",kind,channel,sender) end
     if kind=="QUEUE" and (channel=="CHANNEL" or channel=="GUILD" or channel=="PARTY" or channel=="RAID" or channel=="INSTANCE_CHAT") then
         local limit,chains=FB.Series.Decode(p[3])
         if p[3]~="0" and not limit then return end
@@ -289,6 +329,8 @@ function N.Receive(prefix,message,channel,sender)
         N.Whisper("ENDACK",m.id)
         if m.phase=="playing" then N.Finish(p[4]=="lost" and "won" or "lost",p[4]=="lost" and "Victory! Opponent lost or forfeited." or "Opponent cleared the board.",false)
         end
+    elseif kind=="TURN" and m.phase=="playing" then
+        if FB.PeerView.Turn(m,p) then FB.DuelReplay.Packet(m,p) end
     elseif kind=="FIRE" and m.phase=="playing" then
         if FB.PeerView.Fire(m,p) then FB.DuelReplay.Packet(m,p) end
     elseif kind=="STATE" and m.phase=="playing" then
@@ -305,7 +347,7 @@ function N.Update(dt,peersStepped)
         if entry.expires<t then table.remove(N.outbox,1)
         elseif available then
             local ok,result=pcall(C_ChatInfo.SendAddonMessage,FB.PREFIX,entry.message,entry.channel,entry.target)
-            if FB.Debug and (entry.kind~="STATE" or not ok or result~=0) then FB.Debug.Log("SEND",entry.kind,entry.channel,entry.target,result) end
+            if FB.Debug and (entry.kind~="STATE" and not entry.pose or not ok or result~=0) then FB.Debug.Log("SEND",entry.kind,entry.channel,entry.target,result) end
             N.tokens=N.tokens-1
             local results=Enum and Enum.SendAddonMessageResult
             local throttled=results and result==results.AddonMessageThrottle
@@ -329,6 +371,7 @@ function N.Update(dt,peersStepped)
     local m=N.match
     FB.Arena.Expire(t)
     if not m then return end
+    if m.phase=="playing" then N.SendTurn(m,FB.game,t) end
     if m.arena then FB.Arena.Update(m,dt,t,peersStepped); return end
     if m.phase=="playing" then
         if not peersStepped then FB.PeerView.Update(m,dt) end

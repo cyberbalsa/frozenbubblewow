@@ -265,7 +265,10 @@ events:SetScript("OnUpdate",function(_,dt)
         if ui.frame:IsShown() and (ui.screen=="game" or ui.screen=="opponent") and not FB.Transitions.target then
             if game.status=="playing" and not game.paused then ui:SamplePointer(game) end
             game:Update(elapsed,ui.PlayerInput,networkRound and networkTick or ui.AnimatePlayerTick)
-        else game:Update(elapsed,nil,networkRound and networkTick or nil) end
+        else
+            if networkRound then game.aimKeys,game.turning=0,0 end
+            game:Update(elapsed,nil,networkRound and networkTick or nil)
+        end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false

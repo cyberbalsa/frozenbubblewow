@@ -377,6 +377,70 @@ test("shooter turn, release, fire and idle frames match the desktop input sequen
         end
     end
 end)
+test("remote aim follows held keys and the desktop penguin, recovers a dropped release and preserves shots",function()
+    local sender=client("TurnSender")
+    local n,controls=sender.Net,sender.Controls
+    local g=E.New({},17,"versus")
+    local m={id="51-1",seq=0,phase="playing",peer="TurnGuest-TestRealm"}
+    sender.game,n.match=g,m
+    local v={remote=sender.PeerView.NewDuelBoard(17),phase="playing",remoteSeq=0,remoteAttack=0}
+    local peer=v.remote
+    local texture={Show=function() end,SetTexture=function() end,SetTexCoord=function() end}
+    local function sample(t)
+        n.SendTurn(m,g,t)
+        local entry=table.remove(n.outbox)
+        assert(entry and entry.kind=="TURN")
+        return FB.Split(entry.message)
+    end
+    local function advance(count)
+        for _=1,count do
+            sender.PeerView.StepDuel(v)
+            sender.Animation.Penguin(texture,peer,"p2",0.02)
+        end
+    end
+    n.SendTurn(m,g,0); eq(#n.outbox,0)
+    controls.Aim(g,false,true,false,0.03)
+    local start=sample(1)
+    assert(sender.PeerView.Turn(v,start)); advance(50)
+    eq(peer.angle,E.MAX_ANGLE); eq(texture.fbState,"right"); eq(texture.fbFrame,71)
+    controls.Aim(g,true,true,false,0.03)
+    assert(sender.PeerView.Turn(v,sample(2)))
+    advance(20); eq(texture.fbFrame,52); eq(peer.angle,0.03)
+    controls.Aim(g,false,false,true,0.03)
+    assert(sender.PeerView.Turn(v,sample(3))); advance(20)
+    eq(peer.angle,0); eq(peer.turning,0)
+    g.angle,g.aimKeys,g.turning=-0.72,0,-1
+    assert(sender.PeerView.Turn(v,sample(4))); advance(8)
+    eq(peer.angle,-0.72); eq(texture.fbState,"left_to")
+    g.turning=0; sample(4.2) -- lost in transit
+    assert(sender.PeerView.Turn(v,sample(5.8))); advance(24)
+    eq(texture.fbState,"normal"); eq(peer.angle,-0.72)
+    n.SendTurn(m,g,8); eq(#n.outbox,0)
+    assert(not sender.PeerView.Turn(v,start))
+    local invalid=FB.Split("1|TURN|51-1|9999|1472|2|1")
+    assert(not sender.PeerView.Turn(v,invalid)); eq(peer.angle,-0.72)
+    controls.Aim(g,false,true,false,0.03)
+    local held=sample(9)
+    assert(sender.PeerView.Turn(v,held)); advance(120)
+    eq(peer.turning,0); eq(peer.remoteKeys,nil)
+    -- Fresh aim can overtake a launch in transit. The projectile keeps the
+    -- angle at launch while the cannon keeps the newer angle.
+    g.onShoot=n.Fire; assert(g:Shoot(0.15))
+    local fire=FB.Split(table.remove(n.outbox).message)
+    g.angle,g.aimKeys,g.turning=0.81,0,0
+    assert(sender.PeerView.Turn(v,sample(10)))
+    assert(sender.PeerView.Fire(v,fire)); eq(peer.angle,0.81)
+    assert(math.abs(peer.projectile.vx-E.SPEED*math.sin(0.15))<1e-9)
+    -- A correcting STATE gets queue priority. A slightly older turn still
+    -- carries the held direction, and must preserve the corrected angle.
+    controls.Aim(g,true,false,false,0.03); n.SendTurn(m,g,11)
+    g.angle=0.5; n.State()
+    eq(n.outbox[1].kind,"STATE"); eq(n.outbox[2].kind,"TURN")
+    assert(sender.PeerView.State(v,FB.Split(n.outbox[1].message),g,11))
+    assert(sender.PeerView.Turn(v,FB.Split(n.outbox[2].message)))
+    eq(peer.angle,0.5); advance(1); eq(peer.angle,0.47)
+    n.match=nil
+end)
 test("a peer replays the launch tick for between-frame clicks, keyboard fire and auto-fire",function()
     local sender=client("Launcher")
     local net=sender.Net
@@ -1009,6 +1073,10 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         local records=#m.recording.duel.events
         net.Receive(fb.PREFIX,state,"WHISPER",peer.PlayerName()); net.Receive(fb.PREFIX,fire,"WHISPER",peer.PlayerName())
         net.Receive(fb.PREFIX,fire,"WHISPER","Uninvited-TestRealm"); eq(#m.recording.duel.events,records)
+        peer.Controls.Aim(peer.game,false,true,false,0.03)
+        peer.Net.SendTurn(peer.Net.match,peer.game,clock); local turn=sendFromPeer("TURN")
+        eq(m.remote.turning,1); eq(m.recording.duel.events[#m.recording.duel.events][2],"TURN")
+        net.Receive(fb.PREFIX,turn,"WHISPER",peer.PlayerName())
         snapshot()
         for _=1,7 do update(0.006); update(0.094) end
         env.SlashCmdList.FROZENBUBBLE("record"); assert(r.capture.marked)
@@ -2032,8 +2100,16 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         r.Mark(); departing.Recordings.Mark()
         local function shot(peer,angle) assert(peer.game:Shoot(angle)) end
         shot(fb,0.43); shot(guests[1],-0.26); shot(guests[2],0.36)
+        guests[1].Controls.Aim(guests[1].game,true,false,false,0.03)
         fb.Arena.Target(3); remember(); run(45)
         local v=m.players[guests[1].PlayerName()]
+        eq(v.remote.turning,-1)
+        local receivedTurn=false
+        for _,e in ipairs(r.capture.record.arena.events) do
+            if e[2]=="ATURN" and e[3]==v.index then receivedTurn=true end
+        end
+        assert(receivedTurn)
+        guests[1].Controls.Aim(guests[1].game,false,false,false,0.03)
         assert(v.remote.shots>=1)
         guests[1].Arena.Target(1)
         shot(guests[1],0.71)

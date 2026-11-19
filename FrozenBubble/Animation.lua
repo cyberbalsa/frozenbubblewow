@@ -37,9 +37,12 @@ local function penguinInput(t,game)
     local direction=game.turning==-1 and "left" or game.turning==1 and "right"
     local fired=game.shots~=t.fbShots
     t.fbShots=game.shots
-    t.fbIdleTicks=(direction or fired) and 0 or t.fbIdleTicks+1
+    t.fbIdleTicks=(direction or game.turning==2 or fired) and 0 or t.fbIdleTicks+1
     if fired then
         pose(t,"action")
+    elseif game.turning==2 then
+        -- SDL handles left then right, restarting right_to on every tick.
+        pose(t,"right_to")
     elseif direction then
         if t.fbState==direction.."_from" then pose(t,direction)
         elseif t.fbState~=direction and t.fbState~=direction.."_to" then pose(t,direction.."_to") end

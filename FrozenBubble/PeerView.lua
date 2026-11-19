@@ -61,6 +61,19 @@ local function setGrid(view,grid,offset)
     view.grid,view.offset,view.attachedOrder=grid,offset,order
 end
 
+function V.Turn(m,p)
+    local seq=FB.Integer(p[4],1,10000000)
+    local angle=FB.Integer(p[5],-1471,1471)
+    local keys,lean=FB.Integer(p[6],0,7),FB.Integer(p[7],-1,2)
+    local view=m.remote
+    if #p~=7 or not seq or not angle or not keys or not lean or seq<=(view.turnSeq or 0) then return end
+    -- A priority FIRE or STATE may have overtaken this turn. Keep its angle
+    -- while accepting the latest held keys, which those packets do not carry.
+    if seq>m.remoteSeq then view.angle=FB.Clamp(angle/1000,-E.MAX_ANGLE,E.MAX_ANGLE) end
+    view.turnSeq,view.remoteKeys,view.turning,view.turnTicks=seq,keys,lean,110
+    return true
+end
+
 function V.Fire(m,p,receivedAt)
     local seq=FB.Integer(p[4],1,10000000)
     local tick=FB.Integer(p[5],0,100000000)
@@ -80,7 +93,9 @@ function V.Fire(m,p,receivedAt)
     view.status,view.projectile,view.rising,view.chains="playing",nil,{},{}
     view.shots,view.lockedShots=shots-1,shots-1
     view.current,view.next=color,current
+    local facing=view.angle
     view:Shoot(angle)
+    if seq<(view.turnSeq or 0) then view.angle=facing end
     view.next,view.rng=nextColor,rng
     return true
 end
@@ -166,29 +181,39 @@ function V.State(m,p,recipient,receivedAt)
     remote.ceiling=ceiling/100
     remote.score,remote.shots,remote.lockedShots=score,shots,locked
     local aim=(angle or 0)/1000
-    remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
-    remote.turnUntil=receivedAt+0.15; remote.turnTicks=8
-    remote.angle,remote.current,remote.next=aim,current,nextColor
+    if seq>(remote.turnSeq or 0) then
+        if remote.remoteKeys==nil then
+            remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
+            remote.turnTicks=8
+        end
+        remote.angle=FB.Clamp(aim,-E.MAX_ANGLE,E.MAX_ANGLE)
+    end
+    remote.current,remote.next=current,nextColor
     remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
     return true
 end
 
+local function stepTurn(view)
+    if not view.turnTicks or view.turnTicks<=0 then return end
+    view.turnTicks=view.turnTicks-1
+    if view.turnTicks==0 then
+        view.remoteKeys,view.turning=nil,0
+    elseif view.remoteKeys and view.remoteKeys~=0 then
+        local keys=view.remoteKeys
+        FB.Controls.Aim(view,keys%2==1,math.floor(keys/2)%2==1,keys>=4,0.03)
+    end
+end
 -- Advance both duel boards on the same fixed tick. Packet corrections may
 -- replace the remote engine's tick, but do not move the local match clock.
 function V.StepDuel(m)
     local view=m.remote
-    if view.turnTicks and view.turnTicks>0 then
-        view.turnTicks=view.turnTicks-1
-        if view.turnTicks==0 then view.turning=0 end
-    end
-    view:Step(0.02)
+    view:Step(0.02,stepTurn)
     if m.phase=="playing" then view.status="playing" end
 end
 
 function V.Update(m,dt)
     local view=m.remote
     if not view then return end
-    if view.turnUntil and GetTime()>view.turnUntil then view.turning=0 end
-    view:Update(dt)
+    view:Update(dt,stepTurn)
     if m.phase=="playing" then view.status="playing" end
 end
