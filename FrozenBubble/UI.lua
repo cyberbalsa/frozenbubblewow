@@ -58,6 +58,8 @@ local function makeBoard(parent,x,y)
     b.bubbles={}; b.fx={}
     for key=1,104 do b.bubbles[key]=bubble(b) end
     for i=1,100 do b.fx[i]=bubble(b); b.fx[i]:Hide() end
+    b.rising={}; b.penalties={}
+    for i=1,7 do b.rising[i]=bubble(b); b.rising[i]:Hide() end
     b.limit=b:CreateTexture(nil,"OVERLAY"); b.limit:SetColorTexture(1,0.3,0.4,0)
     b.limit:SetSize(256,1); b.limit:SetPoint("TOPLEFT",0,-E.LIMIT)
     b.roof=b:CreateTexture(nil,"OVERLAY"); b.roof:SetColorTexture(0.5,0.85,1,0); b.roof:SetSize(256,3)
@@ -134,6 +136,7 @@ function U:Build()
     self.hud=text(self.gameLayer,"",30,113,23,245,{1,0.93,0.58})
     self.footer=text(self.gameLayer,"",20,235,14,225,{0.16,0.1,0.22})
     self.penguin=A.Image(self.gameLayer,"anime-shooter-p1",646.4,672,128,96)
+    self.remotePenguin=A.Image(self.gameLayer,"anime-shooter-p2",-8,672,128,96); self.remotePenguin:Hide()
     self.panels={}
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent","solo","settings"}) do
         local p=CreateFrame("Frame",nil,f); p:SetSize(370,470); p:SetPoint("TOPLEFT",555,-146)
@@ -148,7 +151,7 @@ function U:Build()
     self:BuildSolo(); self:BuildSettings()
     self.remoteBoard=makeBoard(self.gameLayer,0,0); self.remoteBoard:Hide()
     self.remoteBoard:SetFrameLevel(self.layers.board)
-    self.remoteLabel=text(self.gameLayer,"",540,20,16,430)
+    self.remoteLabel=text(self.gameLayer,"",128,12,16,250); self.remoteLabel:SetJustifyH("CENTER")
     -- Original 640x480 menu, including its exact entry positions and source textures.
     local menu=CreateFrame("Frame",nil,f); self.menu=menu; menu:SetSize(640,480); menu:SetScale(1.6); menu:SetPoint("TOPLEFT",0,0)
     menu:SetFrameLevel(self.layers.menu)
@@ -189,8 +192,8 @@ function U:Build()
     versionCover:SetSize(38,154); versionCover:SetPoint("BOTTOMRIGHT",-2,0)
     -- A compact in-game menu/toolbar, like the Peggle addon, instead of an app sidebar.
     self.toolbar=CreateFrame("Frame",nil,self.gameLayer); self.toolbar:SetAllPoints(); self.toolbar:SetFrameLevel(self.layers.hud)
-    button(self.toolbar,"Menu",16,728,90,function() self:ShowMenu() end)
-    button(self.toolbar,"Pause",115,728,90,function() FB.TogglePause() end)
+    self.menuControl=button(self.toolbar,"Menu",16,728,90,function() self:ShowMenu() end)
+    self.pauseControl=button(self.toolbar,"Pause",115,728,90,function() FB.TogglePause() end)
     self.editButton=button(self.toolbar,"Edit level",16,687,110,function() self:StartEditor(self.editID) end)
     self.editButton:Hide()
     local chrome=CreateFrame("Frame",nil,f); chrome:SetAllPoints(); chrome:SetFrameLevel(self.layers.chrome)
@@ -272,6 +275,11 @@ function U:Resize()
 end
 function U:PlaceBoard(board,x,y,scale)
     board:SetScale(scale); board:ClearAllPoints(); board:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",x/scale,-y/scale)
+    local versus=self.screen=="opponent"
+    local progressX=versus and board==self.board and -9 or 257
+    for i,dot in ipairs(board.progress) do
+        dot:ClearAllPoints(); dot:SetPoint("TOPLEFT",progressX,(versus and 12 or 16)-(i-1)*(FB.MediaInfo["progress-green"].h+1))
+    end
 end
 function U:ShowMenu()
     self.focusPausedGame=nil
@@ -322,13 +330,20 @@ function U:Panel(name)
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay)
     self.remoteBoard:SetShown(name=="opponent")
     self.remoteLabel:SetShown(name=="opponent")
+    self.remotePenguin:SetShown(name=="opponent")
+    self.footer:SetShown(name~="opponent")
+    self.pauseControl:SetShown(name~="opponent")
+    self.menuControl:ClearAllPoints()
+    self.menuControl:SetPoint("TOPLEFT",name=="opponent" and 467 or 16,-728)
+    self.penguin:ClearAllPoints()
     self.panels.opponent:Hide()
     if name=="opponent" then
         FB.Animation.Frame(self.gameBackground,"versus-background",1)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
-        self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",36,-17); self.hud:SetFont("Fonts\\FRIZQT__.TTF",14)
-        self.penguin:Hide()
+        self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",640,-12); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
+        self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
     else
+        self.penguin:SetPoint("TOPLEFT",646.4,-672)
         FB.Animation.Frame(self.gameBackground,"solo-background",1)
         self:PlaceBoard(self.board,name=="editor" and 60 or 304,70.4,1.6)
         self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",15,-150)
@@ -345,7 +360,7 @@ function U:BuildHelp()
     FB.Animation.Image(p,"menu-logo",75,45,190,119)
     text(p,"Aim with your mouse and click to shoot. While the pointer is over the board, use Left / Right (or A / D) and Space / Up instead. P pauses solo play.",0,211,13,350)
     text(p,"Match 3 or more of the same color. Bubbles disconnected from the ceiling fall. The ceiling drops every 9 solo shots; after 10.5 seconds, the launcher fires automatically.",0,287,13,350)
-    text(p,"In versus, falling bubbles attack your opponent. Clear your board or outlast them. You cannot pause a match; hiding the window keeps it running.",0,363,13,350,muted)
+    text(p,"In versus, large clears send bubbles to the other board. Keep yours above the danger line to win. You cannot pause a match; hiding the window keeps it running.",0,363,13,350,muted)
 end
 function U:BuildLobby()
     local p=self.panels.lobby
@@ -509,7 +524,7 @@ function U:RenderBoard(board,game,remote)
         sweep=math.floor((game.elapsed or 0)*50)%(phase==game.rootPeriod-1 and 31 or 61)
     end
     local frozen={}
-    if game and game.status=="lost" then
+    if game and game.status=="lost" and game.attachedOrder then
         for i=1,math.min(#game.attachedOrder,math.floor((self.endAge or 0)*25)) do frozen[game.attachedOrder[i]]=true end
     end
     for key=1,104 do
@@ -528,6 +543,24 @@ function U:RenderBoard(board,game,remote)
         board.compressor:SetTexCoord(0,info.w/info.tw,(51-height)/info.th,51/info.th)
         board.compressor:Show()
     else board.compressor:Hide() end
+    for i,texture in ipairs(board.rising) do
+        local bubble=game and game.rising and game.rising[i]
+        if bubble then place(texture,board,bubble.x,bubble.y,bubble.color) else texture:Hide() end
+    end
+    local pending=game and game.mode=="versus" and game.pending or 0
+    local height,used=0,0
+    while pending>0 and height<350 do
+        local grouped=pending>=7
+        local asset=grouped and "penalty-seven" or "penalty-one"
+        local info=FB.MediaInfo[asset]
+        used=used+1
+        local marker=board.penalties[used] or board:CreateTexture(nil,"ARTWORK")
+        board.penalties[used]=marker
+        marker:ClearAllPoints(); marker:SetPoint("BOTTOM",board,"TOPLEFT",remote and 278 or -23,-362+height)
+        marker:SetSize(info.w,info.h); FB.Animation.Frame(marker,asset,1)
+        height=height+info.h-1; pending=pending-(grouped and 7 or 1)
+    end
+    for i=used+1,#board.penalties do board.penalties[i]:Hide() end
     for i,t in ipairs(board.fx) do
         local fx=game and game.effects and game.effects[i]
         if fx then
@@ -542,7 +575,7 @@ function U:RenderBoard(board,game,remote)
             FB.Animation.Frame(dot,i==phase+1 and "progress-red" or "progress-green",1)
         else dot:Hide() end
     end
-    if not game or remote or self.editing or game.status~="playing" then return end
+    if not game or self.editing or game.status and game.status~="playing" or not game.current then return end
     if game.stick then
         local r,c=E.Cell(game.stick.key); local x,y=E.Position(r,c,game.ceiling,game.offset)
         board.stick:ClearAllPoints(); board.stick:SetPoint("CENTER",board,"TOPLEFT",x,-y)
@@ -550,10 +583,14 @@ function U:RenderBoard(board,game,remote)
     end
     if game.projectile then place(board.projectile,board,game.projectile.x,game.projectile.y,game.projectile.color)
     end
-    place(board.current,board,128,E.LAUNCH_Y,game.current)
-    place(board.next,board,128,412,game.next,32)
+    local versus=game.mode=="versus"
+    local launchY=versus and 366 or E.LAUNCH_Y
+    board.shooter:ClearAllPoints(); board.shooter:SetPoint("CENTER",board,"TOPLEFT",128,-launchY)
+    place(board.current,board,128,launchY,game.current)
+    place(board.next,board,128,versus and 416 or 412,game.next,32)
+    board.nextRim:ClearAllPoints(); board.nextRim:SetPoint("TOPLEFT",versus and 108 or 109,versus and -397 or -393)
     board.nextRim:Show()
-    local warning=game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
+    local warning=not remote and game.idle>game.hurryWarn and math.floor((game.idle-game.hurryWarn)*2)%2==0
     if warning and not board.wasWarning then FB.Sound("hurry") end
     board.wasWarning=warning
     board.hurry:SetShown(warning)
@@ -589,7 +626,7 @@ function U:Update(dt)
         elseif self.board:IsMouseOver() then
             local x,y=self:Cursor()
             if self.lastX~=x or self.lastY~=y then
-                if y<E.LAUNCH_Y-10 then game.angle=FB.Clamp(math.atan2(x-128,E.LAUNCH_Y-y),-E.MAX_ANGLE,E.MAX_ANGLE) end
+                if y<game.launchY-10 then game.angle=FB.Clamp(math.atan2(x-128,game.launchY-y),-E.MAX_ANGLE,E.MAX_ANGLE) end
                 self.lastX,self.lastY=x,y
             end
         end
@@ -609,7 +646,8 @@ function U:Update(dt)
         self.footer:SetText("Paint your layout, then Save, Test, or Publish.")
     elseif game then
         local label=game.mode=="campaign" and ("Level "..(FB.level or 1).." / 100") or game.mode
-        self.hud:SetText(label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points")
+        self.hud:SetText(game.mode=="versus" and (FB.PlayerName().."  ·  "..game.score) or
+            (label.."\n"..((FB.run and FB.run.score or 0)+game.score).." points"))
         self.footer:SetText(game.status=="playing" and ("Ceiling in "..(game.rootPeriod-game.shots%game.rootPeriod).." shots\nIncoming bubbles: "..game.pending) or "")
         if game.paused then
             FB.Animation.Frame(self.pauseArt,"pause",math.floor((GetTime()%1.4)*25)+1)
@@ -622,8 +660,14 @@ function U:Update(dt)
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     local match=FB.Net.match
     if self.screen=="opponent" then
-        self:RenderBoard(self.remoteBoard,match and match.remote,true)
-        self.remoteLabel:SetText(match and (match.peer.."\n"..(match.remote and match.remote.score or 0).." points") or "No active match")
+        local remote=match and match.remote
+        if remote then
+            remote.status=match.result=="lost" and "won" or match.result=="won" and "lost" or "playing"
+            FB.Animation.Penguin(self.remotePenguin,remote,"p2",FB.db.reducedMotion and 0 or dt)
+        end
+        self.remotePenguin:SetShown(remote~=nil)
+        self:RenderBoard(self.remoteBoard,remote,true)
+        self.remoteLabel:SetText(match and (match.peer.."  ·  "..(match.remote and match.remote.score or 0)) or "No active match")
     end
     self.refresh=(self.refresh or 0)+dt
     if self.refresh>=1 then

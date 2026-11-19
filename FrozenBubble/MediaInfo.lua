@@ -46,6 +46,8 @@ FB.MediaInfo = {
     ["next-rim"] = {w=39, h=39, tw=64, th=64, columns=1, frames=1},
     ["panel"] = {w=341, h=280, tw=512, th=512, columns=1, frames=1},
     ["pause"] = {w=190, h=143, tw=1024, th=1024, columns=5, frames=35},
+    ["penalty-one"] = {w=16, h=14, tw=16, th=16, columns=1, frames=1},
+    ["penalty-seven"] = {w=22, h=16, tw=32, th=16, columns=1, frames=1},
     ["prelight"] = {w=32, h=32, tw=32, th=32, columns=1, frames=1},
     ["progress-green"] = {w=7, h=7, tw=8, th=8, columns=1, frames=1},
     ["progress-red"] = {w=7, h=7, tw=8, th=8, columns=1, frames=1},

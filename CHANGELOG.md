@@ -1,3 +1,9 @@
+# 0.1.0-alpha.3
+
+- Upscaled the menu and both game backgrounds, the menu logo, and the wooden buttons with Upscayl. All five use the original artwork at twice the resolution.
+- Versus penalties now rise from the bottom after a shot hits another bubble. Bananas count single penalties and tomatoes count groups of seven. Clearing your own board keeps the round going.
+- Both players’ penguins appear on the versus screen, and the opponent’s cannon and ammunition update with their board.
+
 # 0.1.0-alpha.2
 
 - The launcher loads the next bubble when you fire. In 63 reference shots across seven campaign boards, the Lua engine lands on the same cell and simulation tick as the upstream collision routines.

@@ -14,7 +14,7 @@ Type `/fb`. Aim with the mouse and click to fire. While the pointer is over the 
 
 - **Campaign:** 100 original layouts with level unlocks and saved checkpoints. Runs started at level 1 qualify for campaign highscores. Restarting a partially played board after logout becomes practice.
 - **Endless:** clear the board for a new wave and a 500-point bonus.
-- **Versus:** both players start with the same board. Falling clusters cancel incoming garbage first, then attack the opponent. Clear your board or survive longer to win. No pause; hiding the window leaves the match running. Timeout or combat cancels the match without a result.
+- **Versus:** both players start with the same board. Clearing more than three bubbles sends the excess to your opponent. Incoming bubbles rise from below in groups of up to seven. The last player above the danger line wins. No pause; hiding the window leaves the match running. Timeout or combat cancels the match without a result.
 - **Editor:** paint up to ten rows, test, save, import/export a 98-character layout code, and publish to the community. Saved/imported levels are unranked.
 
 ## Community channel and P2P sharing
@@ -37,7 +37,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.2` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.3` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
 
 GitHub Actions tests Lua 5.1 and 5.4 on every push/PR, packages the addon, and retains a build artifact. A `v*` tag creates a GitHub Release and uploads the same ZIP to CurseForge project **1815958** after tests pass. The workflow verifies that the configured CurseForge game version matches interface 16001 before uploading. Alpha/beta tags set the corresponding CurseForge release type.
 

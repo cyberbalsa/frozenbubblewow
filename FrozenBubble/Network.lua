@@ -108,7 +108,8 @@ function N.State()
     local m,g=N.match,FB.game
     if not m or m.phase~="playing" or not g then return end
     m.seq=m.seq+1
-    N.Whisper("STATE",m.id,m.seq,g.shots,g.score,math.floor(g.ceiling*100+0.5),g.attack,g:Pack())
+    N.Whisper("STATE",m.id,m.seq,g.shots,g.score,math.floor(g.ceiling*100+0.5),g.attack,g:Pack(),g.lockedShots,g.pending,
+        math.floor(g.angle*1000+0.5),g.current,g.next)
     m.lastState=now()
 end
 function N.RequestScores()
@@ -197,10 +198,33 @@ function N.Receive(prefix,message,channel,sender)
         local offset=p[9] and #p[9]==97 and 1 or 0
         local grid=FB.Engine.Unpack(p[9],offset)
         if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
-        if attack<m.remoteAttack or attack-m.remoteAttack>12*math.max(0,shots-(m.remoteShots or 0)) then return end
+        local locked=FB.Integer(p[10],math.max(0,shots-1),shots)
+        local pending=FB.Integer(p[11],0,10000000) or 0
+        local angle=FB.Integer(p[12],-1471,1471)
+        local current,nextColor=FB.Integer(p[13],1,8),FB.Integer(p[14],1,8)
+        if p[10] and (not locked or not angle or not current or not nextColor
+            or not FB.Integer(p[11],0,10000000)) then return end
+        if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end
+        if locked then
+            local resolved=locked-(m.remoteLocked or 0)
+            if resolved<0 or attack-m.remoteAttack>96*resolved then return end
+        else
+            -- Older peers report launched shots even if the projectile is still in flight.
+            local base=shots==(m.remoteShots or 0) and (m.legacyAttackBase or 0) or m.remoteAttack
+            local limit=shots==(m.remoteShots or 0) and (m.legacyAttackLimit or 0) or 12*(shots-(m.remoteShots or 0))
+            if attack-base>limit then return end
+            m.legacyAttackBase,m.legacyAttackLimit=base,limit
+            locked=shots
+        end
+        m.remoteLocked=locked
         m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=now()
         FB.game:AddGarbage(attack-m.remoteAttack); m.remoteAttack=attack
-        m.remote={grid=grid,offset=offset,ceiling=ceiling/100,score=score,shots=shots}
+        local remote=m.remote or {}
+        remote.grid,remote.offset,remote.ceiling=grid,offset,ceiling/100
+        remote.score,remote.shots,remote.lockedShots=score,shots,locked
+        remote.angle,remote.current,remote.next=(angle or 0)/1000,current,nextColor
+        remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
+        m.remote=remote
     end
 end
 function N.Update(dt)

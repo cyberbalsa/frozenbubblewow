@@ -43,7 +43,8 @@ end
 function E.New(level, seed, mode)
     local self = setmetatable({grid={}, rng=math.max(1, (seed or 1) % 2147483647), mode=mode or "campaign",
         score=0, shots=0, ceiling=0, status="playing", elapsed=0, idle=0, pending=0,
-        attack=0, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
+        attack=0, tick=0, deliveries={}, rising={}, attachedOrder={}, lockedShots=0, offset=0, effects={}, angle=0, accumulator=0}, E)
+    self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
     self.hurryWarn = mode=="versus" and 5 or 8
     self.hurryMax = mode=="versus" and 7.5 or 10.5
     self.rootPeriod = mode=="versus" and 12 or 9
@@ -117,11 +118,9 @@ function E:Resolve(key)
         end
     end
     self.score=self.score+popped*10+dropped*20
-    -- Falling clusters become attacks; cancel queued garbage before sending it.
-    local attack=math.min(12,math.max(0,popped+dropped-3))
-    local canceled=math.min(self.pending,attack)
-    self.pending=self.pending-canceled
-    self.attack=self.attack+attack-canceled
+    if self.mode=="versus" then
+        self.attack=self.attack+math.max(0,popped+dropped-3)
+    end
     self.lastPop,self.lastDrop=popped,dropped
     return popped,dropped
 end
@@ -131,7 +130,7 @@ function E:CheckEnd()
             self.ceiling=0
             for r=1,5 do for c=1,E.Columns(r) do self.grid[E.Key(r,c)]=self:Random(8) end end
             self.score=self.score+500
-        else self.status="won"; return end
+        elseif self.mode~="versus" then self.status="won"; return end
     end
     for key in pairs(self.grid) do
         local r,c=E.Cell(key); local _,y=E.Position(r,c,self.ceiling,self.offset)
@@ -139,32 +138,53 @@ function E:CheckEnd()
     end
 end
 function E:AddGarbage(count)
-    self.pending=math.min(48,self.pending+count)
+    if count<=0 then return end
+    self.pending=self.pending+count
+    local batch=self.deliveries[#self.deliveries]
+    if batch and batch.tick==self.tick then batch.count=batch.count+count
+    else self.deliveries[#self.deliveries+1]={tick=self.tick,count=count} end
 end
 function E:ApplyGarbage()
-    local count=math.min(7,self.pending)
-    self.pending=self.pending-count
-    for _=1,count do
-        -- Attach at the lowest free slot in a random column, never in a sealed hole.
-        local options={}
-        for c=1,8 do
-            local candidate
-            for r=1,E.ROWS do
-                if E.Valid(r,c,self.offset) then
-                    local key=E.Key(r,c)
-                    if not self.grid[key] then
-                        local supported=r==1
-                        for _, n in ipairs(E.Neighbors(key,self.offset)) do if self.grid[n] then supported=true end end
-                        if supported then candidate=key end
-                    end
-                end
+    local batch=self.deliveries[1]
+    if not batch or self.tick<=batch.tick+20 then return end
+    local bottom={1,1,1,1,1,1,1,1}
+    for key in pairs(self.grid) do
+        local row,col=E.Cell(key)
+        bottom[col]=math.max(bottom[col],row)
+    end
+    while batch and self.tick>batch.tick+20 and #self.rising<7 do
+        -- The default upstream rules draw among columns 0..6 (1..7 in Lua).
+        local color,col=self:Random(8),self:Random(7)
+        bottom[col]=bottom[col]+1
+        local x,y=E.Position(13,col,0,self.offset)
+        self.rising[#self.rising+1]={col=col,row=bottom[col],x=x,y=y,color=color}
+        self.pending=self.pending-1
+        batch.count=batch.count-1
+        if batch.count==0 then table.remove(self.deliveries,1); batch=self.deliveries[1] end
+    end
+    table.sort(self.rising,function(a,b)
+        if a.col==b.col then return a.row<b.row end
+        return a.col<b.col
+    end)
+    for index,bubble in ipairs(self.rising) do
+        bubble.y=bubble.y+index*7+self:Random(20)-1
+    end
+    self.malusSound=true
+end
+function E:MoveGarbage()
+    for i=#self.rising,1,-1 do
+        local bubble=self.rising[i]
+        bubble.y=bubble.y-30
+        if math.floor((bubble.y-E.R+E.STEP/2)/E.STEP)+1<=bubble.row then
+            if bubble.row<=E.ROWS then
+                local slot=E.Key(bubble.row,bubble.col)
+                self.grid[slot]=bubble.color
+                self.attachedOrder[#self.attachedOrder+1]=slot
             end
-            if candidate then options[#options+1]=candidate end
+            if bubble.row>=13 then self.status="lost" end
+            table.remove(self.rising,i)
+            self.boardChanged=true
         end
-        if #options==0 then self.status="lost"; return end
-        local slot=options[self:Random(#options)]
-        self.grid[slot]=self:Random(8)
-        self.attachedOrder[#self.attachedOrder+1]=slot
     end
 end
 function E:AdvanceRoot()
@@ -210,16 +230,16 @@ function E:Attach(x,y,hit)
     if self.lastPop==0 then self.stick={key=best,age=0} end
     self:CheckEnd()
     if self.status=="playing" then
-        if self.mode=="versus" then self:ApplyGarbage() end
         if self.shots%self.rootPeriod==0 then self:AdvanceRoot() end
         self:CheckEnd()
+        if hit and self.mode=="versus" and self.status=="playing" then self:ApplyGarbage() end
     end
     self.changed=true
 end
 function E:Shoot(angle)
-    if self.status~="playing" or self.projectile or self.paused then return false end
+    if self.status~="playing" or self.projectile or #self.rising>0 or self.paused then return false end
     self.angle=FB.Clamp(angle or self.angle,-E.MAX_ANGLE,E.MAX_ANGLE)
-    self.projectile={x=128,y=E.LAUNCH_Y,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
+    self.projectile={x=128,y=self.launchY,vx=math.sin(self.angle)*E.SPEED,vy=-math.cos(self.angle)*E.SPEED,color=self.current}
     self.current=self.next
     self.next=self:Color()
     self.shots=self.shots+1; self.idle=0
@@ -227,8 +247,10 @@ function E:Shoot(angle)
 end
 function E:Step(dt)
     if self.status~="playing" or self.paused then return end
+    self.tick=self.tick+1
     self.elapsed=self.elapsed+dt
     self.idle=self.idle+dt
+    if #self.rising>0 then self:MoveGarbage(); return end
     if not self.projectile then
         if self.idle+1e-9>=self.hurryMax then self:Shoot(self.angle) end
         return
@@ -247,7 +269,10 @@ function E:Step(dt)
             if d<(32*0.82)^2 and (not nearest or d<nearest) then hit,nearest=key,d end
         end
     end
-    if hit then self:Attach((previousX+p.x)/2,(previousY+p.y)/2,hit) end
+    if hit then
+        self:Attach((previousX+p.x)/2,(previousY+p.y)/2,hit)
+        self:MoveGarbage()
+    end
 end
 function E:Update(dt)
     -- Fixed simulation steps keep bounces and attachment independent of render FPS.

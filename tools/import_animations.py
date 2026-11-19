@@ -44,6 +44,7 @@ static = {
     "win-panel": "win_panel_1player.png", "lose-panel": "lose_panel.png",
     "ui-button": "select_level_background.png",
     "next-rim": "on_top_next.png", "hurry": "hurry_p1.png",
+    "penalty-one": "banane.png", "penalty-seven": "tomate.png",
     "progress-red": "dot_red.png", "progress-green": "dot_green.png",
 }
 for color in ("green", "purple"):

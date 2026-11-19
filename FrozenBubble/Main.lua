@@ -159,8 +159,13 @@ events:SetScript("OnUpdate",function(_,dt)
         local game=FB.game
         if game.changed then
             FB.Sound((game.lastPop or 0)>0 and "destroy_group" or "stick"); game.changed=false
-            if game.mode=="versus" then FB.Net.State() end
+            game.boardChanged=true
         end
+        if game.boardChanged then
+            if game.mode=="versus" then FB.Net.State() end
+            game.boardChanged=false
+        end
+        if game.malusSound then FB.Sound("malus"); game.malusSound=false end
         if game.bounced then FB.Sound("rebound"); game.bounced=false end
         if game.lowered then FB.Sound(game.mode=="versus" and "newroot" or "newroot_solo"); game.lowered=false end
         finishSolo()

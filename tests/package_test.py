@@ -46,6 +46,16 @@ class Packaging(unittest.TestCase):
             for sound in re.findall(r'FB.Sound\("([a-z_]+)"\)', lua.read_text()):
                 self.assertTrue((ROOT / f"FrozenBubble/Media/{sound}.ogg").is_file(), sound)
 
+    def test_upscaled_textures_keep_atlas_coordinates(self):
+        metadata = (ROOT / "FrozenBubble/MediaInfo.lua").read_text()
+        for name in ("menu-background", "versus-background", "solo-background", "ui-button", "menu-logo"):
+            with self.subTest(texture=name):
+                line = next(line for line in metadata.splitlines() if f'["{name}"]' in line)
+                atlas = {k: int(v) for k, v in re.findall(r"(\w+)=(\d+)", line)}
+                with (ROOT / f"FrozenBubble/Media/{name}.tga").open("rb") as texture:
+                    size = struct.unpack_from("<HH", texture.read(18), 12)
+                self.assertEqual(size, (atlas["tw"] * 2, atlas["th"] * 2))
+
 
 if __name__ == "__main__":
     unittest.main()

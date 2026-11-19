@@ -43,10 +43,28 @@ test("pairs do not pop or detach bubbles",function()
     local g=E.New({},1); g.grid={[1]=1,[2]=1,[9]=2}
     local p,d=g:Resolve(1); eq(p,0); eq(d,0); eq(g:Count(),3)
 end)
-test("attacks cancel incoming garbage before being sent",function()
-    local g=E.New({},1,"versus"); g.grid={[1]=1,[2]=1,[3]=1,[9]=2,[17]=3}; g.pending=1
-    g:Resolve(1); eq(g.pending,0); eq(g.attack,1)
-    g:AddGarbage(1000); eq(g.pending,48)
+test("versus attacks queue independently and rise up to seven at a time",function()
+    local g=E.New({},1,"versus")
+    g.grid={[1]=1,[2]=1,[3]=1,[9]=2,[17]=3}
+    g:AddGarbage(10)
+    g:Resolve(1); eq(g.pending,10); eq(g.attack,2)
+    g:CheckEnd(); eq(g.status,"playing")
+    for _=1,20 do g:Step(0.02) end
+    g:ApplyGarbage(); eq(#g.rising,0)
+    g:Step(0.02); g:ApplyGarbage()
+    eq(g.pending,3); eq(#g.rising,7); eq(g:Count(),0); assert(not g:Shoot())
+    local bubble=g.rising[1]; local y=bubble.y
+    g:Step(0.02); eq(bubble.y,y-30)
+    for _=1,20 do g:Step(0.02) end
+    eq(#g.rising,0); eq(g:Count(),7); assert(g:Shoot())
+end)
+test("penalty bubbles start only after a bubble collision and after row insertion",function()
+    local g=E.New({"111....."},2,"versus"); g:AddGarbage(1); g.tick=30; g.shots=11
+    g.projectile={color=2}; g:Attach(220,16); eq(#g.rising,0)
+    g.shots=12; g.projectile={color=3}; g:Attach(32,44,1)
+    eq(g.offset,1); eq(#g.rising,1)
+    local b=g.rising[1]
+    eq(b.x,E.Position(13,b.col,0,1)); assert(not g.grid[E.Key(b.row,b.col)])
 end)
 test("wire board roundtrip and malformed data rejection",function()
     local g=E.New(FB.Levels[1],42); local packed=g:Pack(); eq(#packed,98)
@@ -208,10 +226,11 @@ test("queue handshake survives dropped offer, accept, start and ready",function(
     eq(a.Net.match.id,b.Net.match.id); eq(a.game:Pack(),b.game:Pack())
 end)
 test("cumulative attacks survive duplicates and lost snapshots",function()
-    a.game.shots=3; a.game.attack=5; a.Net.State(); tick(1)
+    a.game.shots=3; a.game.lockedShots=2; a.game.attack=0; a.Net.State(); tick(1)
+    a.game.lockedShots=3; a.game.attack=5; a.Net.State(); tick(1)
     eq(b.game.pending,5)
     a.Net.State(); tick(1); eq(b.game.pending,5)
-    drops.STATE=true; a.game.shots=4; a.game.attack=8; a.Net.State(); tick(2)
+    drops.STATE=true; a.game.shots=4; a.game.lockedShots=4; a.game.attack=8; a.Net.State(); tick(2)
     eq(b.game.pending,8)
 end)
 test("stale, foreign, invalid and excessive attack packets are ignored",function()
@@ -311,6 +330,18 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     env.SlashCmdList.FROZENBUBBLE(""); fb.StartCampaign(1)
     for _,name in ipairs({"help","lobby","scores","market","editor","opponent"}) do fb.UI:Panel(name); fb.UI:Update(1) end
+    test("versus draws the penalty stack, rising bubbles and both shooter penguins",function()
+        fb.StartVersus(123)
+        fb.Net.match={peer="Bob",remote={grid={},offset=0,shots=0,score=0,lockedShots=0,ceiling=0,
+            angle=0.5,current=2,next=4,mode="versus",pending=0,rootPeriod=12}}
+        fb.game:AddGarbage(9); fb.UI:Update(0.02)
+        local board=fb.UI.board
+        eq(board.penalties[1].fbAsset,"penalty-seven"); eq(board.penalties[3].fbAsset,"penalty-one")
+        assert(fb.UI.penguin.shown and fb.UI.remotePenguin.shown and fb.UI.remoteBoard.shooter.shown)
+        fb.game.tick=21; fb.game:ApplyGarbage(); fb.UI:Update(0.02)
+        assert(board.rising[7].shown); eq(board.penalties[1].fbAsset,"penalty-one"); assert(not board.penalties[3].shown)
+        fb.Net.match=nil
+    end)
     fb.UI:StartEditor(); fb.UI:Paint("LeftButton"); eq(fb.UI.editGame.grid[1],1)
     fb.UI:Paint("RightButton"); eq(fb.UI.editGame.grid[1],nil)
     env.SlashCmdList.FROZENBUBBLE("debug"); env.SlashCmdList.FROZENBUBBLE("debug off"); eq(fb.db.debug,false)
