@@ -140,7 +140,12 @@ function U:LayoutArena(m)
         dot:ClearAllPoints(); dot:SetPoint("TOPLEFT",257,16-(n-1)*8)
     end
 end
-function U:RenderArena(m,dt)
+function U:AnimateArena(m,dt)
+    for i,v in ipairs(m.opponents) do
+        if not v.left then FB.Animation.Penguin(self.miniPenguins[i],v.remote,"rp"..i,dt) end
+    end
+end
+function U:RenderArena(m,dt,replayGame,lastFrame)
     local me=m.players[m.me]
     self.hud:SetText(me.label.." · "..me.wins)
     self.hud:Show(); self.footer:Hide(); self.pauseArt:Hide()
@@ -165,16 +170,22 @@ function U:RenderArena(m,dt)
             threats=threats+1
         end
         self.miniPenguins[i]:SetShown(not v.left and FB.db.graphicsLevel==3)
-        if not v.left and FB.db.graphicsLevel==3 then FB.Animation.Penguin(self.miniPenguins[i],v.remote,"rp"..i,FB.db.reducedMotion and 0 or dt) end
+        if not v.left and FB.db.graphicsLevel==3 then FB.Animation.Penguin(self.miniPenguins[i],v.remote,"rp"..i,(m.fixedClock or FB.db.reducedMotion) and 0 or dt) end
         if v.name==winner then winnerArt="arena-win-rp"..i end
     end
-    if ready and not FB.db.reducedMotion then
+    if ready and not FB.db.reducedMotion and not lastFrame then
         for _,v in pairs(m.players) do
-            local game=v.name==m.me and FB.game or v.remote
+            local game=v.name==m.me and (replayGame or FB.game) or v.remote
             if not v.left and (not game.endOrder or game.endIndex<#game.endOrder or (game.status=="won" and FB.db.graphicsLevel>1 and #game.effects>0)) then ready=false end
         end
     end
-    self.resultGame=FB.game
+    self.resultGame=replayGame or FB.game
+    if m.closed then
+        self.result:Show(); self.roomBadges:Hide(); self.winnerName:Hide(); self.resultBadge:Hide()
+        FB.Animation.Frame(self.resultArt,"panel",1); self.resultArt:SetSize(526.4,254.4)
+        self.resultDetail:SetText(m.closed); self.resultDetail:Show()
+        return
+    end
     self.result:SetShown(ready)
     if not ready then return end
     FB.Animation.Frame(self.resultArt,winner and winnerArt or "panel",1)
@@ -198,6 +209,7 @@ function U:RenderArena(m,dt)
     self.resultDetail:Show()
     local result=winner and (A.Complete(m) and "Series won" or "Round "..m.round) or "Draw"
     self.resultDetail:SetText(result.." · "..FB.Series.Label(m.limit))
+    if replayGame then return end
     self.retryButton:Show(); self.retryButton:SetEnabled(not m.wantNext)
     self.retryButton:SetText(A.Complete(m) and "Back to lobby" or m.wantNext and "Waiting for opponents…" or "Next round")
     self.leaveSeries:SetShown(not A.Complete(m))

@@ -92,7 +92,7 @@ function N.Leave()
         FB.Series.Leave(m)
         if m.phase=="playing" then N.Finish("lost","You forfeited.",true)
         elseif m.phase~="done" then N.Whisper("CANCEL",m.id); N.match=nil
-        else FB.DuelReplay.Close(m); N.match=nil end
+        else FB.Recordings.CloseOnline(m); N.match=nil end
     end
     notify("Left multiplayer.")
 end
@@ -295,7 +295,7 @@ function N.Receive(prefix,message,channel,sender)
         N.ApplyState(m,p)
     end
 end
-function N.Update(dt,duelStepped)
+function N.Update(dt,peersStepped)
     local t=now()
     local fanout=N.match and N.match.arena and math.max(1,#N.match.names-1) or 1
     N.tokens=math.min(4*fanout,N.tokens+dt*3*fanout)
@@ -329,15 +329,15 @@ function N.Update(dt,duelStepped)
     local m=N.match
     FB.Arena.Expire(t)
     if not m then return end
-    if m.arena then FB.Arena.Update(m,dt,t); return end
+    if m.arena then FB.Arena.Update(m,dt,t,peersStepped); return end
     if m.phase=="playing" then
-        if not duelStepped then FB.PeerView.Update(m,dt) end
+        if not peersStepped then FB.PeerView.Update(m,dt) end
         if t-m.lastSeen>25 then N.Finish("aborted","Connection timed out. No win or loss recorded.",false); return end
         if FB.game.status=="won" or FB.game.status=="lost" then
             N.Finish(FB.game.status,FB.game.status=="won" and "Board cleared — victory!" or "Your board is full.",true)
         elseif t-m.lastState>=1 then N.State() end
     elseif m.phase=="done" then
-        if not duelStepped then FB.PeerView.Update(m,dt) end
+        if not peersStepped then FB.PeerView.Update(m,dt) end
         FB.Series.Update(m,t)
     elseif t-m.since>20 then
         FB.Series.Leave(m); N.Whisper("CANCEL",m.id); N.match=nil; notify("Challenge expired. Queue again to retry.")

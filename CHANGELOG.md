@@ -1,3 +1,8 @@
+# 0.1.0-alpha.27
+
+- Press **Print Screen** or type `/fb record` during a three-to-five-player arena round to save it. Leave multiplayer and open **Options → Recordings** to watch all the boards together. The replay includes incoming penalties, targeting arrows, departures and the round result.
+- Arena replays use the multiplayer music and keep the final score on screen until you click or press a key. A round cut short by combat shows why it ended.
+
 # 0.1.0-alpha.26
 
 - Both names and scores have their own row during two-player replays. The timer sits under the opponent’s name and the Recordings button under yours.

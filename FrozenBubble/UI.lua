@@ -777,7 +777,7 @@ function U:Panel(name)
     for _,board in ipairs(self.miniBoards) do board:Hide() end
     for key,panel in pairs(self.panels) do panel:SetShown(key==name) end
     local replay=name=="replay" and FB.Recordings.playback
-    local versusLayout=name=="opponent" or replay and replay.left~=nil
+    local versusLayout=name=="opponent" or replay and (replay.left~=nil or replay.arena~=nil)
     local gameplay=name=="replay" or name=="game" or name=="opponent" or name=="editor" or name=="scoreEntry" and FB.game and FB.game.scoreEntry==self.namingScore
     self.menu:SetShown(not gameplay); self.gameLayer:SetShown(gameplay); self.toolbar:SetShown(not self.editing and not replay and name~="scoreEntry")
     self.remoteBoard:SetShown(versusLayout or false)
@@ -805,8 +805,8 @@ function U:Panel(name)
             self.hud:SetFont("Fonts\\ARIALN.TTF",16,"OUTLINE"); self.hud:SetWidth(356)
         else self.hud:SetFont("Fonts\\ARIALN.TTF",22,"OUTLINE") end
         self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
-        local m=FB.Net.match
-        if m and m.arena and m.played then self:LayoutArena(m) end
+        local m=replay and replay.arena or FB.Net.match
+        if m and m.arena and (replay or m.played) then self:LayoutArena(m) end
     else
         self.penguin:SetPoint("TOPLEFT",646.4,-672)
         FB.Animation.Frame(self.gameBackground,name=="editor" and "Editor\\boards" or "solo-background",1)
@@ -822,6 +822,11 @@ function U:Panel(name)
         self.replayBack:SetPoint("TOPLEFT",versusLayout and 709 or 15,versusLayout and -27 or -728)
         self.replayTime:SetPoint("TOPLEFT",versusLayout and 171 or 144,versusLayout and -31 or -738)
         self.replayTime:SetJustifyH(versusLayout and "CENTER" or "LEFT")
+        if replay.arena then
+            self.replayBack:ClearAllPoints(); self.replayBack:SetPoint("TOPLEFT",356,-28)
+            self.replayTime:ClearAllPoints(); self.replayTime:SetPoint("TOPLEFT",488,-32)
+            self.hud:SetWidth(360); self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",332,-6)
+        end
         self.result:Hide(); self.resultBadge:Hide(); self.winnerName:Hide(); self.resultDetail:Hide()
         self.nextButton:Hide(); self.retryButton:Hide(); self.resultScores:Hide(); self.leaveSeries:Hide()
         local training=replay.record.mode=="training"

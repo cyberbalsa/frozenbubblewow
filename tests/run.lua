@@ -306,7 +306,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay","ArenaReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -1783,6 +1783,106 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.game.customIndex,100); eq(fb.db.checkpoint,cp); eq(fb.db.unlocked,unlocked)
         fb.db.custom[id]=nil; ui:StartEditor(nil,true,nil,true)
     end)
+    test("five-player recording replays all seats, targeting, corrections, departures and the result",function()
+        local ui,r=fb.UI,fb.Recordings
+        local oldFocus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        local guests={client("ArenaCopper"),client("ArenaIron"),client("ArenaSilver"),(client("ArenaGold"))}
+        local host=fb.PlayerName()
+        local menus=fb.db.boardTransitions; fb.Options.Set("boardTransitions",false)
+        ui:Panel("rooms"); fb.Arena.Host()
+        for _,peer in ipairs(guests) do peer.Arena.Join(host) end
+        tick(8); fb.Arena.Start()
+        local m=fb.Net.match; local observed,guestObserved={},{}
+        local departing=guests[4]
+        local function board(g)
+            local p=g.projectile
+            return table.concat({g:Pack(),g.status,g.tick,g.rng,g.effectRng,g.shots,g.lockedShots,g.attack,
+                g.pending,#g.chains,#g.rising,#g.effects,g.current,g.next,g.angle,p and p.x or "-",p and p.y or "-"},"/")
+        end
+        local function state(room,game)
+            local fields={room.phase,room.mask,room.leftMask,room.target or "-",room.winner or "-",board(game)}
+            for _,v in ipairs(room.opponents) do
+                fields[#fields+1]=table.concat({v.name,v.wins,v.left and 1 or 0,v.lost and 1 or 0,v.target or "-",board(v.remote)},"~")
+            end
+            return table.concat(fields,"|")
+        end
+        local function remember()
+            if r.capture and r.capture.online==m then observed[r.capture.record.frames]=state(m,fb.game) end
+            local c=departing.Recordings.capture
+            if c and c.online then guestObserved[c.record.frames]=state(c.online,departing.game) end
+        end
+        local function run(steps)
+            for i=1,steps do
+                local dt=i%2==0 and 0.06 or 0.02
+                clock=clock+dt; eventFrame.scripts.OnUpdate(nil,dt)
+                for _,peer in ipairs(guests) do
+                    local room=peer.Net.match
+                    local active=room and (room.phase=="playing" or room.phase=="done")
+                    if active then peer.game:Update(dt,nil,function() peer.Arena.StepBoards(room) end) end
+                    peer.Net.Update(dt,active)
+                end
+                deliver(); remember()
+            end
+        end
+        run(160); eq(m.phase,"playing"); assert(m.fixedClock); eq(#m.opponents,4)
+        r.Mark(); departing.Recordings.Mark()
+        local function shot(peer,angle) assert(peer.game:Shoot(angle)) end
+        shot(fb,0.43); shot(guests[1],-0.26); shot(guests[2],0.36)
+        fb.Arena.Target(3); remember(); run(45)
+        local v=m.players[guests[1].PlayerName()]
+        assert(v.remote.shots>=1)
+        guests[1].Arena.Target(1)
+        shot(guests[1],0.71)
+        -- Discard this client's copy of AFIRE. The next snapshot carries both
+        -- the corrected board and the cumulative penalty for this receiver.
+        local outbox=guests[1].Net.outbox
+        for i=#outbox,1,-1 do
+            if outbox[i].kind=="AFIRE" and outbox[i].target==host then table.remove(outbox,i) end
+        end
+        run(30)
+        local sender=guests[1].Net.match
+        sender.players[host].sent=5; sender.lastState=-100
+        guests[1].Net.State()
+        local packet
+        for _,item in ipairs(outbox) do if item.kind=="ASTATE" and item.target==host then packet=item.message end end
+        assert(packet); fb.Net.Receive(fb.PREFIX,packet,"WHISPER",v.name)
+        local n=#r.capture.record.arena.events
+        fb.Net.Receive(fb.PREFIX,packet,"WHISPER",v.name); eq(#r.capture.record.arena.events,n)
+        eq(v.remoteAttack,5); eq(v.target,host); remember()
+        fb.Arena.Target(0); remember(); guests[4].Arena.Leave(); run(92)
+        assert(m.players[departing.PlayerName()].left)
+        local other=departing.Recordings.NewPlayback(departing.db.recordings[1])
+        eq(other.arena.me,departing.PlayerName()); eq(other.arena.opponents[1].name,host)
+        for f=0,other.record.frames do
+            if f>0 then assert(departing.Recordings.Step(other)) end
+            if guestObserved[f] then eq(state(other.arena,other.right),guestObserved[f],"guest frame "..f) end
+        end
+        eq(other.arena.closed,"Left the room.")
+        for i=1,3 do guests[i].game.status="lost" end
+        run(185)
+        eq(m.phase,"done"); eq(m.names[m.winner],host)
+        local rec=r.capture.record; local wins,losses=fb.db.wins,fb.db.losses
+        fb.Arena.Leave(); eq(r.capture,nil); eq(fb.db.recordings[1],rec); eq(fb.game,nil)
+        local queue=#fb.Net.outbox
+        local p=r.NewPlayback(rec)
+        for frame=0,rec.frames do
+            if frame>0 then assert(r.Step(p)) end
+            if observed[frame] then eq(state(p.arena,p.right),observed[frame],"arena frame "..frame) end
+        end
+        eq(#fb.Net.outbox,queue); eq(fb.db.wins,wins); eq(fb.db.losses,losses); eq(fb.Net.match,nil)
+        r.Play(1); local rendered=r.playback
+        eq(ui.screen,"replay"); eq(ui.gameBackground.fbAsset,"arena-background")
+        eq(#ui.roomOpponents,4); assert(ui.miniBoards[4]:IsShown())
+        while r.Step(rendered) do end
+        r.Render(); assert(ui.result:IsShown() and ui.roomBadges:IsShown()); eq(ui.winnerName.text,host)
+        assert(not ui.retryButton:IsShown() and not ui.leaveSeries:IsShown())
+        local seat
+        for i,o in ipairs(rendered.arena.opponents) do if o.name==guests[4].PlayerName() then seat=i end end
+        assert(ui.leftSigns[seat]:IsShown() and not ui.miniBoards[seat]:IsShown())
+        ui:ShowMenu(); fb.Options.Set("boardTransitions",menus); env.GetMouseFoci=oldFocus
+        for _,peer in ipairs(guests) do clients[peer.PlayerName()]=nil end
+    end)
     test("room controls render live miniature boards, targeting, chat, spectating and combat cancellation",function()
         local ui=fb.UI
         local oldMouse=env.GetMouseFoci
@@ -1837,11 +1937,17 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.Net.match,nil); eq(guest2.Net.match,nil)
         ui:Panel("rooms"); ui.createRoom.scripts.OnClick()
         guest1.Arena.Join(host); guest2.Arena.Join(host); tick(6); ui.roomStart.scripts.OnClick(); tick(9)
+        fb.Recordings.Mark()
         env.InCombatLockdown=function() return true end
         eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
         env.InCombatLockdown=function() return false end; eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED")
         tick(3); eq(fb.Net.match,nil); eq(guest1.Net.match,nil); eq(guest2.Net.match,nil)
-        env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
+        fb.Recordings.Play(1); local canceled=fb.Recordings.playback
+        eq(#canceled.arena.names,3)
+        fb.Recordings.Update(0.25); fb.Recordings.Render()
+        assert(ui.result:IsShown()); eq(ui.resultDetail.text,"Combat started.")
+        assert(not ui.leftSigns[3]:IsShown() and not ui.miniBoards[3]:IsShown() and not ui.roomBadges:IsShown())
+        ui:ShowMenu(); env.GetMouseFoci=oldMouse; fb.StartCampaign(1)
     end)
     test("the original four demos play on the title screen and leave the paused game intact",function()
         local ui,demos=fb.UI,fb.Demos

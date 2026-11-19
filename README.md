@@ -38,9 +38,9 @@ Press **P** or **Pause** during a solo or shared-keyboard round to see the origi
 
 ## Recordings
 
-Press **Print Screen** with the pointer over the board, or type `/fb record`, to keep the round from its first shot. You can do this partway through a random, endless, training, shared-keyboard or online duel round. To keep every round, enable **Automatically save recordings** in the addon settings. The ten most recent recordings stay in your account’s SavedVariables.
+Press **Print Screen** with the pointer over the board, or type `/fb record`, to keep the round from its first shot. You can do this partway through a random, endless, training, shared-keyboard, online duel or arena round. To keep every round, enable **Automatically save recordings** in the addon settings. The ten most recent recordings stay in your account’s SavedVariables.
 
-Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a shared-keyboard game or online duel, both launchers play back together. Duel recordings show the opponent as you saw them, including corrections that arrived after a shot. Leave the multiplayer lobby before starting playback. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
+Choose **Options → Recordings** or type `/fb replays` to pick a round. `/fb replay` plays the latest one. For a shared-keyboard game or online duel, both launchers play back together. Duel recordings show the opponent as you saw them, including corrections that arrived after a shot. An arena replay puts your board in the center and every opponent in their original corner. It shows who targeted whom, who left, and who won. Leave multiplayer before starting playback. Click the board or press a key over the game to return to the list. Playback leaves your live game paused and awards no scores.
 
 To watch a desktop recording, choose **Options → Recordings → Import**, paste the uncompressed text, then click **Import** and select the new entry. The importer reads Frozen Bubble’s protocol 0 random, training and shared-keyboard games. Desktop files omit the graphics level and command-line settings, so playback uses the desktop defaults for those. For a sample, copy the contents of the [original training recording](tests/demo1.record).
 
@@ -86,7 +86,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.26` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.27` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

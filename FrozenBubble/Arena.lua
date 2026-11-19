@@ -112,6 +112,8 @@ local function acceptSeats(m,p)
 end
 local function close(m,reason)
     if N.match~=m then return end
+    if m.phase=="playing" then FB.Recordings.OnlineEvent(m,"closed",reason) end
+    FB.Recordings.CloseOnline(m)
     if m.played and FB.game and FB.game.mode=="versus" then FB.game=nil end
     N.match=nil
     if FB.UI and FB.UI.screen=="opponent" then FB.UI:ShowLobby() end
@@ -130,6 +132,7 @@ function A.Leave(reason)
     close(m,reason or "Left the room.")
 end
 local function prepare(m,round,seed)
+    FB.Recordings.CloseOnline(m)
     m.round,m.seed=round,seed
     m.id=m.room..":"..round; m.phase="seating"; m.since=GetTime(); m.pulse=-100
     m.winner=nil; m.target=nil; m.finishSince=nil; m.mask=m.leftMask; m.wantNext=nil; m.requested=nil
@@ -167,6 +170,7 @@ function A.Target(slot)
     if not m or not m.arena or m.phase~="playing" or FB.game.status~="playing" then return end
     local v=A.Opponents(m)[slot]
     if slot~=0 and (not m.targeting or not v or v.lost) then return end
+    if m.target~=(v and v.name) then FB.Recordings.OnlineEvent(m,"target",v and v.index or 0) end
     m.target=v and v.name; m.lastState=-100
 end
 function A.Penalty(n)
@@ -195,30 +199,45 @@ function A.SendStates(m,fields)
         end
     end
 end
-local function begin(m)
-    if InCombatLockdown() then A.Leave("Combat started."); return false end
-    m.phase="playing"; m.seq=0; m.lastState=-100; m.played=true
-    for seat,v in ipairs(A.Opponents(m)) do
-        v.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction,FB.Sound)
+function A.BuildBoards(m,sound)
+    m.opponents=A.Opponents(m)
+    for seat,v in ipairs(m.opponents) do
+        v.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,sound)
         -- Desktop removes falling sprites below screen y=470 on every board.
         local boardTop=seat<=2 and 19 or 247
         v.remote.effectFloor=(470-boardTop)*2+16
         v.remote.chainTurnY=((seat<=2 and 185 or 415)-boardTop)*2+16
-        v.remote.launchY=362; v.remote.hurryMax=math.huge; v.remote.timed=false; v.phase="playing"; v.lastSeen=GetTime()
+        v.remote.launchY=362; v.phase="playing"; v.lastSeen=GetTime()
     end
+end
+function A.StepBoards(m)
+    for _,v in ipairs(m.opponents) do
+        if not v.left then FB.PeerView.StepDuel(v) end
+    end
+end
+local function begin(m)
+    if InCombatLockdown() then A.Leave("Combat started."); return false end
+    m.phase="playing"; m.seq=0; m.lastState=-100; m.played=true
+    A.BuildBoards(m,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.launchY=362; FB.game.onPenalty=A.Penalty; FB.game.onShoot=N.Fire
+    FB.Recordings.Begin(m.seed,FB.game,m)
     N.Notify("Round "..m.round.." · "..#m.names.." players")
     m.pulse=-100
     return true
 end
-local function lost(m,v)
+function A.ApplyLoss(m,v,sound)
     if v.lost then return end
     v.lost=true; m.mask=m.mask+2^(v.index-1)
-    if m.phase=="playing" then FB.Sound(v.left and "cancel" or "lose") end
+    if m.phase=="playing" then sound(v.left and "cancel" or "lose") end
     if v.remote then v.remote.status="lost"; v.phase="done" end
     if v.name==m.me or m.target==v.name then m.target=nil end
     m.pulse=-100
+end
+local function lost(m,v)
+    if v.lost then return end
+    FB.Recordings.OnlineEvent(m,"loss",v.index)
+    A.ApplyLoss(m,v,FB.Sound)
 end
 local function depart(m,v)
     if m.phase=="room" then
@@ -227,6 +246,7 @@ local function depart(m,v)
         m.revision=m.revision+1; m.pulse=-100; m.advert=-100
     elseif m.keepRoom then
         if not v.left then
+            FB.Recordings.OnlineEvent(m,"left",v.index)
             v.left=true; m.leftMask=m.leftMask+2^(v.index-1)
             lost(m,v); m.pulse=-100
             if m.host and m.phase=="seating" and m.leftMask==2^#m.names-2 then
@@ -240,16 +260,21 @@ local function syncDepartures(m,mask)
         if math.floor(mask/2^(v.index-1))%2==1 and not v.left then depart(m,v) end
     end
 end
-local function finish(m,winner)
-    if m.phase~="playing" then return end
+function A.ApplyWinner(m,winner,localGame)
     m.phase="done"; m.winner=winner; m.pulse=-100
     local name=m.names[winner]
     if name then m.players[name].wins=m.players[name].wins+1 end
     for _,v in pairs(m.players) do
-        local g=v.name==m.me and FB.game or v.remote
+        local g=v.name==m.me and localGame or v.remote
         g.status=not name and "draw" or name==v.name and "won" or "lost"
         v.phase="done"
     end
+end
+local function finish(m,winner)
+    if m.phase~="playing" then return end
+    FB.Recordings.OnlineEvent(m,"winner",winner)
+    A.ApplyWinner(m,winner,FB.game)
+    local name=m.names[winner]
     if name then
         local key=name==m.me and "wins" or "losses"
         FB.db[key]=FB.db[key]+1
@@ -331,20 +356,23 @@ function A.Receive(kind,p,channel,sender)
         local v=m.players[sender]
         if v and not v.left and kind=="ACHAT" then FB.MatchChat.Receive(m,table.concat(p,"|",4),v)
         elseif v and not v.lost then
-            if kind=="AFIRE" then FB.PeerView.Fire(v,p)
+            if kind=="AFIRE" then
+                if FB.PeerView.Fire(v,p) then FB.Recordings.OnlineEvent(m,"AFIRE",v.index,table.concat(p,"|",4)) end
             elseif kind=="ASTATE" and (#p==19 or #p==15) then
                 local target=FB.Integer(p[#p],0,#m.names)
                 if target then
                     p[#p]=nil
-                    local before=v.remoteSeq; N.ApplyState(v,p)
-                    if before~=v.remoteSeq then v.target=m.names[target] end
+                    if FB.PeerView.State(v,p,FB.game,GetTime()) then
+                        v.target=m.names[target]
+                        FB.Recordings.OnlineEvent(m,"ASTATE",v.index,table.concat(p,"|",4),target)
+                    end
                 end
             end
         end
     end
     return true
 end
-function A.Update(m,dt,t)
+function A.Update(m,dt,t,stepped)
     if m.phase=="joining" and t-m.since>22 then close(m,"Room unavailable."); return end
     if m.phase~="joining" and not m.host and t-m.lastHost>35 then close(m,"Lost contact with the host."); return end
     if m.host then
@@ -357,10 +385,11 @@ function A.Update(m,dt,t)
             for _,v in pairs(m.players) do if not v.left and not v.ready then ready=false end end
             if ready then
                 if not begin(m) then return end
+                stepped=true
             elseif t-m.since>30 then A.Leave("The room could not synchronize."); return end
         end
     end
-    if m.phase=="playing" or m.phase=="done" then
+    if not stepped and (m.phase=="playing" or m.phase=="done") then
         for _,v in pairs(m.players) do if v.remote and not v.left then FB.PeerView.Update(v,dt) end end
     end
     if m.phase=="playing" then

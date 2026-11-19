@@ -37,7 +37,7 @@ function FB.Music()
         if muted then return end
         local track="introzik.ogg"
         if scene then track=scene.background=="solo-background" and "frozen-mainzik-1p.ogg" or "frozen-mainzik-2p.ogg"
-        elseif screen=="replay" and FB.Recordings.playback then track=FB.Recordings.playback.left and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg"
+        elseif screen=="replay" and FB.Recordings.playback then track=(FB.Recordings.playback.left or FB.Recordings.playback.arena) and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg"
         elseif board or namingBoard then track=screen=="opponent" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg" end
         if FB.musicTrack~=track and PlayMusic(FB.media..track)~=false then FB.musicTrack=track end
     else FB.StopGameMusic() end
@@ -240,14 +240,15 @@ events:SetScript("OnEvent",function(_,event,...)
         FB.LeaveBoard()
     end
 end)
-local function duelTick(game,dt)
+local function networkTick(game,dt)
     local m=FB.Net.match
-    FB.PeerView.StepDuel(m)
+    if m.arena then FB.Arena.StepBoards(m) else FB.PeerView.StepDuel(m) end
     local ui=FB.UI
     if ui.screen=="opponent" and ui.frame:IsShown() and not FB.Transitions.target then
         ui.AnimatePlayerTick(game,dt)
         if FB.db.graphicsLevel==3 and not FB.db.reducedMotion then
-            FB.Animation.Penguin(ui.remotePenguin,m.remote,"p2",dt)
+            if m.arena then ui:AnimateArena(m,dt)
+            else FB.Animation.Penguin(ui.remotePenguin,m.remote,"p2",dt) end
         end
     end
 end
@@ -256,7 +257,7 @@ events:SetScript("OnUpdate",function(_,dt)
     FB.Invitations.Update()
     FB.UI:UpdateVisibility(dt)
     local playTime=FB.Transitions.Advance(dt)
-    local duel
+    local networkRound
     if FB.Recordings.playback then
         FB.Recordings.Update(playTime)
     elseif FB.LocalVersus.match and not FB.UI.editing then
@@ -266,17 +267,17 @@ events:SetScript("OnUpdate",function(_,dt)
         local elapsed=game.mode=="versus" and FB.Net.match and dt or playTime
         local ui=FB.UI
         local m=FB.Net.match
-        duel=game.mode=="versus" and m and not m.arena and m.remote and (m.phase=="playing" or m.phase=="done")
-        if duel then m.fixedClock=true end
+        networkRound=game.mode=="versus" and m and (m.opponents or m.remote) and (m.phase=="playing" or m.phase=="done")
+        if networkRound then m.fixedClock=true end
         if ui.frame:IsShown() and (ui.screen=="game" or ui.screen=="opponent") and not FB.Transitions.target then
             if game.status=="playing" and not game.paused then ui:SamplePointer(game) end
-            game:Update(elapsed,ui.PlayerInput,duel and duelTick or ui.AnimatePlayerTick)
-        else game:Update(elapsed,nil,duel and duelTick or nil) end
+            game:Update(elapsed,ui.PlayerInput,networkRound and networkTick or ui.AnimatePlayerTick)
+        else game:Update(elapsed,nil,networkRound and networkTick or nil) end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false
         end
         finishSolo()
     end
-    FB.Community.Update(); FB.Net.Update(dt,duel); FB.UI:Update(playTime)
+    FB.Community.Update(); FB.Net.Update(dt,networkRound); FB.UI:Update(playTime)
 end)

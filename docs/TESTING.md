@@ -35,4 +35,6 @@ Take several mouse and keyboard shots on a random board, press Print Screen, pla
 
 On two Forever clients, mark a duel with `/fb record`. Exchange shots and penalties, then forfeit. Leave multiplayer, watch the recording, and compare the shots, both scoreplates and the final result. Repeat with a round interrupted by combat. Check that watching adds no win or loss and that the other player receives no challenge or shots.
 
+In an arena, record from a guest seat. Target another player, split the next attack, and finish the round after someone leaves. Check the target arrows, incoming bubbles, empty seat, and winner against what you saw during play. Repeat across a rematch and a room closed by combat.
+
 In **Options → Recordings → Import**, paste `tests/demo1.record` and play the training entry. Watch the opening shot fire at frame 27 and listen for the first wall rebound on frame 128. Check that an alpha.23 personal recording still plays. Return to the level editor and import a board to verify each paste dialog returns to the right screen.

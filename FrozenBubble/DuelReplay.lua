@@ -4,16 +4,8 @@ local _,FB=...
 local D={}
 FB.DuelReplay=D
 
-function D.Event(match,kind,value)
-    local c=FB.Recordings.capture
-    if not c or c.duel~=match then return end
-    local events=c.record.duel.events
-    events[#events+1]={c.right.recordTrack.frame,kind,value}
-    c.hasInput=true
-end
-
 function D.Packet(match,fields)
-    if match.recording then D.Event(match,fields[2],table.concat(fields,"|",4)) end
+    if match.recording then FB.Recordings.OnlineEvent(match,fields[2],table.concat(fields,"|",4)) end
 end
 
 function D.Result(m,correction)
@@ -25,18 +17,13 @@ function D.Result(m,correction)
     rec.frames=math.max(1,rec.frames)
     rec.duel.result=m.result
     local c=FB.Recordings.capture
-    if c and c.duel==m then c.hasInput=true end
-end
-
-function D.Close(m)
-    local c=FB.Recordings.capture
-    if c and c.duel==m then FB.Recordings.CloseRound() end
+    if c and c.online==m then c.hasInput=true end
 end
 
 function D.New(record,sound)
     local right=FB.Engine.New(nil,record.seed,"versus",record.chains,sound)
     local left=FB.PeerView.NewDuelBoard(record.seed,record.chains,sound)
-    local duel={remote=left,phase="playing",remoteSeq=0,remoteAttack=0}
+    local duel={remote=left,chainReaction=record.chains,phase="playing",remoteSeq=0,remoteAttack=0}
     return {right=right,left=left,duel=duel,eventIndex=1,wins=record.wins and {record.wins[1],record.wins[2]}}
 end
 
