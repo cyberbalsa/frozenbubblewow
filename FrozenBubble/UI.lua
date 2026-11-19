@@ -250,6 +250,7 @@ function U:Build()
     menu:SetFrameLevel(self.layers.menu)
     A.Image(menu,"menu-background",0,0,640,480,"BACKGROUND")
     self.menuLogo=A.Image(menu,"menu-logo",400,15)
+    self.titleLogo=FB.TitleLogo.New(menu,self.menuLogo)
     A.Image(menu,"menu-stamp",490,142)
     self.menuHover={}; self.menuButtons={}
     local entries={
@@ -290,11 +291,15 @@ function U:Build()
         if InCombatLockdown() then return end
         local active=self.screen=="menu" and not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
         if active then FB.Demos.idle=0 end
-        local used=active and (key==K.keys[9] or key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
+        local cycle=active and key=="N" and IsLeftControlKeyDown and IsLeftControlKeyDown()
+        local used=active and (cycle or key==K.keys[9] or key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
             key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" or key=="ESCAPE")
         panel:SetPropagateKeyboardInput(not used)
         if not used then return end
-        if key=="UP" or key=="LEFT" then self:SelectMain((self.menuSelection-2)%#entries+1)
+        if cycle then
+            self.titleLogo.method=(self.titleLogo.method+1)%9
+            self.menuReduced=nil; self:AnimateMenu(0)
+        elseif key=="UP" or key=="LEFT" then self:SelectMain((self.menuSelection-2)%#entries+1)
         elseif key=="DOWN" or key=="RIGHT" then self:SelectMain(self.menuSelection%#entries+1)
         elseif key=="ESCAPE" then self.frame:Hide()
         elseif key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" then
@@ -1089,7 +1094,7 @@ function U:AnimateMenu(dt)
     if steps==0 and reduced==self.menuReduced then return end
     self.menuAccum=self.menuAccum-steps*0.02; self.menuReduced=reduced
     self.menuTick=(self.menuTick or 0)+(reduced and 0 or steps)
-    self.menuLogo:SetRotation((reduced or FB.db.graphicsLevel<3) and 0 or math.sin(self.menuTick/40)/20)
+    FB.TitleLogo.Draw(self.titleLogo,self.inactive and 0 or steps,not reduced and FB.db.graphicsLevel==3)
     for i,item in ipairs(self.menuHover) do
         local selected=i==self.menuSelection
         if selected and not reduced then

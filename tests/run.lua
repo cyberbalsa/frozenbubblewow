@@ -754,6 +754,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
+    loadModule("LogoData",fb,env); loadModule("TitleLogo",fb,env)
     loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
@@ -881,6 +882,56 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         assert(not ui.creditStrip.shown and not ui.blinkEyes[3].shown and not ui.menuHover[3].masked)
         fb.Options.Set("reducedMotion",false)
         ui:SelectMain(1,true); ui.frame:Hide(); env.GetMouseFoci=oldFoci
+    end)
+    test("nine title effects cycle on left Ctrl+N and stop with focus or reduced graphics",function()
+        local ui=fb.UI
+        local oldFocus,oldControl,oldDate=env.GetMouseFoci,env.IsLeftControlKeyDown,env.date
+        local oldEdit,oldCombat=env.GetCurrentKeyBoardFocus,env.InCombatLockdown
+        env.date=function() return {month=12,day=25} end
+        eq(fb.TitleLogo.Choose(),8)
+        env.date=oldDate
+        ui.frame:Show(); ui:ShowMenu()
+        env.GetMouseFoci=function() return {ui.menu} end
+        env.IsLeftControlKeyDown=function() return true end
+        fb.Options.Set("graphicsLevel",3)
+        local s,key=ui.titleLogo,ui.menu.scripts.OnKeyDown
+        s.method=8; ui.inactive=false
+        for i=0,8 do
+            key(ui.menu,"N"); eq(s.active,i)
+            ui:AnimateMenu(0.1)
+            if i==0 or i==1 or i==3 or i==4 or i==6 then
+                local t=s.tiles[1].t
+                local coords=t.fbCoords
+                ui:AnimateMenu(0.02); assert(coords~=t.fbCoords); assert(not s.base.shown)
+            elseif i==2 then assert(s.glint.shown and s.glint.fbGlintPage>=1)
+            elseif i==5 then
+                eq(#s.points,200)
+                for _,p in ipairs(s.points) do
+                    eq(fb.LogoData.white[math.floor(p.y)+1]:byte(math.floor(p.x)+1),49)
+                end
+            elseif i==7 then
+                s.interference=3; ui:AnimateMenu(0.02); assert(s.noise.shown)
+                ui:AnimateMenu(0.04); assert(not s.noise.shown and s.stripes[1].shown)
+            elseif i==8 then
+                for _=1,100 do ui:AnimateMenu(0.20) end
+                assert(next(s.snow.rows) and next(s.snow.lines),"snow should settle on the logo")
+            end
+        end
+        local tick=s.tick; ui.inactive=true; ui:AnimateMenu(0.12); eq(s.tick,tick)
+        key(ui.menu,"N"); eq(s.method,8); ui.inactive=false
+        env.IsLeftControlKeyDown=function() return false end; key(ui.menu,"N"); eq(s.method,8)
+        env.IsLeftControlKeyDown=function() return true end
+        env.GetCurrentKeyBoardFocus=function() return ui.menu end; key(ui.menu,"N"); eq(s.method,8)
+        env.GetCurrentKeyBoardFocus=oldEdit
+        env.InCombatLockdown=function() return true end; key(ui.menu,"N"); eq(s.method,8)
+        env.InCombatLockdown=oldCombat
+        fb.Options.Set("graphicsLevel",2); eq(s.active,-1); assert(s.base.shown)
+        for _,t in ipairs(s.pool) do assert(not t.shown) end
+        ui:AnimateMenu(0.1); eq(s.tick,tick)
+        fb.Options.Set("graphicsLevel",3); fb.Options.Set("reducedMotion",true); eq(s.active,-1)
+        fb.Options.Set("reducedMotion",false)
+        env.GetMouseFoci,env.IsLeftControlKeyDown=oldFocus,oldControl
+        ui.frame:Hide()
     end)
     test("stationary crafting, coordinate changes, combat and taxi transitions govern invitations",function()
         local x,map,taxi,craft=10,1,false,true

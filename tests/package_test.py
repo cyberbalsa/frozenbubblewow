@@ -1,5 +1,6 @@
 import hashlib
 import importlib.util
+import math
 from pathlib import Path
 import re
 import struct
@@ -45,6 +46,25 @@ class Packaging(unittest.TestCase):
         for lua in (ROOT / "FrozenBubble").glob("*.lua"):
             for sound in re.findall(r'FB.Sound\("([a-z_]+)"\)', lua.read_text()):
                 self.assertTrue((ROOT / f"FrozenBubble/Media/{sound}.ogg").is_file(), sound)
+
+    def test_title_spotlight_can_address_every_frame(self):
+        data = (ROOT / "FrozenBubble/LogoData.lua").read_text()
+        centers, frames = data.split("}, centers={")[1].split("}, frames={")
+        centers = list(map(int, re.findall(r"\d+", centers)))
+        frames = list(map(int, re.findall(r"\d+", frames)))
+        self.assertEqual(len(frames), 3142)
+        self.assertEqual(set(frames), set(range(len(centers))))
+        for tick, frame in enumerate(frames):
+            x = int(190 / (2.5 + 0.3 * math.sin(tick / 500)) * math.sin(tick / 100) + 95)
+            y = int(119 / (2.5 + 0.3 * math.cos(tick / 500)) * math.cos(tick / 100) + 69)
+            self.assertEqual(centers[frame], x + 256 * y)
+        media = ROOT / "FrozenBubble/Media/Title"
+        for page in range((len(centers) + 255) // 256):
+            raw = (media / f"glint-{page+1}.blp").read_bytes()
+            self.assertEqual(struct.unpack_from("<4sI4B2I", raw),
+                             (b"BLP2", 1, 1, 0, 0, 0, 1024, 1024))
+            self.assertEqual(len(raw), 1172 + 1024**2)
+        self.assertTrue(all((media / f"{name}.tga").is_file() for name in ("logo", "noise", "flake")))
 
     def test_board_reveal_masks_load_as_one_bit_bc1(self):
         reveals = ROOT / "FrozenBubble/Media/Reveals"

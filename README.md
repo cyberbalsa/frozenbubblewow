@@ -26,6 +26,8 @@ Export copies either an original Frozen Bubble level file or a WoW code. Import 
 
 Click **Graphics** on the title screen to cycle from Full to Low to Medium and back to Full. Full shows the animated penguins and rotating cannon. Medium keeps the cannon and bubble effects. Low uses the original aiming dot and limits the ceiling warning to the top row. The same setting is available under **Settings → AddOns → Frozen Bubble Forever**. **Options** on the title screen opens sound and display controls.
 
+With Full graphics, press **Left Ctrl+N** over the main menu to cycle the nine desktop logo effects. Snow falls on December 25 and can also appear during the desktop game’s northern winter dates. Medium, Low, and Reduce motion show the still logo.
+
 New boards and title demos open with a randomly chosen desktop transition. Click or press a key over the board to skip it. To skip every opening, turn off **Animate the start of a round** in the addon settings.
 
 ## Keys and match chat
@@ -68,7 +70,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.17` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.18` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

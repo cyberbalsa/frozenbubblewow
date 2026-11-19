@@ -1,3 +1,8 @@
+# 0.1.0-alpha.18
+
+- The title logo now ripples, folds, catches the light, and gathers falling snow. Full graphics picks an effect when the addon loads. Press **Left Ctrl+N** over the main menu to cycle through all nine.
+- The logo holds its pose while the window is faded. Medium graphics, Low graphics, and Reduce motion use the still artwork.
+
 # 0.1.0-alpha.17
 
 - New boards open with the original 50 Hz blinds, alternating bars, diagonal squares, circles, plasma, scattered pixels, and brightness effects. They play over the preceding menu or result screen in solo play, shared keyboard games, network rounds, and the four title demos.
