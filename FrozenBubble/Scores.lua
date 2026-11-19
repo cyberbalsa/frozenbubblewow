@@ -1,6 +1,22 @@
 local _, FB = ...
 local S = {}; FB.Scores = S
 S.modes={"campaign","endless","training","training-chain"}
+-- handle_new_hiscores measures wall time from campaign selection. The
+-- desktop subtracts pauses and includes board reveals and result screens.
+function S.CampaignTime(run)
+    return run.seconds+(run.startedAt and GetTime()-run.startedAt or 0)
+end
+
+function FB.SetBoardPaused(paused)
+    local game,run=FB.game,FB.run
+    if not game then return end
+    game.paused=paused
+    if game.mode~="campaign" or not run or run.closed then return end
+    if paused and run.startedAt then
+        run.seconds=S.CampaignTime(run); run.startedAt=nil
+    elseif not paused and not run.startedAt then run.startedAt=GetTime() end
+end
+
 function S.Label(mode)
     return mode=="training-chain" and "Training (chain)" or (mode:gsub("^%l",string.upper))
 end

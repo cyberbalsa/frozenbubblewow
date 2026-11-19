@@ -72,7 +72,7 @@ function N.SetQueue(enabled)
     if enabled and not (FB.Community and FB.Community.joined) and not IsInGuild() and not IsInGroup() then
         notify("Join the FrozenBubbleForever channel first, or challenge a player by name."); return
     end
-    if enabled and FB.game and FB.game.status=="playing" then FB.game.paused=true end
+    if enabled and FB.game and FB.game.status=="playing" then FB.SetBoardPaused(true) end
     N.queue=enabled; N.lastAdvert=now()
     N.Broadcast("QUEUE",enabled and N.QueueCode() or 0)
     notify(enabled and "Queued. If channel delivery is blocked, click Announce queue." or "Left the queue.")
@@ -91,7 +91,7 @@ function N.Challenge(peer, automatic, listing)
     if listing then limit,chains=listing.limit,listing.chainReaction end
     N.match={id=id,peer=peer,seed=seed,host=true,phase="offer",since=now(),lastRetry=-100,lastSeen=now(),seq=0,remoteSeq=0,remoteAttack=0,automatic=automatic,limit=limit,chainReaction=chains}
     N.queue=false
-    if FB.game then FB.game.paused=true end
+    FB.SetBoardPaused(true)
     N.Broadcast("QUEUE",0)
     notify("Challenging "..peer.."…")
     return true

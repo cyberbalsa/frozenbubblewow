@@ -103,7 +103,7 @@ function U:StartEditor(id,fresh,index,confirmed,title,reload)
         end
     end
     local replace=fresh or reload or id and self.editID~=id
-    if FB.game then FB.game.paused=true end
+    FB.SetBoardPaused(true)
     if replace and self.editGame and not confirmed and self:EditorModified() then
         self:Panel("editor"); self.frame:Show()
         self.pendingEditor={id=id,fresh=fresh,index=index,title=title,reload=reload}

@@ -2132,14 +2132,15 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     end)
     test("a campaign retries on the same clock, can finish from pause and never counts a board twice",function()
         local ui=fb.UI; local unlocked=fb.db.unlocked
+        local mouse=env.GetMouseFoci; env.GetMouseFoci=function() return {ui.board} end
         fb.StartCampaign(1)
-        local run=fb.run; fb.game.status="won"; fb.game.elapsed=12.25; fb.game.score=80
+        local run=fb.run; clock=clock+12.25; fb.game.status="won"; fb.game.score=80
         eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
-        fb.game.status="lost"; fb.game.elapsed=3.5; fb.game.score=20
+        clock=clock+3.5; fb.game.status="lost"; fb.game.score=20
         eventFrame.scripts.OnUpdate(nil,0.02); eq(fb.db.checkpoint.level,2)
         eq(fb.db.checkpoint.seconds,15.75); eq(fb.Scores.Pending(),nil)
         ui.retryButton.scripts.OnClick(); eq(fb.run,run); eq(fb.level,2); assert(run.eligible)
-        local current=fb.game; fb.game.elapsed=2.9; fb.game.score=15
+        local current=fb.game; clock=clock+2.9; fb.game.score=15
         ui:ShowMenu(); fb.ContinueCampaign(); eq(fb.game,current)
         fb.TogglePause(); ui:UpdatePause(0); assert(ui.finishRunButton.shown)
         ui.finishRunButton.scripts.OnClick(); eq(ui.screen,"scoreEntry")
@@ -2152,12 +2153,56 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.StartCampaign(1); fb.game.elapsed=0.4; fb.StartSolo("random")
         assert(not fb.db.checkpoint.eligible); fb.ContinueCampaign(); assert(not fb.run.eligible)
         fb.TogglePause(); ui:UpdatePause(0); assert(not ui.finishRunButton.shown)
-        fb.db.unlocked=unlocked
+        fb.db.unlocked=unlocked; env.GetMouseFoci=mouse
+    end)
+    test("campaign clock includes reveals, long frames and visible results and survives a checkpoint reload",function()
+        local ui,trans=fb.UI,fb.Transitions
+        local mouse,combat=env.GetMouseFoci,env.InCombatLockdown
+        env.GetMouseFoci=function() return {ui.board} end
+        local function elapsed(expected)
+            assert(math.abs(fb.Scores.CampaignTime(fb.run)-expected)<0.00001)
+        end
+        fb.Options.Set("boardTransitions",true); fb.StartCampaign(1)
+        local run=fb.run; eq(trans.target,"game")
+        clock=clock+0.25; eventFrame.scripts.OnUpdate(nil,0.02); eq(fb.game.tick,0)
+        clock=clock+0.5; trans.Finish()
+        clock=clock+4; eventFrame.scripts.OnUpdate(nil,4); elapsed(4.75)
+        assert(fb.game.elapsed<=0.25)
+        fb.TogglePause(); clock=clock+180; elapsed(4.75); fb.TogglePause()
+        clock=clock+0.25
+        fb.game.grid={[1]=1,[9]=2,[E.Key(13,1)]=3}
+        fb.game:CheckEnd(); eq(fb.game.status,"lost"); eventFrame.scripts.OnUpdate(nil,0); elapsed(5)
+        clock=clock+2; ui.frame:Hide(); ui.frame.scripts.OnHide(ui.frame)
+        clock=clock+60; elapsed(7)
+        ui.frame:Show(); ui.frame.scripts.OnShow(ui.frame); ui:UpdateVisibility(0.02)
+        assert(not fb.game.paused)
+        clock=clock+0.2; eventFrame.scripts.OnUpdate(nil,0.2)
+        eq(fb.game.endIndex,3); assert(ui.result.shown and ui.retryButton.shown)
+        clock=clock+0.175; ui:ShowMenu(); clock=clock+10; elapsed(7.375)
+        fb.ContinueCampaign(); eq(fb.run,run); eq(fb.level,1)
+        clock=clock+0.125; trans.Finish(); fb.game.status="won"; eventFrame.scripts.OnUpdate(nil,0)
+        clock=clock+0.75; eventFrame.scripts.OnEvent(nil,"PLAYER_LOGOUT")
+        eq(fb.db.checkpoint.level,2); assert(fb.db.checkpoint.eligible); elapsed(8.25)
+        fb.game,fb.run=nil,nil; clock=clock+3600; fb.ContinueCampaign()
+        eq(fb.level,2); elapsed(8.25); trans.Finish()
+        ui.focusGrace=0; ui.outsideSince=nil
+        env.GetMouseFoci=function() return {} end; ui:UpdateVisibility(0.02)
+        clock=clock+0.75; ui:UpdateVisibility(0.02); assert(fb.game.paused)
+        clock=clock+45; elapsed(9)
+        env.GetMouseFoci=function() return {ui.board} end; ui:UpdateVisibility(0.02); assert(not fb.game.paused)
+        clock=clock+0.75; env.InCombatLockdown=function() return true end
+        eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_DISABLED")
+        clock=clock+60; elapsed(9.75)
+        env.InCombatLockdown=combat; eventFrame.scripts.OnEvent(nil,"PLAYER_REGEN_ENABLED")
+        fb.TogglePause(); clock=clock+0.125
+        local entry=fb.FinishCampaignRun(); eq(entry.elapsed,9.875)
+        clock=clock+500; eq(fb.FinishCampaignRun(),entry); elapsed(9.875)
+        fb.Scores.Submit(entry,""); fb.Options.Set("boardTransitions",false); env.GetMouseFoci=mouse
     end)
     test("campaign finish opens its own card with the right preview, time and colorblind artwork",function()
         local unlocked=fb.db.unlocked; fb.db.unlocked=100
         local run={score=50,seconds=321,eligible=true}
-        fb.StartCampaign(100,run); fb.game.status="won"; fb.game.elapsed=4
+        fb.StartCampaign(100,run); fb.game.status="won"; clock=clock+4
         local mouse=env.GetMouseFoci; env.GetMouseFoci=function() return {fb.UI.board} end
         eventFrame.scripts.OnUpdate(eventFrame,0.02); env.GetMouseFoci=mouse
         assert(fb.game.scoreEntry.completed); eq(fb.UI.screen,"scoreEntry")

@@ -285,7 +285,7 @@ function R.Play(index)
     if not record then R.Library(); return end
     R.playback=R.NewPlayback(record,FB.Sound)
     if not R.playback then FB.Print("This recording needs another playback version."); R.Library(); return end
-    if FB.game then FB.game.paused=true end
+    FB.SetBoardPaused(true)
     FB.UI.frame:Show(); FB.UI:Panel("replay"); R.Render()
 end
 

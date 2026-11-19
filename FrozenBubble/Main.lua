@@ -47,12 +47,13 @@ function FB.StartCampaign(level,run)
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     level=FB.Clamp(math.floor(level),1,FB.db.unlocked)
     FB.level=level; FB.run=run or {score=0,seconds=0,eligible=level==1}
+    FB.run.startedAt=GetTime()
     FB.game=FB.Engine.New(FB.Levels[level],FB.GameSeed(),"campaign",nil,FB.Sound,true)
     FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     FB.Debug.Log("GAME","campaign",level)
     FB.UI.editing=false; FB.Transitions.Open("game"); FB.UI.frame:Show(); FB.UI.level:SetText(tostring(level))
-    FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
+    FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.Scores.CampaignTime(FB.run),eligible=FB.run.eligible}
     FB.Music()
 end
 function FB.ContinueCampaign()
@@ -60,16 +61,20 @@ function FB.ContinueCampaign()
     local game=FB.game
     if cp and game and game.mode=="campaign" and game.status=="playing" then
         if FB.CanStart() then FB.UI.frame:Show(); FB.UI:ShowGame() end
-    elseif cp then FB.StartCampaign(cp.level,{score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
+    elseif cp then
+        local run=game and game.mode=="campaign" and FB.run
+        FB.StartCampaign(cp.level,run or {score=cp.score,seconds=cp.seconds,eligible=cp.eligible})
     else FB.StartCampaign(FB.db.unlocked) end
 end
 function FB.LeaveBoard()
     FB.Recordings.CloseRound()
     local cp,game=FB.db.checkpoint,FB.game
-    if cp and game and game.mode=="campaign" and game.status=="playing" and (game.shots>0 or game.elapsed>0) then
+    if cp and game and game.mode=="campaign" and FB.run then
+        FB.SetBoardPaused(true)
+        cp.seconds=FB.run.seconds
         -- The checkpoint has the board's opening state. Replaying it cannot
         -- count toward the same timed highscore after this game is discarded.
-        cp.eligible=false
+        if game.status=="playing" and (game.shots>0 or game.elapsed>0) then cp.eligible=false end
     end
 end
 function FB.StartSolo(mode,chainReaction)
@@ -117,7 +122,7 @@ function FB.TogglePause(key)
     if FB.game.mode=="versus" and not FB.LocalVersus.match then FB.Print("Versus matches cannot pause. Leave multiplayer to forfeit."); return end
     if InCombatLockdown() then return end
     FB.UI.focusPausedGame=nil
-    FB.game.paused=not FB.game.paused
+    FB.SetBoardPaused(not FB.game.paused)
     FB.UI.keys={}
     if key then FB.UI.keys[key]=true end
     if FB.game.paused then FB.Sound("pause") end
@@ -140,9 +145,9 @@ function FB.FinishCampaignRun()
     local game,run=FB.game,FB.run
     if not game or game.mode~="campaign" or not run then return end
     if run.closed then return game.scoreEntry end
-    run.closed=true
+    run.seconds=FB.Scores.CampaignTime(run); run.startedAt=nil; run.closed=true
     if not game.recorded then
-        run.score=run.score+game.score; run.seconds=run.seconds+game.elapsed
+        run.score=run.score+game.score
         game.recorded=true; game.score=0
     end
     local completed=game.status=="won" and FB.level==100
@@ -160,12 +165,11 @@ local function finishSolo()
     elseif game.status=="lost" and not game.lossSoundPlayed then FB.Sound("lose") end
     if game.mode=="campaign" then
         FB.run.score=FB.run.score+game.score; game.score=0
-        FB.run.seconds=FB.run.seconds+game.elapsed
         if game.status=="won" and FB.level==100 then FB.FinishCampaignRun()
         else
             local level=game.status=="won" and FB.level+1 or FB.level
             FB.db.unlocked=math.max(FB.db.unlocked,level)
-            FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.run.seconds,eligible=FB.run.eligible}
+            FB.db.checkpoint={level=level,score=FB.run.score,seconds=FB.Scores.CampaignTime(FB.run),eligible=FB.run.eligible}
         end
     elseif game.mode=="endless" or game.mode=="training" and game.status=="finished" then
         game.scoreEntry=FB.Scores.Finish(game.chainReaction and "training-chain" or game.mode,game.score,1,game.elapsed)
@@ -228,7 +232,7 @@ events:SetScript("OnEvent",function(_,event,...)
             if FB.game.mode=="versus" and FB.Net.match and FB.Net.match.phase=="playing" then
                 FB.Net.Finish("aborted","Combat started. Match canceled without a result.",false)
                 FB.Net.Whisper("CANCEL",FB.Net.match.id)
-            else FB.game.paused=true end
+            else FB.SetBoardPaused(true) end
         end
     elseif event=="PLAYER_REGEN_ENABLED" then
         FB.UI:SetCombatInput(false)

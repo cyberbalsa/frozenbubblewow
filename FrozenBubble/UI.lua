@@ -113,7 +113,7 @@ function U:Build()
         FB.Demos.idle=0
         if FB.Demos.scene then self:ShowMenu() end
         self.keys={}; self.board:EnableKeyboard(false)
-        if canPauseGame() then FB.game.paused=true end
+        if canPauseGame() then FB.SetBoardPaused(true) end
         if FB.MatchChat.Close then FB.MatchChat.Close() end
         FB.StopGameMusic()
     end)
@@ -594,13 +594,19 @@ function U:UpdateVisibility(dt)
         self.board:EnableKeyboard(capture)
         if not capture then self.keys={} end
     end
+    -- A hidden or combat-paused result has no pause button. On return,
+    -- continue the freeze/win animation and its campaign clock together.
+    if not inactive and (self.screen=="game" or self.screen=="opponent") and canPauseGame()
+        and FB.game.paused and FB.game.status~="playing" and FB.game.status~="retired" then
+        FB.SetBoardPaused(false)
+    end
     if inactive~=self.inactive then
         self.inactive=inactive
         if inactive then self.stroke=nil; FB.Transitions.Interrupt() end
         self.keys={}; self.board:EnableKeyboard(false)
         if canPauseGame() then
-            if inactive and not FB.game.paused then FB.game.paused=true; self.focusPausedGame=FB.game
-            elseif not inactive and self.focusPausedGame==FB.game and not combat and (self.screen=="game" or self.screen=="opponent") then FB.game.paused=false; self.focusPausedGame=nil end
+            if inactive and not FB.game.paused then FB.SetBoardPaused(true); self.focusPausedGame=FB.game
+            elseif not inactive and self.focusPausedGame==FB.game and not combat and (self.screen=="game" or self.screen=="opponent") then FB.SetBoardPaused(false); self.focusPausedGame=nil end
         end
         FB.Music()
         if not inactive and not self.editing and self.board:IsMouseOver() and self.gameLayer:IsShown() then
@@ -651,7 +657,7 @@ function U:ShowMenu()
     self.editing=false; self.stroke=nil; self:CloseEditorDialog(); self.panels.editor:EnableKeyboard(false)
     self.focusPausedGame=nil
     self.keys={}; self.board:EnableKeyboard(false)
-    if canPauseGame() then FB.game.paused=true end
+    if canPauseGame() then FB.SetBoardPaused(true) end
     self.panels.replay:EnableKeyboard(false)
     for _,panel in pairs(self.panels) do panel:Hide() end
     self.panels.pick:EnableKeyboard(false); self.panels.settings:EnableKeyboard(false)
@@ -664,7 +670,7 @@ end
 function U:ShowGame()
     if FB.game and FB.game.status=="retired" then self:ShowScores(FB.game.scoreEntry); return end
     if not FB.game then self:Panel("solo"); return end
-    if canPauseGame() and not InCombatLockdown() then FB.game.paused=false end
+    if canPauseGame() and not InCombatLockdown() then FB.SetBoardPaused(false) end
     self:Panel(FB.game.mode=="versus" and "opponent" or "game"); FB.Music()
 end
 function U:BuildSolo()
@@ -899,7 +905,7 @@ function U:Panel(name)
         self.trainingClock:SetShown(training)
     end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
-    if not gameplay and canPauseGame() then FB.game.paused=true end
+    if not gameplay and canPauseGame() then FB.SetBoardPaused(true) end
     self:UpdatePause(0); FB.Music()
 end
 function U:BuildHelp()

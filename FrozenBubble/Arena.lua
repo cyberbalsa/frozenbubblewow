@@ -29,7 +29,7 @@ end
 local function room(host,id)
     local m={arena=true,me=FB.PlayerName(),peer=host,host=host==FB.PlayerName(),room=id,
         phase="joining",round=0,revision=0,leftMask=0,names={},players={},since=GetTime(),lastHost=GetTime(),pulse=-100}
-    if FB.game then FB.game.paused=true end
+    FB.SetBoardPaused(true)
     N.match=m
     return m
 end

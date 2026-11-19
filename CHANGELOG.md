@@ -1,3 +1,8 @@
+# 0.1.0-alpha.44
+
+- Campaign times now include opening reveals, long frames, and the wait before you retry or advance. The clock stops when the game pauses and picks up from the saved time when you resume a checkpoint.
+- If you hide the addon during the loss animation, reopening it lets the remaining bubbles freeze and the retry button appear.
+
 # 0.1.0-alpha.43
 
 - Campaign and training highscores use the desktop menu lettering and shadow. Saving a qualifying score highlights the whole entry in bold. The original heading sits in the upper right, with the WoW window controls on the left.
