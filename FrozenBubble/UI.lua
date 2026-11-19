@@ -797,6 +797,13 @@ function U:Panel(name)
         FB.Animation.Frame(self.gameBackground,"versus-background",1)
         self:PlaceBoard(self.board,566.4,64,1.6); self:PlaceBoard(self.remoteBoard,48,64,1.6)
         self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",648,-17.6); self.hud:SetWidth(240); self.hud:SetJustifyH("CENTER")
+        self.remoteLabel:ClearAllPoints()
+        self.remoteLabel:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",replay and 78 or 131,replay and -6 or -17.6)
+        self.remoteLabel:SetWidth(replay and 356 or 250)
+        if replay then
+            self.hud:ClearAllPoints(); self.hud:SetPoint("TOPLEFT",self.gameLayer,"TOPLEFT",590,-6)
+            self.hud:SetFont("Fonts\\ARIALN.TTF",16,"OUTLINE"); self.hud:SetWidth(356)
+        else self.hud:SetFont("Fonts\\ARIALN.TTF",22,"OUTLINE") end
         self.penguin:SetPoint("TOPLEFT",902.4,-672); self.penguin:Show()
         local m=FB.Net.match
         if m and m.arena and m.played then self:LayoutArena(m) end
@@ -812,8 +819,9 @@ function U:Panel(name)
     self.panels.replay:EnableKeyboard(name=="replay" and not self.combatInput)
     if replay then
         self.replayBack:ClearAllPoints(); self.replayTime:ClearAllPoints()
-        self.replayBack:SetPoint("TOPLEFT",versusLayout and 67 or 15,versusLayout and -6 or -728)
-        self.replayTime:SetPoint("TOPLEFT",versusLayout and 305 or 144,versusLayout and -16 or -738)
+        self.replayBack:SetPoint("TOPLEFT",versusLayout and 709 or 15,versusLayout and -27 or -728)
+        self.replayTime:SetPoint("TOPLEFT",versusLayout and 171 or 144,versusLayout and -31 or -738)
+        self.replayTime:SetJustifyH(versusLayout and "CENTER" or "LEFT")
         self.result:Hide(); self.resultBadge:Hide(); self.winnerName:Hide(); self.resultDetail:Hide()
         self.nextButton:Hide(); self.retryButton:Hide(); self.resultScores:Hide(); self.leaveSeries:Hide()
         local training=replay.record.mode=="training"

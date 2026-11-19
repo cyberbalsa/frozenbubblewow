@@ -1,3 +1,7 @@
+# 0.1.0-alpha.26
+
+- Both names and scores have their own row during two-player replays. The timer sits under the opponent’s name and the Recordings button under yours.
+
 # 0.1.0-alpha.25
 
 - Press **Print Screen** during an online duel or type `/fb record` to save both boards from the start of the round. Leave multiplayer and open **Options → Recordings** to watch it.
