@@ -3,7 +3,7 @@
 local _,FB=...
 local R={}
 FB.Recordings=R
-local labels={random="Random",training="Training",endless="Endless",versus="2P Game"}
+local labels={random="Random",training="Training",endless="Endless",versus="2P Game",duel="Online duel"}
 
 local function keep(record)
     FB.db.recordings=FB.db.recordings or {}
@@ -20,8 +20,13 @@ local function save()
     capture.saved=true
 end
 
-local function shot(game,_,inside)
+function R.Shot(game,inside)
     local t=game.recordTrack
+    if R.capture.duel and not inside then
+        FB.DuelReplay.Event(R.capture.duel,"localFire",string.format("%.17g",game.angle))
+        t.angle=nil
+        return
+    end
     local list=inside and t.input or t.before
     list[#list+1]={t.frame+1,"fire",string.format("%.17g",game.angle)}
     t.angle=nil
@@ -57,8 +62,8 @@ function R.CloseRound()
     local c=R.capture
     if not c then return end
     save()
-    c.right.recordTrack,c.right.onShoot=nil,nil
-    if c.left then c.left.recordTrack,c.left.onShoot=nil,nil end
+    c.right.recordTrack=nil
+    if c.left then c.left.recordTrack=nil end
     R.capture=nil
 end
 
@@ -67,20 +72,25 @@ function R.Begin(seed,right,match)
     if not labels[right.mode] or right.mode=="versus" and not match then return end
     local record={version=right.desktopRandom and 2 or 1,lowGraphics=right.lowGraphics,mode=right.mode,seed=seed,chains=right.chainReaction,timed=right.timed~=false,
         frames=0,date=time(),tracks={}}
-    if match then record.wins={match.wins[1],match.wins[2]} end
+    if match and match.peer then
+        record.version,record.mode=3,"duel"
+        record.duel={events={},player=FB.PlayerName(),peer=match.peer,round=match.round,limit=match.limit}
+        if match.series then record.wins={match.series.wins,match.series.losses} end
+        match.recording=record
+    elseif match then record.wins={match.wins[1],match.wins[2]} end
     R.capture={record=record,right=right,left=match and match.left}
+    if record.duel then R.capture.duel=match end
     local function attach(game)
         local data={before={},input={},pose={}}
         record.tracks[#record.tracks+1]=data
         game.recordTrack={before=data.before,input=data.input,pose=data.pose,frame=0,angle=0,turn=0}
-        game.onShoot=shot
     end
     attach(right)
-    if match then attach(match.left) end
+    if match and match.left then attach(match.left) end
 end
 
 function R.Mark()
-    if not R.capture or R.playback then FB.Print("Record a random, training, endless or shared-keyboard game."); return end
+    if not R.capture or R.playback then FB.Print("Record a random, training, endless, shared-keyboard or online duel round."); return end
     R.capture.marked=true; save()
     FB.Print("This round will be saved in Recordings.")
 end
@@ -148,15 +158,21 @@ local function apply(game,list,key,frame)
 end
 
 function R.NewPlayback(record,sound)
-    if not record or (record.version~=1 and record.version~=2) or not labels[record.mode] then return end
+    if not record or not labels[record.mode] then return end
+    if record.mode=="duel" then
+        if record.version~=3 or not record.duel then return end
+    elseif record.version~=1 and record.version~=2 then return end
     local play
-    if record.mode=="versus" then
+    if record.mode=="duel" then
+        play=FB.DuelReplay.New(record,sound)
+    elseif record.mode=="versus" then
         play=FB.LocalVersus.New(record.seed,record.chains,{record.wins[1],record.wins[2]},sound,record.version==2)
     else
         play={right=FB.Engine.New(nil,record.seed,record.mode,record.chains,sound,record.version==2)}
     end
     play.record,play.frame,play.elapsed=record,0,0
-    for i,game in ipairs({play.right,play.left}) do
+    local localBoards=play.duel and {play.right} or {play.right,play.left}
+    for i,game in ipairs(localBoards) do
         local track=record.tracks[i]
         game.lowGraphics=record.lowGraphics
         game.timed=record.timed
@@ -171,15 +187,19 @@ function R.NewPlayback(record,sound)
             end
         else game.replayInput=function() apply(game,track.input,"input",play.frame) end end
     end
+    if play.duel then FB.DuelReplay.Apply(play) end
     return play
 end
 
-function R.Step(play)
+function R.Step(play,animate)
     if play.frame>=play.record.frames then return false end
     play.frame=play.frame+1
     local tracks=play.record.tracks
     apply(play.right,tracks[1].before,"before",play.frame)
-    if play.left then
+    if play.duel then
+        play.right:Step(0.02,play.right.replayInput)
+        FB.PeerView.StepDuel(play.duel)
+    elseif play.left then
         apply(play.left,tracks[2].before,"before",play.frame)
         FB.LocalVersus.Step(play,play.right.replayInput,play.left.replayInput)
         apply(play.left,tracks[2].pose,"pose",play.frame)
@@ -192,6 +212,8 @@ function R.Step(play)
         end
     end
     apply(play.right,tracks[1].pose,"pose",play.frame)
+    if animate then animate(play) end
+    if play.duel then FB.DuelReplay.Apply(play) end
     return true
 end
 
@@ -217,7 +239,7 @@ function R.Library()
     for i,button in ipairs(ui.recordButtons) do
         local rec=rows[i]
         button:SetShown(rec~=nil)
-        if rec then button:SetText(labels[rec.mode].."   "..date("%b %d %H:%M",rec.date).."   "..clock(rec.frames)) end
+        if rec then button:SetText((rec.duel and rec.duel.peer or labels[rec.mode]).."   "..date("%b %d %H:%M",rec.date).."   "..clock(rec.frames)) end
     end
 end
 function R.Play(index)
@@ -232,17 +254,20 @@ function R.Play(index)
     FB.UI.frame:Show(); FB.UI:Panel("replay"); R.Render()
 end
 
+local function animatePlayback(p)
+    if FB.db.graphicsLevel~=3 or FB.db.reducedMotion then return end
+    local ui=FB.UI
+    FB.Animation.Penguin(ui.penguin,p.right,"p1",0.02)
+    if p.left then FB.Animation.Penguin(ui.remotePenguin,p.left,"p2",0.02) end
+end
+
 function R.Update(dt)
     local p,ui=R.playback,FB.UI
     if not ui.frame:IsShown() or ui.inactive or InCombatLockdown() then return end
     p.elapsed=p.elapsed+math.min(dt,0.25)
     while p.elapsed+1e-9>=0.02 do
         p.elapsed=p.elapsed-0.02
-        if not R.Step(p) then R.Library(); return end
-        if FB.db.graphicsLevel==3 and not FB.db.reducedMotion then
-            FB.Animation.Penguin(ui.penguin,p.right,"p1",0.02)
-            if p.left then FB.Animation.Penguin(ui.remotePenguin,p.left,"p2",0.02) end
-        end
+        if not R.Step(p,animatePlayback) then R.Library(); return end
     end
 end
 
@@ -255,9 +280,16 @@ function R.Render()
         ui:RenderBoard(ui.remoteBoard,p.left,true)
         if FB.db.graphicsLevel==3 then FB.Animation.Penguin(ui.remotePenguin,p.left,"p2",0) end
         ui.remotePenguin:SetShown(FB.db.graphicsLevel==3)
-        ui.remoteLabel:SetText(tostring(p.wins[2]))
+        if p.duel then
+            ui.remoteLabel:SetText(p.record.duel.peer.."  ·  "..(p.wins and p.wins[2] or p.left.score))
+            ui.hud:SetText(p.record.duel.player.."  ·  "..(p.wins and p.wins[1] or p.right.score))
+        else
+            ui.remoteLabel:SetText(tostring(p.wins[2]))
+            ui.hud:SetText(tostring(p.wins[1]))
+        end
+    else
+        ui.hud:SetText(labels[p.record.mode].."\n"..p.right.score.." points")
     end
-    ui.hud:SetText(p.left and tostring(p.wins[1]) or (labels[p.record.mode].."\n"..p.right.score.." points"))
     local game=p.right
     if game.status~="playing" then
         local winner=p.left and (game.status=="won" and game or game.status=="lost" and p.left)
@@ -265,10 +297,19 @@ function R.Render()
         if game.status=="finished" then
             ui.resultArt:Hide(); ui:ShowTrainingResult(true); ui.trainingScore:SetText(tostring(game.score))
         else
-            local art=winner and (winner==game and "local-win-p1" or "local-win-p2") or
+            local art=p.duel and winner and (winner==game and "net-win-local" or "net-win-remote") or
+                winner and (winner==game and "local-win-p1" or "local-win-p2") or p.duel and "panel" or
                 (game.status=="won" and "win-panel" or game.status=="draw" and "panel" or "lose-panel")
             ui.resultArt:SetSize(art=="lose-panel" and 552 or 526.4,art=="lose-panel" and 198.4 or 254.4)
             FB.Animation.Frame(ui.resultArt,art,1)
+            if p.duel then
+                ui.resultBadge:SetShown(winner and true or false); ui.winnerName:SetShown(winner and true or false)
+                if winner then
+                    FB.Animation.Frame(ui.resultBadge,winner==game and "net-lose-remote" or "net-lose-local",1)
+                    ui.winnerName:SetText(winner==game and p.record.duel.player or p.record.duel.peer)
+                end
+                if game.status=="aborted" then ui.resultDetail:SetText("Match canceled"); ui.resultDetail:Show() end
+            end
             if game.status=="draw" then ui.resultDetail:SetText("Draw"); ui.resultDetail:Show() end
         end
     end

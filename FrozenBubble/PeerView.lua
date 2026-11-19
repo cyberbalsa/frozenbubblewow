@@ -1,9 +1,16 @@
 -- The other player's board replays launches through the same 20 ms engine.
--- Received snapshots are authoritative. Only Network applies their attack totals.
+-- Received snapshots are authoritative. Cumulative attack totals apply once to the receiving board.
 local _,FB=...
 local E=FB.Engine
 local V={}
 FB.PeerView=V
+
+function V.NewDuelBoard(seed,chains,sound)
+    local view=E.New(nil,seed,"versus",chains,sound)
+    -- Only the peer who owns this board can trigger its automatic shot.
+    view.hurryMax=math.huge; view.timed=false
+    return view
+end
 
 -- Four printable characters hold a rising bubble's column, row, color and y.
 local digits="0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_"
@@ -54,7 +61,7 @@ local function setGrid(view,grid,offset)
     view.grid,view.offset,view.attachedOrder=grid,offset,order
 end
 
-function V.Fire(m,p)
+function V.Fire(m,p,receivedAt)
     local seq=FB.Integer(p[4],1,10000000)
     local tick=FB.Integer(p[5],0,100000000)
     local shots=FB.Integer(p[6],1,1000000)
@@ -67,7 +74,7 @@ function V.Fire(m,p)
         or shots<=(m.remoteLocked or 0) or not angle or angle~=angle or math.abs(angle)>E.MAX_ANGLE+1e-10
         or not color or not current or not nextColor or not rng or not grid then return end
     local view=m.remote
-    m.remoteSeq,m.remoteFire,m.lastSeen=seq,shots,GetTime()
+    m.remoteSeq,m.remoteFire,m.lastSeen=seq,shots,receivedAt or GetTime()
     setGrid(view,grid,offset)
     view.tick,view.elapsed,view.accumulator=tick,tick*0.02,0
     view.status,view.projectile,view.rising,view.chains="playing",nil,{},{}
@@ -75,6 +82,7 @@ function V.Fire(m,p)
     view.current,view.next=color,current
     view:Shoot(angle)
     view.next,view.rng=nextColor,rng
+    return true
 end
 
 function V.Sync(view,grid,offset,tick,shots,locked,rng,rising)
@@ -107,6 +115,74 @@ function V.Sync(view,grid,offset,tick,shots,locked,rng,rising)
             if grid[chain.target] or not supported then table.remove(view.chains,i) end
         end
     end
+end
+
+function V.State(m,p,recipient,receivedAt)
+    local seq=FB.Integer(p[4],1,10000000)
+    local shots=FB.Integer(p[5],0,1000000)
+    local score=FB.Integer(p[6],0,100000000)
+    local ceiling=FB.Integer(p[7],0,40000)
+    local attack=FB.Integer(p[8],0,10000000)
+    local offset=p[9] and #p[9]==97 and 1 or 0
+    local grid=FB.Engine.Unpack(p[9],offset)
+    if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
+    local locked=FB.Integer(p[10],math.max(0,shots-1),shots)
+    local pending=FB.Integer(p[11],0,10000000) or 0
+    local angle=FB.Integer(p[12],-1471,1471)
+    local current,nextColor=FB.Integer(p[13],1,8),FB.Integer(p[14],1,8)
+    if p[10] and (not locked or not angle or not current or not nextColor
+        or not FB.Integer(p[11],0,10000000)) then return end
+    local tick=FB.Integer(p[15],0,100000000)
+    local rng=FB.Integer(p[16],1,2147483646)
+    local rising=p[17] and V.UnpackRising(p[17],offset)
+    local idle=FB.Integer(p[18],0,10000)
+    if p[15] and (not tick or not rng or not rising or not idle or #p~=18) then return end
+    if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end
+    if locked then
+        local resolved=locked-(m.remoteLocked or 0)
+        if resolved<0 then return end
+        if m.chainReaction then
+            -- Return flights can score several times after the same shot attached.
+            local base=resolved>0 and m.remoteAttack or (m.chainBase or 0)
+            local budget=resolved>0 and resolved*(FB.Engine.ROWS*8+8) or (m.chainBudget or 0)
+            if attack-base>budget then return end
+            m.chainBase,m.chainBudget=base,budget
+        elseif attack-m.remoteAttack>96*resolved then return end
+    else
+        -- Older peers report launched shots even if the projectile is still in flight.
+        local base=shots==(m.remoteShots or 0) and (m.legacyAttackBase or 0) or m.remoteAttack
+        local limit=shots==(m.remoteShots or 0) and (m.legacyAttackLimit or 0) or 12*(shots-(m.remoteShots or 0))
+        if attack-base>limit then return end
+        m.legacyAttackBase,m.legacyAttackLimit=base,limit
+        locked=shots
+    end
+    m.remoteLocked=locked
+    m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=receivedAt
+    if recipient.status=="playing" then recipient:AddGarbage(attack-m.remoteAttack) end
+    m.remoteAttack=attack
+    local remote=m.remote
+    V.Sync(remote,grid,offset,tick,shots,locked,rng,rising)
+    if idle then remote.idle,remote.timed=idle*0.02,true end
+    remote.ceiling=ceiling/100
+    remote.score,remote.shots,remote.lockedShots=score,shots,locked
+    local aim=(angle or 0)/1000
+    remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
+    remote.turnUntil=receivedAt+0.15; remote.turnTicks=8
+    remote.angle,remote.current,remote.next=aim,current,nextColor
+    remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
+    return true
+end
+
+-- Advance both duel boards on the same fixed tick. Packet corrections may
+-- replace the remote engine's tick, but do not move the local match clock.
+function V.StepDuel(m)
+    local view=m.remote
+    if view.turnTicks and view.turnTicks>0 then
+        view.turnTicks=view.turnTicks-1
+        if view.turnTicks==0 then view.turning=0 end
+    end
+    view:Step(0.02)
+    if m.phase=="playing" then view.status="playing" end
 end
 
 function V.Update(m,dt)

@@ -306,7 +306,7 @@ local function client(name,fullUI)
             return 0
         end,
         SendChatMessage=function(message,_,_,_) fb.lastManual=message end}
-    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat"}) do loadModule(module,fb,env) end
+    for _,module in ipairs({"Bootstrap","Debug","Levels","Engine","Chains","Scores","PeerView","Network","Series","Arena","Community","MediaInfo","EditorArt","Animation","Controls","MatchChat","Recordings","DuelReplay"}) do loadModule(module,fb,env) end
     fb.db={schema=1}; fb.Scores.Init(fb.db); fb.Debug.Init()
     fb.StartVersus=function(seed,chains) fb.game=fb.Engine.New(nil,seed,"versus",chains) end
     clients[name.."-TestRealm"]=fb
@@ -832,7 +832,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
     loadModule("LogoData",fb,env); loadModule("TitleLogo",fb,env)
-    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("Recordings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("RevealData",fb,env); loadModule("Transitions",fb,env); loadModule("UI",fb,env); loadModule("ArenaUI",fb,env); loadModule("Editor",fb,env); loadModule("EditorUI",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -952,6 +952,105 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.Scores.Pending(entry),entry); eq(fb.game,game)
         ui.panels.replay.scripts.OnKeyDown(ui.panels.replay,"SPACE"); eq(ui.screen,"recordings")
         fb.Scores.Submit(entry,""); fb.Options.Set("shotClock",true); ui:ShowMenu(); env.GetMouseFoci=oldFocus
+    end)
+    test("duel playback reproduces accepted packets, penalties, both cannon shots and a corrected result without sending messages",function()
+        local peer=client("ReplayGuest")
+        local net,r,ui=fb.Net,fb.Recordings,fb.UI
+        local oldFocus=env.GetMouseFoci
+        env.GetMouseFoci=function() return {ui.board} end
+        local seed,id=78113,"78113-55"
+        local function start(side,other)
+            side.Net.match={phase="start",id=id,peer=other.PlayerName(),seed=seed,seq=0,remoteSeq=0,remoteAttack=0,
+                capable=true,limit=3,chainReaction=true,series={wins=1,losses=0,limit=3},round=2}
+            side.Net.Begin()
+        end
+        start(fb,peer); start(peer,fb)
+        local m=net.match
+        local function sendFromPeer(kind)
+            for i=#peer.Net.outbox,1,-1 do
+                local item=peer.Net.outbox[i]
+                if item.kind==kind then
+                    table.remove(peer.Net.outbox,i)
+                    net.Receive(fb.PREFIX,item.message,"WHISPER",peer.PlayerName())
+                    return item.message
+                end
+            end
+            error("Missing "..kind)
+        end
+        local function board(g)
+            local fields={g:Pack(),g.tick,g.status,g.current,g.next,g.ceiling,g.angle,g.turning or 0,g.shots,g.lockedShots,
+                g.score,g.pending,g.attack,g.rng,g.effectRng,#g.effects,#g.chains,#g.rising,g.endIndex or 0}
+            if g.projectile then
+                for _,k in ipairs({"color","x","y","vx","vy"}) do fields[#fields+1]=g.projectile[k] end
+            end
+            for _,effect in ipairs(g.effects) do fields[#fields+1]=effect.x; fields[#fields+1]=effect.y end
+            return table.concat(fields,"|")
+        end
+        local observed={}
+        local function snapshot()
+            observed[m.recording.frames]={board(fb.game),board(m.remote)}
+        end
+        local function update(dt)
+            clock=clock+dt; eventFrame.scripts.OnUpdate(nil,dt)
+            peer.game:Update(dt)
+            snapshot()
+        end
+        assert(fb.game:Shoot(-0.31)); assert(fb.Net.outbox[#fb.Net.outbox].kind=="FIRE")
+        assert(peer.game:Shoot(0.63))
+        local fire=sendFromPeer("FIRE")
+        peer.Net.State(); local state=sendFromPeer("STATE")
+        local records=#m.recording.duel.events
+        net.Receive(fb.PREFIX,state,"WHISPER",peer.PlayerName()); net.Receive(fb.PREFIX,fire,"WHISPER",peer.PlayerName())
+        net.Receive(fb.PREFIX,fire,"WHISPER","Uninvited-TestRealm"); eq(#m.recording.duel.events,records)
+        snapshot()
+        for _=1,7 do update(0.006); update(0.094) end
+        env.SlashCmdList.FROZENBUBBLE("record"); assert(r.capture.marked)
+        -- Lose a FIRE in transit. The extended snapshot must restore the remote
+        -- board and apply its cumulative attack exactly once in the replay.
+        assert(peer.game:Shoot(-0.48)); table.remove(peer.Net.outbox)
+        for _=1,5 do update(0.12) end
+        peer.game.attack=4; peer.Net.State(); state=sendFromPeer("STATE")
+        eq(fb.game.pending,4); net.Receive(fb.PREFIX,state,"WHISPER",peer.PlayerName()); eq(fb.game.pending,4); snapshot()
+        local key=fb.Controls.keys[3]
+        fb.Controls.PressFire(fb.game,ui.keys,3,key)
+        for _=1,14 do update(0.06) end
+        assert(fb.game.shots>=2); assert(m.fixedClock)
+        local wins,losses=fb.db.wins,fb.db.losses
+        net.Finish("lost","You forfeited.",true); snapshot(); update(0.06)
+        net.Receive(fb.PREFIX,"1|END|"..id.."|lost","WHISPER",peer.PlayerName())
+        eq(m.result,"draw"); snapshot(); update(0.08)
+        local rec=m.recording
+        net.Leave(); eq(r.capture,nil); eq(fb.db.recordings[1],rec)
+        local queue=#net.outbox; local live=fb.game
+        local play=r.NewPlayback(rec)
+        for f=0,rec.frames do
+            if f>0 then assert(r.Step(play)) end
+            local seen=observed[f]
+            if seen then
+                eq(board(play.right),seen[1],"right at "..f)
+                eq(board(play.left),seen[2],"peer at "..f)
+            end
+        end
+        eq(play.wins[1],1); eq(play.wins[2],0); eq(play.left.status,"draw")
+        eq(fb.db.wins,wins); eq(fb.db.losses,losses); eq(fb.game,live); eq(#net.outbox,queue)
+        env.SlashCmdList.FROZENBUBBLE("replay"); eq(ui.screen,"replay"); assert(ui.remoteLabel.text:find("ReplayGuest",1,true))
+        ui:ShowMenu()
+        -- A result for a closed round can still be corrected while a new round runs.
+        id="78113-56"; start(fb,peer)
+        net.Finish("lost","You forfeited.",true); r.Mark()
+        local archived=net.match.recording; net.Leave()
+        id="78113-57"; start(fb,peer)
+        net.Receive(fb.PREFIX,"1|END|78113-56|lost","WHISPER",peer.PlayerName())
+        eq(fb.game.status,"playing"); eq(archived.duel.result,"draw")
+        local sounds={}; local corrected=r.NewPlayback(archived,function(cue) sounds[#sounds+1]=cue end)
+        while r.Step(corrected) do end
+        eq(corrected.right.status,"draw"); eq(table.concat(sounds,","),"lose")
+        net.Finish("aborted","Combat started.",false); r.Mark()
+        local aborted=net.match.recording; net.Leave()
+        sounds={}; local cancelled=r.NewPlayback(aborted,function(cue) sounds[#sounds+1]=cue end)
+        while r.Step(cancelled) do end
+        eq(cancelled.right.status,"aborted"); eq(cancelled.left.status,"aborted"); eq(table.concat(sounds,","),"cancel")
+        ui:ShowMenu(); clients[peer.PlayerName()]=nil; env.GetMouseFoci=oldFocus
     end)
     test("the original training recording reproduces all 997 SDL frames in the local engine",function()
         local file=assert(io.open("tests/demo1.record","rb")); local source=file:read("*a"); file:close()

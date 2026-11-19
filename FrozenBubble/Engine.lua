@@ -308,6 +308,7 @@ function E:Shoot(angle,launchTick)
     self.next=self:Color()
     self.shots=self.shots+1; self.idle=0; self.hurryVisible=false
     self.sound("launch")
+    if self.recordTrack then FB.Recordings.Shot(self,launchTick~=nil) end
     if self.onShoot then self.onShoot(self,launchTick or self.tick,launchTick~=nil) end
     return true
 end

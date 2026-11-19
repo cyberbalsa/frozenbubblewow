@@ -240,11 +240,23 @@ events:SetScript("OnEvent",function(_,event,...)
         FB.LeaveBoard()
     end
 end)
+local function duelTick(game,dt)
+    local m=FB.Net.match
+    FB.PeerView.StepDuel(m)
+    local ui=FB.UI
+    if ui.screen=="opponent" and ui.frame:IsShown() and not FB.Transitions.target then
+        ui.AnimatePlayerTick(game,dt)
+        if FB.db.graphicsLevel==3 and not FB.db.reducedMotion then
+            FB.Animation.Penguin(ui.remotePenguin,m.remote,"p2",dt)
+        end
+    end
+end
 events:SetScript("OnUpdate",function(_,dt)
     if not FB.db then return end
     FB.Invitations.Update()
     FB.UI:UpdateVisibility(dt)
     local playTime=FB.Transitions.Advance(dt)
+    local duel
     if FB.Recordings.playback then
         FB.Recordings.Update(playTime)
     elseif FB.LocalVersus.match and not FB.UI.editing then
@@ -253,15 +265,18 @@ events:SetScript("OnUpdate",function(_,dt)
         local game=FB.game
         local elapsed=game.mode=="versus" and FB.Net.match and dt or playTime
         local ui=FB.UI
+        local m=FB.Net.match
+        duel=game.mode=="versus" and m and not m.arena and m.remote and (m.phase=="playing" or m.phase=="done")
+        if duel then m.fixedClock=true end
         if ui.frame:IsShown() and (ui.screen=="game" or ui.screen=="opponent") and not FB.Transitions.target then
             if game.status=="playing" and not game.paused then ui:SamplePointer(game) end
-            game:Update(elapsed,ui.PlayerInput,ui.AnimatePlayerTick)
-        else game:Update(elapsed) end
+            game:Update(elapsed,ui.PlayerInput,duel and duelTick or ui.AnimatePlayerTick)
+        else game:Update(elapsed,nil,duel and duelTick or nil) end
         if game.boardChanged then
             if game.mode=="versus" then FB.Net.State() end
             game.boardChanged=false
         end
         finishSolo()
     end
-    FB.Community.Update(); FB.Net.Update(dt); FB.UI:Update(playTime)
+    FB.Community.Update(); FB.Net.Update(dt,duel); FB.UI:Update(playTime)
 end)

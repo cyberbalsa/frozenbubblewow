@@ -57,6 +57,7 @@ local function agrees(m,remote)
         or m.result=="won" and remote=="lost"
 end
 local function advance(m)
+    FB.DuelReplay.Close(m)
     local round=m.round+1
     local nextMatch={id=m.series.id..":"..round,peer=m.peer,seed=m.seed*16807%2147483647,
         host=m.host,phase="restart",since=GetTime(),lastSeen=GetTime(),lastRetry=-100,

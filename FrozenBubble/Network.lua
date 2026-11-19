@@ -92,7 +92,7 @@ function N.Leave()
         FB.Series.Leave(m)
         if m.phase=="playing" then N.Finish("lost","You forfeited.",true)
         elseif m.phase~="done" then N.Whisper("CANCEL",m.id); N.match=nil
-        else N.match=nil end
+        else FB.DuelReplay.Close(m); N.match=nil end
     end
     notify("Left multiplayer.")
 end
@@ -108,11 +108,10 @@ function N.Begin()
     if m.capable and not m.series then
         m.round=1; m.series={id=m.id,wins=0,losses=0,limit=m.limit or 0}
     end
-    m.remote=FB.Engine.New(nil,m.seed,"versus",m.chainReaction,FB.Sound)
-    -- The spectator advances shots received from the other player.
-    m.remote.hurryMax=math.huge; m.remote.timed=false
+    m.remote=FB.PeerView.NewDuelBoard(m.seed,m.chainReaction,FB.Sound)
     FB.StartVersus(m.seed,m.chainReaction)
     FB.game.onShoot=N.Fire
+    FB.Recordings.Begin(m.seed,FB.game,m)
     notify("Playing against "..m.peer)
 end
 function N.Finish(result,reason,send)
@@ -136,6 +135,7 @@ function N.Finish(result,reason,send)
     elseif result=="lost" then FB.db.losses=FB.db.losses+1 end
     if result=="won" or result=="lost" or result=="draw" then FB.Sound("lose")
     elseif result=="aborted" then FB.Sound("cancel") end
+    FB.DuelReplay.Result(m)
     if FB.Series.Complete(m) then reason=reason.." Victory limit reached." end
     notify(reason)
 end
@@ -164,59 +164,7 @@ function N.State()
     m.lastState=now()
 end
 function N.ApplyState(m,p)
-    local seq=FB.Integer(p[4],1,10000000)
-    local shots=FB.Integer(p[5],0,1000000)
-    local score=FB.Integer(p[6],0,100000000)
-    local ceiling=FB.Integer(p[7],0,40000)
-    local attack=FB.Integer(p[8],0,10000000)
-    local offset=p[9] and #p[9]==97 and 1 or 0
-    local grid=FB.Engine.Unpack(p[9],offset)
-    if not seq or seq<=m.remoteSeq or not shots or not score or not ceiling or not attack or not grid then return end
-    local locked=FB.Integer(p[10],math.max(0,shots-1),shots)
-    local pending=FB.Integer(p[11],0,10000000) or 0
-    local angle=FB.Integer(p[12],-1471,1471)
-    local current,nextColor=FB.Integer(p[13],1,8),FB.Integer(p[14],1,8)
-    if p[10] and (not locked or not angle or not current or not nextColor
-        or not FB.Integer(p[11],0,10000000)) then return end
-    local tick=FB.Integer(p[15],0,100000000)
-    local rng=FB.Integer(p[16],1,2147483646)
-    local rising=p[17] and FB.PeerView.UnpackRising(p[17],offset)
-    local idle=FB.Integer(p[18],0,10000)
-    if p[15] and (not tick or not rng or not rising or not idle or #p~=18) then return end
-    if shots<(m.remoteShots or 0) or attack<m.remoteAttack then return end
-    if locked then
-        local resolved=locked-(m.remoteLocked or 0)
-        if resolved<0 then return end
-        if m.chainReaction then
-            -- Return flights can score several times after the same shot attached.
-            local base=resolved>0 and m.remoteAttack or (m.chainBase or 0)
-            local budget=resolved>0 and resolved*(FB.Engine.ROWS*8+8) or (m.chainBudget or 0)
-            if attack-base>budget then return end
-            m.chainBase,m.chainBudget=base,budget
-        elseif attack-m.remoteAttack>96*resolved then return end
-    else
-        -- Older peers report launched shots even if the projectile is still in flight.
-        local base=shots==(m.remoteShots or 0) and (m.legacyAttackBase or 0) or m.remoteAttack
-        local limit=shots==(m.remoteShots or 0) and (m.legacyAttackLimit or 0) or 12*(shots-(m.remoteShots or 0))
-        if attack-base>limit then return end
-        m.legacyAttackBase,m.legacyAttackLimit=base,limit
-        locked=shots
-    end
-    m.remoteLocked=locked
-    m.remoteSeq=seq; m.remoteShots=shots; m.lastSeen=now()
-    if FB.game.status=="playing" then FB.game:AddGarbage(attack-m.remoteAttack) end
-    m.remoteAttack=attack
-    local remote=m.remote
-    FB.PeerView.Sync(remote,grid,offset,tick,shots,locked,rng,rising)
-    if idle then remote.idle,remote.timed=idle*0.02,true end
-    remote.ceiling=ceiling/100
-    remote.score,remote.shots,remote.lockedShots=score,shots,locked
-    local aim=(angle or 0)/1000
-    remote.turning=aim<remote.angle and -1 or aim>remote.angle and 1 or 0
-    remote.turnUntil=now()+0.15
-    remote.angle,remote.current,remote.next=aim,current,nextColor
-    remote.pending,remote.mode,remote.rootPeriod=pending,"versus",12
-    m.remote=remote
+    if FB.PeerView.State(m,p,FB.game,now()) then FB.DuelReplay.Packet(m,p) end
 end
 function N.RequestScores()
     if N.lastScoreRequest and now()-N.lastScoreRequest<15 then return end
@@ -306,6 +254,7 @@ function N.Receive(prefix,message,channel,sender)
                 local counter=finished.result=="won" and "wins" or "losses"
                 FB.db[counter]=math.max(0,FB.db[counter]-1); finished.result="draw"
                 if finished.series then finished.series[counter]=math.max(0,finished.series[counter]-1) end
+                FB.DuelReplay.Result(finished,true)
                 finished.peerReady=nil
                 if m==finished then
                     FB.game.status="draw"; m.remote.status="draw"; notify("Draw — both players finished together.")
@@ -341,12 +290,12 @@ function N.Receive(prefix,message,channel,sender)
         if m.phase=="playing" then N.Finish(p[4]=="lost" and "won" or "lost",p[4]=="lost" and "Victory! Opponent lost or forfeited." or "Opponent cleared the board.",false)
         end
     elseif kind=="FIRE" and m.phase=="playing" then
-        FB.PeerView.Fire(m,p)
+        if FB.PeerView.Fire(m,p) then FB.DuelReplay.Packet(m,p) end
     elseif kind=="STATE" and m.phase=="playing" then
         N.ApplyState(m,p)
     end
 end
-function N.Update(dt)
+function N.Update(dt,duelStepped)
     local t=now()
     local fanout=N.match and N.match.arena and math.max(1,#N.match.names-1) or 1
     N.tokens=math.min(4*fanout,N.tokens+dt*3*fanout)
@@ -382,13 +331,14 @@ function N.Update(dt)
     if not m then return end
     if m.arena then FB.Arena.Update(m,dt,t); return end
     if m.phase=="playing" then
-        FB.PeerView.Update(m,dt)
+        if not duelStepped then FB.PeerView.Update(m,dt) end
         if t-m.lastSeen>25 then N.Finish("aborted","Connection timed out. No win or loss recorded.",false); return end
         if FB.game.status=="won" or FB.game.status=="lost" then
             N.Finish(FB.game.status,FB.game.status=="won" and "Board cleared — victory!" or "Your board is full.",true)
         elseif t-m.lastState>=1 then N.State() end
     elseif m.phase=="done" then
-        FB.PeerView.Update(m,dt); FB.Series.Update(m,t)
+        if not duelStepped then FB.PeerView.Update(m,dt) end
+        FB.Series.Update(m,t)
     elseif t-m.since>20 then
         FB.Series.Leave(m); N.Whisper("CANCEL",m.id); N.match=nil; notify("Challenge expired. Queue again to retry.")
     elseif t-m.lastRetry>=2 then

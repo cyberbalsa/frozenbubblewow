@@ -1,3 +1,8 @@
+# 0.1.0-alpha.25
+
+- Press **Print Screen** during an online duel or type `/fb record` to save both boards from the start of the round. Leave multiplayer and open **Options → Recordings** to watch it.
+- Duel replays include missed shots, incoming penalties, forfeits and ties. Watching a replay keeps your multiplayer record intact.
+
 # 0.1.0-alpha.24
 
 - Local games now draw ammunition, incoming rows and pop velocities from the same seeded sequence as the desktop game. Moving bubbles use whole sprite pixels on the original playfield and miniature boards.

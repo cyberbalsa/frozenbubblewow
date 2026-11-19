@@ -702,7 +702,7 @@ function U:BuildRecordings()
     local list=self.panels.recordings
     text(list,"RECORDINGS",0,0,20,184)
     button(list,"Import",190,0,110,FB.Recordings.OpenImport)
-    self.emptyRecords=text(list,"Press Print Screen during a random, training, endless or shared-keyboard game to keep a recording. You can also type /fb record.",0,65,14,340)
+    self.emptyRecords=text(list,"Press Print Screen during a random, training, endless, shared-keyboard or online duel game to keep a recording. You can also type /fb record.",0,65,14,340)
     self.recordButtons={}
     for i=1,10 do
         self.recordButtons[i]=button(list,"",0,45+(i-1)*38,345,function() FB.Recordings.Play(i) end)
@@ -1333,7 +1333,7 @@ function U:Update(dt)
     else self.hud:SetText("Ready when you are"); self.footer:SetText("Pick Play level to begin the original campaign.") end
     if self.screen=="opponent" then
         if remote and FB.db.graphicsLevel==3 then
-            FB.Animation.Penguin(self.remotePenguin,remote,"p2",(shared or FB.db.reducedMotion) and 0 or dt)
+            FB.Animation.Penguin(self.remotePenguin,remote,"p2",(shared or match and match.fixedClock or FB.db.reducedMotion) and 0 or dt)
         end
         self.remotePenguin:SetShown(remote~=nil and FB.db.graphicsLevel==3)
         self:RenderBoard(self.remoteBoard,remote,true)
