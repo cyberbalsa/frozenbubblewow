@@ -1,3 +1,8 @@
+# 0.1.0-alpha.14
+
+- Leave the title screen open for 20 seconds to watch one of the four recordings shipped with Frozen Bubble. Watch a training run, a duel, or a three- or five-player match. The recordings use the original shots, sound cues, and closing wipe.
+- Click or press a key to return to the menu. Demos leave your paused board, scores, and matchmaking alone. Turn them off under Settings → AddOns → Frozen Bubble Forever → Play demos on the title screen. Reduce motion also turns them off.
+
 # 0.1.0-alpha.13
 
 - Select a victory limit in Multiplayer before queuing or challenging a friend. Left-click to raise it or right-click to lower it. New players start at first to five. Existing profiles keep Unlimited so they can still play older opponents.

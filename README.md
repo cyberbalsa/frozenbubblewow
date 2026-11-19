@@ -32,6 +32,8 @@ Choose **Keys** on the main menu to bind aim, fire and center for each player. T
 
 In **Multiplayer**, left-click **Victory limit** to raise the target or right-click to lower it. New profiles start at first to five. Upgrades keep Unlimited. Matchmaking pairs players who chose the same limit and chain rules. After both boards finish animating, either player can choose **Next round**. If the other player has the result screen in focus, both start a fresh board with the series score carried over. **Back to lobby** leaves a finished round without a forfeit. Both players need alpha 13 or later for series. Choose Unlimited to play a single round against an older client.
 
+After 20 seconds on the focused title screen, one of the four original recordings plays. The three- and five-player recordings use the desktop arena with a small board for each opponent. Click or press a key to return. To turn demos off, open WoW Settings → AddOns → Frozen Bubble Forever and clear **Play demos on the title screen**. Demos also stay off during matchmaking and with Reduce motion enabled.
+
 During an online round, press Enter over your board to chat. Type your message and press Enter to send or Escape to discard it. Your opponent sees it below their left board for ten seconds. Both players need alpha 10 or later for match chat.
 
 ## Addon settings
@@ -60,7 +62,7 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 ## Development and releases
 
-Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.13` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
+Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.14` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Artwork regeneration uses Python, Pillow and a C99 compiler. Release packaging requires only Python.
 
 GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 

@@ -584,6 +584,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     methods.SetScript=function(f,event,fn) f.scripts[event]=fn end
     methods.CreateFontString=function(f) return frame(nil,nil,f) end; methods.CreateTexture=methods.CreateFontString
     methods.SetSize=function(f,w,h) f.width=w; f.height=h end
+    methods.SetTexCoord=function(f,...) f.fbCoords=table.concat({...},",") end
     methods.SetText=function(f,s) f.text=tostring(s) end
     methods.GetText=function(f) return f.text end
     methods.GetWidth=function(f) return f.width end; methods.GetHeight=function(f) return f.height end
@@ -614,7 +615,7 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
     env.Minimap=frame()
     env.UIParent=frame(); env.CreateFrame=frame; env.UISpecialFrames={}; env.SlashCmdList={}
     env.GetCursorPosition=function() return 16,384 end
-    loadModule("UI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
+    loadModule("DemoData",fb,env); loadModule("Demos",fb,env); loadModule("UI",fb,env); loadModule("Editor",fb,env); loadModule("Scoreboard",fb,env); loadModule("Invitations",fb,env); loadModule("Settings",fb,env); loadModule("LocalVersus",fb,env); loadModule("Main",fb,env)
     local eventFrame=frames[#frames]
     eventFrame.scripts.OnEvent(eventFrame,"ADDON_LOADED","FrozenBubble")
     local promptEvents=frames[#frames]
@@ -981,6 +982,55 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         fb.game.status="won"; eventFrame.scripts.OnUpdate(nil,0.02); ui.nextButton.scripts.OnClick()
         eq(fb.game.customIndex,100); eq(fb.db.checkpoint,cp); eq(fb.db.unlocked,unlocked)
         fb.db.custom[id]=nil; ui:StartEditor(nil,true,nil,true)
+    end)
+    test("the original four demos play on the title screen and leave the paused game intact",function()
+        local ui,demos=fb.UI,fb.Demos
+        local oldMouse,oldCursor=env.GetMouseFoci,env.GetCursorPosition
+        fb.StartCampaign(1); ui:ShowMenu()
+        local game,layout,checkpoint,run=fb.game,fb.game:Pack(),fb.db.checkpoint,fb.run
+        env.GetMouseFoci=function() return {ui.menu} end
+        local x=0; env.GetCursorPosition=function() return x,0 end
+        for i=1,79 do demos.Update(0.25) end
+        eq(ui.screen,"menu")
+        x=1; demos.Update(0.25); eq(ui.screen,"menu")
+        for i=1,78 do demos.Update(0.25) end
+        ui.menu.scripts.OnKeyDown(ui.menu,"Z"); eq(demos.idle,0)
+        for i=1,80 do demos.Update(0.25) end
+        eq(ui.screen,"demo"); assert(demos.scene and demos.panel.shown)
+        demos.panel.scripts.OnMouseDown(); eq(demos.wipeStep,1)
+        demos.panel.scripts.OnMouseDown(); eq(ui.screen,"menu")
+        for index,count in ipairs({997,999,998,999}) do
+            demos.Start(index); eq(demos.scene,fb.DemoData.scenes[index])
+            eq(demos.frame,1); eq(#demos.scene.frames,count)
+            eq(demos.background.fbAsset,({"solo-background","versus-background","arena-background","arena-background"})[index])
+            assert(demos.textures[301].shown and demos.textures[1500].shown)
+            for frame=2,count do demos.Update(0.02) end
+            eq(demos.frame,count); assert(demos.scene)
+            for i=1,35 do demos.Update(0.02); eq(demos.wipeStep,i) end
+            demos.Update(0.02); eq(demos.scene,nil); eq(ui.screen,"menu")
+        end
+        demos.Start(4)
+        local miniUV=demos.textures[341].fbCoords
+        eq(demos.textures[301].fbAsset,"bubble8")
+        fb.Options.Set("colorblind",true); eq(ui.screen,"menu"); demos.Start(4)
+        eq(demos.textures[301].fbAsset,"bubble-symbol8"); assert(demos.textures[341].fbCoords~=miniUV)
+        fb.Options.Set("graphicsLevel",1); demos.Start(4)
+        eq(demos.textures[1501].fbAsset,"aim-dot"); eq(demos.textures[1504].fbAsset,"aim-dot")
+        assert(not demos.textures[1502].shown and not demos.textures[1505].shown)
+        fb.Options.Set("graphicsLevel",3); fb.Options.Set("colorblind",false)
+        eq(fb.game,game); eq(game:Pack(),layout); eq(game.tick,0); assert(game.paused)
+        eq(fb.db.checkpoint,checkpoint); eq(fb.run,run); eq(fb.Net.match,nil)
+        demos.Start(1); demos.panel.scripts.OnKeyDown(demos.panel,"P"); eq(demos.wipeStep,1)
+        demos.panel.scripts.OnKeyDown(demos.panel,"P"); eq(ui.screen,"menu")
+        demos.Start(2); ui:ShowLobby(); eq(demos.scene,nil); eq(ui.screen,"lobby")
+        ui:ShowMenu(); fb.Options.controls.titleDemos.set(false)
+        for i=1,81 do demos.Update(0.25) end
+        eq(ui.screen,"menu"); fb.Options.controls.titleDemos.set(true)
+        demos.Start(3); env.GetMouseFoci=function() return {} end; demos.Update(0.10)
+        eq(ui.screen,"demo"); eq(demos.frame,1)
+        env.GetMouseFoci=function() return {demos.panel} end; demos.Update(0.02); eq(demos.frame,2)
+        ui:SetCombatInput(true); eq(ui.screen,"menu"); eq(demos.scene,nil); ui:SetCombatInput(false)
+        env.GetMouseFoci,env.GetCursorPosition=oldMouse,oldCursor
     end)
     test("series rematch controls use round victories and only auto-acknowledge a visible focused result",function()
         local ui=fb.UI

@@ -4,7 +4,7 @@ FB.Options = Options
 
 local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
-    sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false,
+    sound=true, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true,
     fadeOnBlur=true, colorblind=false, debug=true, community=false,
 }
 
@@ -12,6 +12,9 @@ function Options.Set(key,value)
     if key=="graphicsLevel" then value=FB.Integer(value,1,3) or 3 end
     if FB.db[key]==value then return end
     FB.db[key]=value
+    if FB.Demos.scene and (key=="graphicsLevel" or key=="colorblind" or key=="titleDemos" or key=="reducedMotion") then
+        FB.UI:ShowMenu()
+    end
     if key=="minimap" and Options.icon then Options.icon:SetShown(value) end
     if key=="graphicsLevel" or key=="reducedMotion" then FB.UI:ApplyGraphics() end
     if key=="colorblind" then
@@ -72,6 +75,7 @@ local function registerPage()
     check("fadeOnBlur","Fade when the pointer leaves the game","Fade the window and pause solo play when it loses focus.")
     check("colorblind","Colorblind bubble symbols","Give each bubble color its own shape in all game modes and the editor.")
     check("reducedMotion","Reduce menu and penguin animation")
+    check("titleDemos","Play demos on the title screen","After 20 seconds on the title screen, play a recording from the original game. Click or press a key to return.")
     check("sound","Play sound effects")
     check("music","Play game music")
     slider("musicVolume","Game music volume",0.1,1,0.05,percent)

@@ -94,6 +94,8 @@ function U:Build()
     f:SetMovable(true); f:EnableMouse(true); f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart",function() if not self.fullWindow then f:StartMoving() end end); f:SetScript("OnDragStop",f.StopMovingOrSizing)
     f:SetScript("OnHide",function()
+        FB.Demos.idle=0
+        if FB.Demos.scene then self:ShowMenu() end
         self.keys={}; self.board:EnableKeyboard(false)
         if canPauseGame() then FB.game.paused=true end
         if FB.MatchChat.Close then FB.MatchChat.Close() end
@@ -270,6 +272,7 @@ function U:Build()
     menu:SetScript("OnKeyDown",function(panel,key)
         if InCombatLockdown() then return end
         local active=self.screen=="menu" and not self.inactive and self:HasFocus() and not (GetCurrentKeyBoardFocus and GetCurrentKeyBoardFocus())
+        if active then FB.Demos.idle=0 end
         local used=active and (key==K.keys[9] or key=="UP" or key=="DOWN" or key=="LEFT" or key=="RIGHT" or
             key=="ENTER" or key=="SPACE" or key=="NUMPADENTER" or key=="ESCAPE")
         panel:SetPropagateKeyboardInput(not used)
@@ -343,6 +346,7 @@ function U:SetCombatInput(blocked)
     self.panels.chain:EnableKeyboard(not blocked and self.screen=="chain")
     self.panels.scores:EnableKeyboard(not blocked and self.screen=="scores")
     if blocked then
+        if FB.Demos.scene then self:ShowMenu() end
         FB.MatchChat.Close()
         self.mouseRestore={}
         local function disable(frame)
@@ -419,6 +423,7 @@ function U:PlaceBoard(board,x,y,scale)
     end
 end
 function U:ShowMenu()
+    FB.Demos.Close()
     self.editing=false; self.stroke=nil
     self.focusPausedGame=nil
     self.keys={}; self.board:EnableKeyboard(false)
@@ -576,6 +581,8 @@ function U:Options()
     if self.musicValue then self.musicValue:SetText(math.floor((FB.db.musicVolume or 0.8)*100+0.5).."%") end
 end
 function U:Panel(name)
+    local wasDemo=FB.Demos.scene
+    FB.Demos.Close()
     if name=="editor" and not self.editGame then self:StartEditor(); return end
     self.menu:EnableKeyboard(false)
     self.keys={}; self.board:EnableKeyboard(false)
@@ -621,6 +628,7 @@ function U:Panel(name)
     if name=="opponent" then self.hud:Show() end
     self.editButton:SetShown(FB.game and FB.game.mode=="custom" and not (FB.game.customSet and FB.game.customSet.builtin) and name=="game" or false)
     if not gameplay and canPauseGame() then FB.game.paused=true end
+    if wasDemo then FB.Music() end
 end
 function U:BuildHelp()
     local p=self.panels.help
@@ -1056,6 +1064,8 @@ function U:AnimateMenu(dt)
 end
 function U:Update(dt)
     if not self.frame or not self.frame:IsShown() then return end
+    FB.Demos.Update(dt)
+    if FB.Demos.scene then return end
     FB.MatchChat.Refresh()
     self:AnimateMenu(dt)
     local game=self.editing and self.editGame or FB.game

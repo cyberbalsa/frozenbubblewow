@@ -14,6 +14,8 @@ In **Multiplayer**, left-click **Victory limit** to raise the target or right-cl
 
 Type **/fb scores** to see campaign board previews and the two training rankings. Campaign clears rank first, followed by the furthest level reached and then the quickest time. Use the Personal button to switch to community scores. Hover over a score to see the character’s realm.
 
+After 20 seconds on the focused title screen, one of the four original recordings plays. The three- and five-player recordings use the desktop arena with a small board for each opponent. Click or press a key to return. To turn demos off, open WoW Settings → AddOns → Frozen Bubble Forever and clear **Play demos on the title screen**. Demos also stay off during matchmaking and with Reduce motion enabled.
+
 Click **Graphics** on the title screen to cycle between Full, Low and Medium. Full shows the animated penguins, Medium keeps the cannon and bubble effects, and Low uses the original aiming dot. Use **Options** for sound and display controls.
 
 In **Editor**, Insert and Append add boards on either side of the current board. Move changes their order, and Undo can restore a removed board. Copy a desktop Frozen Bubble level file through Export, or paste one through Import. Save keeps the whole set in your library. Publish shares it with other players. Both peers need alpha 12 or later for multi-board downloads. **Pick a starting level** opens a set at any board for unranked practice.

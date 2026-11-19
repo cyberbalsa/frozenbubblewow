@@ -29,3 +29,20 @@ The main menu and both board backgrounds, menu logo, and wooden button use the o
 The eight colored bubbles retain their original GIF interiors. The importer renders each on a 128×128 texture, using nearby sprite colors and fractional transparency around the circumference. [Bubble edge comparison](art/bubble-rims.png).
 
 The highscore background, frame, headings and menu credit strips come from the pinned checkout. The 100 level thumbnails use the four-by-four pixel average in `CStuff.xs::shrink_`, with separate sheets for the standard and colorblind sprites.
+
+## Title-screen recordings
+
+The four recordings come from `share/data/demo{1..4}.bz2` in the pinned checkout. Each runs through the original Perl engine. The addon replays the resulting sprite changes and sound cues at 50 frames per second. Board sprites stay separate so the colorblind setting also works on recorded games. The closing wipe follows `blacken_` in `CStuff.xs`.
+
+To regenerate the data, install the desktop game's Perl and SDL dependencies in a disposable Linux environment. The captures used Debian's `frozen-bubble` 2.212 package for the SDL bindings and XS extension. From the addon repository, with `upstream` pointing to the pinned checkout and `traces` to a scratch directory, run the following.
+
+```sh
+for n in 1 2 3 4; do
+    PERL_HASH_SEED=0 PERL_PERTURB_KEYS=0 perl tools/demos/capture.pl "$upstream" "$traces/trace$n" "$n" || exit 1
+done
+python3 tools/demos/pack.py "$upstream" "$traces"
+```
+
+The desktop engine iterates Perl hash keys when ejecting a group. Individual pop trajectories can vary between captures of the same recording.
+
+An optional `--reference` argument to the capture command writes desktop screenshots at frames 1, 500 and 950. Use a separate output directory for these.

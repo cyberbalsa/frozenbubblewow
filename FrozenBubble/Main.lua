@@ -28,8 +28,10 @@ function FB.Music()
             set("Sound_MusicVolume",muted and 0 or (FB.db.musicVolume or 0.8))
         end
         if muted then return end
-        local track=FB.UI.menu and FB.UI.menu:IsShown() and "introzik.ogg" or
-            (FB.game and FB.game.mode=="versus" and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg")
+        local versus=FB.game and FB.game.mode=="versus"
+        if FB.Demos.scene then versus=FB.Demos.scene~=FB.DemoData.scenes[1] end
+        local track=FB.UI.menu and FB.UI.menu:IsShown() and "introzik.ogg"
+            or (versus and "frozen-mainzik-2p.ogg" or "frozen-mainzik-1p.ogg")
         if FB.musicTrack~=track then PlayMusic(FB.media..track); FB.musicTrack=track end
     else FB.StopGameMusic() end
 end
