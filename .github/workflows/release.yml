@@ -70,8 +70,11 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+          if draft=$(gh release view "$RELEASE_TAG" --json isDraft --jq .isDraft); then
             gh release upload "$RELEASE_TAG" dist/*.zip dist/*.sha256 --clobber
+            if [[ "$draft" == true ]]; then
+              gh release edit "$RELEASE_TAG" --draft=false
+            fi
           elif [[ "$RELEASE_TAG" == *-* ]]; then
             gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --prerelease --title "Frozen Bubble Forever $RELEASE_TAG" --notes-file CHANGELOG.md
           else
