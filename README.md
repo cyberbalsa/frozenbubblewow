@@ -46,14 +46,10 @@ WoW saves `FrozenBubbleDB`, including `debugLog`, to `WTF/Account/<account>/Save
 
 Run `lua5.1 tests/run.lua` and `python3 tests/package_test.py`. `python3 tools/package.py v0.1.0-alpha.5` builds a deterministic ZIP and SHA-256 checksum in `dist/`. Runtime files live in `FrozenBubble/` and load in TOC order. Python and Pillow are needed only to regenerate artwork; Python packaging itself has no third-party dependencies.
 
-GitHub Actions tests Lua 5.1 and 5.4 on every push/PR, packages the addon, and retains a build artifact. A `v*` tag creates a GitHub Release and uploads the same ZIP to CurseForge project **1815958** after tests pass. The workflow verifies that the configured CurseForge game version matches interface 16001 before uploading. Alpha/beta tags set the corresponding CurseForge release type.
+GitHub Actions tests Lua 5.1 and 5.4 and builds the addon ZIP. A `v*` tag publishes the tested ZIP and its checksum to GitHub Releases.
 
-Repository configuration:
+CurseForge receives push events from the repository webhook for project **1815958**. Its packager reads `.pkgmeta` and places the addon at `FrozenBubble/FrozenBubble.toc`. Tags containing `alpha` or `beta` select the corresponding release channel. CurseForge runs independently of GitHub Actions. [CurseForge automatic packaging](https://support.curseforge.com/support/solutions/articles/9000197281-automatic-packaging)
 
-- Secret `CF_API_TOKEN`: CurseForge author upload token.
-- Variable `CF_PROJECT_ID`: `1815958`.
-- Variable `CF_GAME_VERSION_ID`: `17053` (Forever 1.60.1, interface 16001).
-
-For local publishing, keep the token outside the checkout in `~/.config/frozenbubblewow/curseforge-token` with mode 0600. Pass its path through `--token-file` to `tools/curseforge_upload.py`; use `--check` to verify without uploading. Never commit a token. The GitHub workflow uses its own repository token for releases.
+The local author token is stored outside the checkout in `~/.config/frozenbubblewow/curseforge-token` with mode 0600. The repository webhook uses the token in its HTTPS payload URL as required by CurseForge.
 
 Original game source, license, attribution, and reproducible asset conversions are documented in [THIRD_PARTY.md](THIRD_PARTY.md). This port is GPL-2.0-only.

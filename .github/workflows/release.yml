@@ -77,20 +77,3 @@ jobs:
           else
             gh release create "$RELEASE_TAG" dist/*.zip dist/*.sha256 --verify-tag --title "Frozen Bubble Forever $RELEASE_TAG" --notes-file CHANGELOG.md
           fi
-
-  curseforge-release:
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: github-release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
-        with:
-          name: FrozenBubbleForever
-          path: dist
-      - name: Upload tested addon to CurseForge
-        env:
-          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
-          CF_PROJECT_ID: ${{ vars.CF_PROJECT_ID }}
-          CF_GAME_VERSION_ID: ${{ vars.CF_GAME_VERSION_ID }}
-        run: python3 tools/curseforge_upload.py dist/*.zip

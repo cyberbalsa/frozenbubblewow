@@ -1,0 +1,14 @@
+package-as: FrozenBubbleForever
+move-folders:
+  FrozenBubbleForever/FrozenBubble: FrozenBubble
+manual-changelog: CHANGELOG.md
+ignore:
+  - art
+  - docs
+  - tests
+  - tools
+  - dist
+  - README.md
+  - THIRD_PARTY.md
+  - CHANGELOG.md
+  - LICENSE
