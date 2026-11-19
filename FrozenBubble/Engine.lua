@@ -7,6 +7,7 @@ E.W, E.H, E.R, E.STEP, E.ROWS = 256, 400, 16, 28, 13
 E.LAUNCH_Y, E.LIMIT = 362, 350
 -- Upstream runs at 20 ms: 10 px/frame, gravity 0.5 px/frame/frame.
 E.SPEED = 500
+E.TRAINING_PENALTY_SECONDS = 30
 E.MAX_ANGLE = math.pi/2 - 0.1
 
 function E.Columns(row,offset) return (row+(offset or 0)) % 2 == 1 and 8 or 7 end
@@ -70,6 +71,7 @@ function E.New(level, seed, mode, chainReaction, sound, desktopRandom)
     self.chainReaction=chainReaction==true and (mode=="random" or mode=="training" or mode=="versus")
     self.launchY=mode=="versus" and 366 or E.LAUNCH_Y
     self.penaltyRules=mode=="versus" or mode=="training"
+    if mode=="training" then self.trainingPenaltySeconds=E.TRAINING_PENALTY_SECONDS end
     self.hurryWarn = self.penaltyRules and 5 or 8
     self.hurryMax = self.penaltyRules and 7.5 or 10.5
     self.rootPeriod = self.penaltyRules and 12 or 9
@@ -368,8 +370,12 @@ local function advanceGame(self,dt,input,frameParity)
     self.tick=self.tick+1
     self.elapsed=self.elapsed+dt
     if self.mode=="training" then
-        if self:TrainingTimeLeft()==0 then self.status="finished"; self.projectile=nil; return end
-        if self.pending==0 and #self.rising==0 and self:Random(1500)==1 then self:AddGarbage(self:Random(6)) end
+        if self.legacyTrainingTimeout and self:TrainingTimeLeft()==0 then
+            self.status="finished"; self.projectile=nil; return
+        end
+        if self.pending==0 and #self.rising==0 and self:Random(math.max(1,self.trainingPenaltySeconds*50))==1 then
+            self:AddGarbage(self:Random(6))
+        end
     end
     if #self.chains==0 then self.idle=self.idle+dt end
     -- The desktop warning blinks every 25 simulation ticks, starting one
@@ -412,6 +418,10 @@ function E:Step(dt,input,frameParity)
     if self.paused then return end
     local wasPlaying=self.status=="playing"
     advanceGame(self,dt,input,frameParity)
+    -- Desktop checks the training timer while drawing, after the board update.
+    if self.mode=="training" and self.status=="playing" and self:TrainingTimeLeft()==0 then
+        self.status="finished"
+    end
     if wasPlaying and self.status=="lost" and (self.mode=="campaign" or self.mode=="custom") then
         self.stick=nil; self.hurryVisible=false
         self.lossSoundPlayed=true

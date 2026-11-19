@@ -1,3 +1,8 @@
+# 0.1.0-alpha.45
+
+- Added the desktop multiplayer training difficulty setting. Choose an average wait of 0 to 120 seconds between penalty volleys. The default is 30 seconds. Personal recordings remember the setting.
+- Training now resolves the last shot or rising penalty before judging the round. A clear on the final frame counts toward your score, and a penalty reaching the loss line on that frame ends the run.
+
 # 0.1.0-alpha.44
 
 - Campaign times now include opening reveals, long frames, and the wait before you retry or advance. The clock stops when the game pauses and picks up from the saved time when you resume a checkpoint.

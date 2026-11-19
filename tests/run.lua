@@ -195,6 +195,18 @@ test("training uses solo ammunition, versus timing, and points for outgoing pena
     g.tick=6049; g.paused=true; g:Step(0.02); eq(g.tick,6049)
     g.paused=false; g:Step(0.02); eq(g.status,"finished"); assert(not g:Shoot())
 end)
+test("training resolves a scoring shot or fatal penalty on the last frame",function()
+    local shot=E.New({"111....."},17,"training")
+    shot.tick=6049; shot.shots=1
+    shot.projectile={x=112,y=25,vx=0,vy=-500,color=1}
+    shot:Step(0.02)
+    eq(shot.score,1); eq(shot.status,"finished"); eq(shot:Count(),0)
+    local penalty=E.New({"1......."},17,"training")
+    penalty.tick=6049; penalty.rising={{row=13,col=1,x=16,y=370,color=2}}
+    penalty:Step(0.02)
+    eq(penalty.status,"lost"); eq(penalty.grid[E.Key(13,1)],2)
+    penalty:Step(0.02); eq(penalty.status,"lost")
+end)
 test("return flights match the upstream arc and can start another chain",function()
     local layout={"111.2233","2..3..."}
     local g=E.New(layout,71,"random",true)
@@ -1279,22 +1291,36 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         ui:ShowMenu(); eq(r.playback,nil)
         fb.Options.controls.autoRecord.set(false)
     end)
+    test("old personal training recordings preserve their original timeout",function()
+        local r=fb.Recordings
+        local record={version=2,mode="training",seed=17,frames=6050,timed=false,tracks={{before={},input={},pose={}}}}
+        local game=r.NewPlayback(record).right
+        eq(game.trainingPenaltySeconds,30)
+        game.tick=6049; assert(game:Shoot())
+        game:Step(0.02,function() error("legacy timeout consumed input") end)
+        eq(game.status,"finished"); eq(game.projectile,nil)
+    end)
     test("the Print Screen recording survives logout and replays the whole two-minute training result",function()
         local ui,r=fb.UI,fb.Recordings
         local oldFocus=env.GetMouseFoci
         env.GetMouseFoci=function() return {ui.board} end
+        local pressure=fb.Options.controls.trainingPenaltySeconds
+        eq(pressure.get(),30); pressure.set(0)
         fb.Options.Set("shotClock",false); fb.StartSolo("training",true)
+        pressure.set(120); eq(fb.game.trainingPenaltySeconds,0)
         ui.board.scripts.OnKeyDown(ui.board,"PRINTSCREEN"); ui.board.scripts.OnKeyUp(ui.board,"PRINTSCREEN")
         assert(r.capture.marked)
         fb.Fire()
         local game=fb.game
         game:Update(0.02)
+        assert(game.pending>=1 and game.pending<=6)
         for i=2,6050 do game:Step(0.02) end
         eventFrame.scripts.OnUpdate(nil,0.02)
         eq(game.status,"finished"); local entry=game.scoreEntry
         assert(entry and fb.Scores.Pending(entry))
         eventFrame.scripts.OnEvent(nil,"PLAYER_LOGOUT"); eq(r.capture,nil)
         env.SlashCmdList.FROZENBUBBLE("replay"); local play=r.playback
+        eq(play.record.trainingPenaltySeconds,0); eq(play.right.trainingPenaltySeconds,0)
         eq(play.record.mode,"training"); assert(ui.trainingClock.shown and fb.Plaques.clock.shown)
         eq(fb.Plaques.clock.fbDigits,"2'00\"")
         while play.frame<play.record.frames do r.Update(0.02) end
@@ -1303,6 +1329,8 @@ test("addon loads, every screen renders, editor erases, and debug slash works",f
         eq(fb.Scores.Pending(entry),entry); eq(fb.game,game)
         ui.panels.replay.scripts.OnKeyDown(ui.panels.replay,"SPACE"); eq(ui.screen,"recordings")
         fb.Scores.Submit(entry,""); fb.Options.Set("shotClock",true); ui:ShowMenu(); env.GetMouseFoci=oldFocus
+        fb.StartSolo("training"); eq(fb.game.trainingPenaltySeconds,120)
+        pressure.set(30); ui:ShowMenu()
     end)
     test("duel playback reproduces accepted packets, penalties, both cannon shots and a corrected result without sending messages",function()
         local peer=client("ReplayGuest")

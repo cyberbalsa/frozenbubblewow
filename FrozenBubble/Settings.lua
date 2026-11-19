@@ -6,9 +6,11 @@ local defaults = {
     minimap=true, flightPrompt=true, idlePrompt=true, idleSeconds=90, promptSeconds=30, craftingPrompt=true,
     audioEnabled=true, sound=true, effectsVolume=1, music=true, musicVolume=0.8, windowSize=1, graphicsLevel=3, reducedMotion=false, titleDemos=true, boardTransitions=true,
     autoRecord=false, shotClock=true, fadeOnBlur=true, colorblind=false, debug=true, community=false,
+    trainingPenaltySeconds=FB.Engine.TRAINING_PENALTY_SECONDS,
 }
 
 function Options.Set(key,value)
+    if key=="trainingPenaltySeconds" then value=FB.Integer(value,0,120) or defaults[key] end
     if key=="effectsVolume" then value=math.floor(FB.Clamp(tonumber(value) or 1,0,1)*10+0.5)/10 end
     if key=="musicVolume" then value=FB.Clamp(tonumber(value) or 0.8,0,1) end
     if key=="graphicsLevel" then value=FB.Integer(value,1,3) or 3 end
@@ -94,6 +96,9 @@ local function registerPage()
     check("titleDemos","Play demos on the title screen","After 20 seconds on the title screen, play a recording from the original game. Click or press a key to return.")
     check("autoRecord","Automatically save recordings","Keep the ten most recent random, training, endless, shared-keyboard, duel and arena recordings.")
     check("shotClock","Use the local shot clock","Show the hurry warning and fire automatically in solo and shared-keyboard games. Online matches always use the clock.")
+    slider("trainingPenaltySeconds","Average wait for penalties in new training rounds",0,120,1,function(value)
+        return value==0 and "Immediately" or value.." s"
+    end)
     check("audioEnabled","Enable game audio","F12 mutes or restores Frozen Bubble music and effects together.")
     check("sound","Play sound effects")
     slider("effectsVolume","Game sound effect volume",0,1,0.1,percent)
@@ -155,6 +160,7 @@ function Options.Init()
         if type(FB.db[key])~=type(default) then FB.db[key]=default end
     end
     FB.db.idleSeconds=FB.Clamp(FB.db.idleSeconds,60,120)
+    FB.db.trainingPenaltySeconds=FB.Integer(FB.db.trainingPenaltySeconds,0,120) or defaults.trainingPenaltySeconds
     FB.db.minimapAngle=tonumber(FB.db.minimapAngle) or 2.35
     registerPage(); createIcon()
 end

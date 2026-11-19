@@ -88,6 +88,7 @@ function R.Begin(seed,right,match)
     if not labels[right.mode] or right.mode=="versus" and not match then return end
     local record={version=right.desktopRandom and 2 or 1,lowGraphics=right.lowGraphics,mode=right.mode,seed=seed,chains=right.chainReaction,timed=right.timed~=false,
         frames=0,date=time(),tracks={}}
+    if right.mode=="training" then record.trainingPenaltySeconds=right.trainingPenaltySeconds end
     if match and match.arena then
         record.version,record.mode=4,"arena"
         record.arena=FB.ArenaReplay.Header(match)
@@ -195,6 +196,12 @@ function R.NewPlayback(record,sound)
         play=FB.LocalVersus.New(record.seed,record.chains,{record.wins[1],record.wins[2]},sound,record.version==2,record.openingParity)
     else
         play={right=FB.Engine.New(nil,record.seed,record.mode,record.chains,sound,record.version==2)}
+        if record.mode=="training" then
+            play.right.trainingPenaltySeconds=FB.Integer(record.trainingPenaltySeconds,0,120) or FB.Engine.TRAINING_PENALTY_SECONDS
+            -- Older personal recordings ended before processing the final tick.
+            -- Desktop recordings store key events and use the desktop frame order.
+            play.right.legacyTrainingTimeout=record.trainingPenaltySeconds==nil and not record.tracks[1].keys
+        end
     end
     play.record,play.frame,play.elapsed=record,0,0
     local localBoards=play.duel and {play.right} or {play.right,play.left}

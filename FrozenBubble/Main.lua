@@ -82,6 +82,7 @@ function FB.StartSolo(mode,chainReaction)
     FB.LeaveBoard(); FB.LocalVersus.match=nil
     local seed=FB.GameSeed()
     FB.game=FB.Engine.New(nil,seed,mode,chainReaction,FB.Sound,true); FB.run=nil; FB.level=1
+    if mode=="training" then FB.game.trainingPenaltySeconds=FB.db.trainingPenaltySeconds end
     FB.game.lowGraphics=FB.db.graphicsLevel==1
     FB.game.timed=FB.db.shotClock~=false
     FB.Recordings.Begin(seed,FB.game)
